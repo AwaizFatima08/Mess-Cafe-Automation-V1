@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "455342982898",
+    "project_id": "mess-cafe-automation-v1",
+    "storage_bucket": "mess-cafe-automation-v1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:455342982898:android:02e96b2deb84da202b726b",
+        "android_client_info": {
+          "package_name": "com.fatima.mess_cafe_automation_v1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2ED5irvrSe4KpnnA840WU318cUalY1i8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
