@@ -1,0 +1,18 @@
+# Flutter
+.build/
+.dart_tool/
+.packages
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+
+# Secrets
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
