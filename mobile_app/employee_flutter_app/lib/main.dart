@@ -105,13 +105,38 @@ class _LoginScreenState extends State<LoginScreen> {
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  Future<Map<String, dynamic>?> loadTodayMenu() async {
-    final doc = await FirebaseFirestore.instance
+  Future<List<Map<String, dynamic>>> loadBreakfastMenu() async {
+    final dailyMenuDoc = await FirebaseFirestore.instance
         .collection('daily_menus')
         .doc('2026-03-15')
         .get();
 
-    return doc.data();
+    final dailyMenuData = dailyMenuDoc.data();
+    if (dailyMenuData == null) return [];
+
+    final breakfastItemIds =
+        List<String>.from(dailyMenuData['breakfast_items'] ?? []);
+
+    final List<Map<String, dynamic>> breakfastItems = [];
+
+    for (final itemId in breakfastItemIds) {
+      final itemDoc = await FirebaseFirestore.instance
+          .collection('menu_items')
+          .doc(itemId)
+          .get();
+
+      final itemData = itemDoc.data();
+      if (itemData != null) {
+        breakfastItems.add({
+          'id': itemId,
+          'name': itemData['name'] ?? itemId,
+          'category': itemData['category'] ?? '',
+          'veg': itemData['veg'] ?? false,
+        });
+      }
+    }
+
+    return breakfastItems;
   }
 
   Future<void> logout(BuildContext context) async {
@@ -129,7 +154,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Today Menu Test'),
+        title: const Text('Today Menu'),
         actions: [
           IconButton(
             onPressed: () => logout(context),
@@ -137,8 +162,8 @@ class HomeScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: FutureBuilder<Map<String, dynamic>?>(
-        future: loadTodayMenu(),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: loadBreakfastMenu(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -156,16 +181,13 @@ class HomeScreen extends StatelessWidget {
             );
           }
 
-          final data = snapshot.data;
+          final breakfastItems = snapshot.data ?? [];
 
-          if (data == null) {
+          if (breakfastItems.isEmpty) {
             return const Center(
-              child: Text('No daily menu found for 2026-03-15'),
+              child: Text('No breakfast menu found for 2026-03-15'),
             );
           }
-
-          final breakfastItems =
-              List<String>.from(data['breakfast_items'] ?? []);
 
           return Padding(
             padding: const EdgeInsets.all(20),
@@ -178,23 +200,26 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Breakfast Item IDs',
+                  'Breakfast Menu',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (breakfastItems.isEmpty)
-                  const Text('No breakfast items found.')
-                else
-                  ...breakfastItems.map(
-                    (item) => Card(
-                      child: ListTile(
-                        title: Text(item),
+                ...breakfastItems.map(
+                  (item) => Card(
+                    child: ListTile(
+                      title: Text(item['name']),
+                      subtitle: Text('ID: ${item['id']}'),
+                      trailing: Icon(
+                        item['veg'] == true
+                            ? Icons.eco
+                            : Icons.restaurant,
                       ),
                     ),
                   ),
+                ),
               ],
             ),
           );

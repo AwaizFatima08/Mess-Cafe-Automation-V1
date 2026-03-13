@@ -16,3 +16,15 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local SDK / downloaded tool archives
+mobile_app/employee_flutter_app/google-cloud-sdk/
+mobile_app/employee_flutter_app/google-cloud-cli-linux-x86_64.tar.gz
+
+# Flutter local/build artifacts
+mobile_app/employee_flutter_app/build/
+mobile_app/employee_flutter_app/.dart_tool/
+mobile_app/employee_flutter_app/.idea/
+mobile_app/employee_flutter_app/.flutter-plugins
+mobile_app/employee_flutter_app/.flutter-plugins-dependencies
+mobile_app/employee_flutter_app/.packages
