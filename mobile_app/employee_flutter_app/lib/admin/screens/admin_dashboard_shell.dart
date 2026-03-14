@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import '../../main.dart';
 import 'bulk_upload_screen.dart';
 import 'dashboard_screen.dart';
+import 'menu_cycle_management_screen.dart';
 import 'menu_management_screen.dart';
-import 'monthly_menu_builder_screen.dart';
 import 'reports_screen.dart';
 import 'user_management_screen.dart';
+import 'weekly_menu_template_screen.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({super.key});
@@ -27,7 +28,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     ),
     _AdminSection(
       title: 'Menu Management',
-      subtitle: 'Manage menu items and meal categories',
+      subtitle: 'Manage menu items and item types',
       icon: Icons.restaurant_menu,
     ),
     _AdminSection(
@@ -36,9 +37,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       icon: Icons.people_outline,
     ),
     _AdminSection(
-      title: 'Monthly Menu Builder',
-      subtitle: 'Prepare and publish monthly menu plans',
+      title: 'Weekly Menu Templates',
+      subtitle: 'Create reusable weekly breakfast, lunch, and dinner templates',
       icon: Icons.calendar_month_outlined,
+    ),
+    _AdminSection(
+      title: 'Menu Cycles',
+      subtitle: 'Assign weekly templates to active date ranges',
+      icon: Icons.schedule_outlined,
     ),
     _AdminSection(
       title: 'Bulk Upload',
@@ -73,10 +79,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       case 2:
         return UserManagementScreen(userEmail: userEmail);
       case 3:
-        return MonthlyMenuBuilderScreen(userEmail: userEmail);
+        return WeeklyMenuTemplateScreen(userEmail: userEmail);
       case 4:
-        return BulkUploadScreen(userEmail: userEmail);
+        return MenuCycleManagementScreen(userEmail: userEmail);
       case 5:
+        return BulkUploadScreen(userEmail: userEmail);
+      case 6:
         return ReportsScreen(userEmail: userEmail);
       default:
         return DashboardScreen(userEmail: userEmail);
@@ -120,7 +128,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          Text(userEmail, style: const TextStyle(fontSize: 14)),
+                          Text(
+                            userEmail,
+                            style: const TextStyle(fontSize: 14),
+                          ),
                         ],
                       ),
                     ),

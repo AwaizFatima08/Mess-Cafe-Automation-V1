@@ -12,7 +12,7 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
 
-  String category = 'breakfast';
+  String itemMode = 'inclusive';
   bool isSaving = false;
   String? errorMessage;
 
@@ -43,7 +43,7 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
 
       await FirebaseFirestore.instance.collection('menu_items').add({
         'name': name,
-        'category': category,
+        'item_mode': itemMode,
         'estimated_price': estimatedPrice,
         'active': true,
         'created_at': FieldValue.serverTimestamp(),
@@ -66,6 +66,11 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
     super.dispose();
   }
 
+  String formatItemModeLabel(String value) {
+    if (value == 'optional') return 'Optional';
+    return 'Inclusive';
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -76,6 +81,7 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
           children: [
             TextField(
               controller: nameController,
+              textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'Item Name',
                 border: OutlineInputBorder(),
@@ -87,32 +93,50 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: 'Estimated Price',
+                prefixText: 'Rs ',
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: category,
+              initialValue: itemMode,
               decoration: const InputDecoration(
-                labelText: 'Category',
+                labelText: 'Item Type',
                 border: OutlineInputBorder(),
               ),
               items: const [
-                DropdownMenuItem(value: 'breakfast', child: Text('Breakfast')),
-                DropdownMenuItem(value: 'lunch', child: Text('Lunch')),
-                DropdownMenuItem(value: 'dinner', child: Text('Dinner')),
-                DropdownMenuItem(value: 'cafe', child: Text('Cafe')),
+                DropdownMenuItem(
+                  value: 'inclusive',
+                  child: Text('Inclusive'),
+                ),
+                DropdownMenuItem(
+                  value: 'optional',
+                  child: Text('Optional'),
+                ),
               ],
               onChanged: (value) {
                 if (value == null) return;
                 setState(() {
-                  category = value;
+                  itemMode = value;
                 });
               },
             ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                itemMode == 'optional'
+                    ? 'Optional items can be shown as add-ons or extras in menus.'
+                    : 'Inclusive items are part of the standard meal by default.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
             if (errorMessage != null) ...[
               const SizedBox(height: 12),
-              Text(errorMessage!, style: const TextStyle(color: Colors.red)),
+              Text(
+                errorMessage!,
+                style: const TextStyle(color: Colors.red),
+              ),
             ],
           ],
         ),

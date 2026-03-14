@@ -8,11 +8,23 @@ class MenuManagementScreen extends StatelessWidget {
 
   const MenuManagementScreen({super.key, required this.userEmail});
 
-  Stream<QuerySnapshot> loadMenuItems() {
+  Stream<QuerySnapshot<Map<String, dynamic>>> loadMenuItems() {
     return FirebaseFirestore.instance
         .collection('menu_items')
         .orderBy('name')
         .snapshots();
+  }
+
+  String formatItemMode(String value) {
+    if (value == 'optional') return 'Optional';
+    return 'Inclusive';
+  }
+
+  IconData getItemIcon(String itemMode) {
+    if (itemMode == 'optional') {
+      return Icons.add_circle_outline;
+    }
+    return Icons.restaurant;
   }
 
   @override
@@ -27,7 +39,7 @@ class MenuManagementScreen extends StatelessWidget {
         },
         child: const Icon(Icons.add),
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: loadMenuItems(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -66,19 +78,21 @@ class MenuManagementScreen extends StatelessWidget {
                   child: ListView.builder(
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
-                      final data = docs[index].data() as Map<String, dynamic>;
+                      final data = docs[index].data();
 
-                      final name = data['name'] ?? 'Unknown';
-                      final category = data['category'] ?? '';
+                      final name = (data['name'] ?? 'Unknown').toString();
+                      final itemMode =
+                          (data['item_mode'] ?? 'inclusive').toString();
                       final estimatedPrice = data['estimated_price'] ?? 0;
-                      final veg = data['veg'] == true;
                       final active = data['active'] == true;
 
                       return Card(
                         child: ListTile(
-                          leading: Icon(veg ? Icons.eco : Icons.restaurant),
+                          leading: Icon(getItemIcon(itemMode)),
                           title: Text(name),
-                          subtitle: Text('$category • Rs $estimatedPrice'),
+                          subtitle: Text(
+                            'Rs $estimatedPrice • ${formatItemMode(itemMode)}',
+                          ),
                           trailing: Icon(
                             active ? Icons.check_circle : Icons.cancel,
                             color: active ? Colors.green : Colors.red,
