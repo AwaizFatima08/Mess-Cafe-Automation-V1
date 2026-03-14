@@ -2,6 +2,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../main.dart';
+import 'bulk_upload_screen.dart';
+import 'dashboard_screen.dart';
+import 'menu_management_screen.dart';
+import 'monthly_menu_builder_screen.dart';
+import 'reports_screen.dart';
+import 'user_management_screen.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({super.key});
@@ -56,6 +62,25 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
     );
+  }
+
+  Widget buildSelectedScreen(String userEmail) {
+    switch (selectedIndex) {
+      case 0:
+        return DashboardScreen(userEmail: userEmail);
+      case 1:
+        return MenuManagementScreen(userEmail: userEmail);
+      case 2:
+        return UserManagementScreen(userEmail: userEmail);
+      case 3:
+        return MonthlyMenuBuilderScreen(userEmail: userEmail);
+      case 4:
+        return BulkUploadScreen(userEmail: userEmail);
+      case 5:
+        return ReportsScreen(userEmail: userEmail);
+      default:
+        return DashboardScreen(userEmail: userEmail);
+    }
   }
 
   @override
@@ -164,73 +189,8 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
                   )
                   .toList(),
             ),
-          Expanded(
-            child: _AdminSectionPlaceholder(
-              title: currentSection.title,
-              subtitle: currentSection.subtitle,
-              icon: currentSection.icon,
-              userEmail: userEmail,
-            ),
-          ),
+          Expanded(child: buildSelectedScreen(userEmail)),
         ],
-      ),
-    );
-  }
-}
-
-class _AdminSectionPlaceholder extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final String userEmail;
-
-  const _AdminSectionPlaceholder({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.userEmail,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 700),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(icon, size: 48),
-                  const SizedBox(height: 16),
-                  Text(title, style: Theme.of(context).textTheme.headlineSmall),
-                  const SizedBox(height: 8),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Logged in as: $userEmail',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Status: Placeholder screen created successfully.',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Backend integration, forms, and data workflows will be added in later steps.',
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
