@@ -1,7 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-cd ~/projects/mess_cafe_automation_v1
+REPO_DIR="/home/humayun/projects/mess_cafe_automation_v1"
+cd "$REPO_DIR"
 
 git add .
-git commit -m "Daily backup commit $(date)"
+
+if git diff --cached --quiet; then
+  echo "No changes to commit"
+  exit 0
+fi
+
+git commit -m "Daily backup commit $(date '+%d-%b-%Y %H:%M')"
 git push
+echo "Git push completed"

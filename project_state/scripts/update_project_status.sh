@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STATUS_FILE="${1:-project_command_board_status.md}"
+BASE_DIR="$HOME/projects/mess_cafe_automation_v1/project_state"
+STATUS_FILE="${1:-$BASE_DIR/project_status.md}"
 STAMP="$(date '+%d-%b-%Y %H:%M')"
 TMP_FILE="$(mktemp)"
 
@@ -9,16 +10,16 @@ cat > "$TMP_FILE" <<EOF
 ## Update Entry - ${STAMP}
 
 ### Completed
-- 
+-
 
 ### Ongoing
-- 
+-
 
 ### Next
-- 
+-
 
 ### Decisions / Risks
-- 
+-
 
 EOF
 
