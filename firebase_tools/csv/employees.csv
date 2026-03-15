@@ -1,0 +1,312 @@
+docId,prefix,employee_number,name,department,designation,grade,house_type,house_number,status,landline_extension,phone_number,user_role
+EMP0001,FFL,11,RAO NASIR MUHAMMAD ISLAM,Production,,M-10,,,active,,,employee
+EMP0002,FFL,30,ABDUL SHAKOOR OGAHI,HR,,MT-4,,,active,,,employee
+EMP0003,FFL,39,FAISAL ALI KHAN,Admin,,M-12,,,active,,,employee
+EMP0004,FFL,42,AGHA SAFDAR HUSSAIN,,,M-10,,,active,,,employee
+EMP0005,FFL,43,ABID ALI ABID,,,M-12A,,,active,,,employee
+EMP0006,FFL,44,RAEES AHMED,,,M-9,,,active,,,employee
+EMP0007,FFL,47,MALIK WASEEM IQBAL,,,MT-2,,,active,,,employee
+EMP0008,FFL,48,SYED SHAHZAD MEHDI,,,M-12,,,active,,,employee
+EMP0009,FFL,49,KHALID IQBAL SIPPAL,,,M-10,,,active,,,employee
+EMP0010,FFL,52,EJAZ AHMED,,,M-11,,,active,,,employee
+EMP0011,FFL,54,TOFIQUE AHMED,,,M-12A,,,active,,,employee
+EMP0012,FFL,56,ABDUL SAMI SHEIKH,,,M-11,,,active,,,employee
+EMP0013,FFL,60,KHURRAM FAYYAZ,,,M-10,,,active,,,employee
+EMP0014,FFL,61,SYED MUHAMMAD ARIF ZAKI,,,M-11,,,active,,,employee
+EMP0015,FFL,62,ABDUL GHANI,,,M-12,,,active,,,employee
+EMP0016,FFL,81,NASEEM SHAHZAD RAMAY,,,M-11,,,active,,,employee
+EMP0017,FFL,85,MUHAMMAD WAHEED ASHRAF,,,M-11,,,active,,,employee
+EMP0018,FFL,87,MUHAMMAD SALEEM,,,M-9,,,active,,,employee
+EMP0019,FFL,88,NAVEED AHMED,,,M-12,,,active,,,employee
+EMP0020,FFL,93,ASIF ALI RAJPUT,,,M-11,,,active,,,employee
+EMP0021,FFL,94,MUHAMMAD AFZAL,,,MT-3,,,active,,,employee
+EMP0022,FFL,97,MUHAMMAD NAVEED SUKHERA,,,M-11,,,active,,,employee
+EMP0023,FFL,100,Dr. HUMAYUN SHAHZAD,,,M-11,,,active,,,developer
+EMP0024,FFL,103,ASIF MAHMOOD,,,MT-1,,,active,,,employee
+EMP0025,FFL,104,SHAKEEL JAVED IQBAL,,,MT-3,,,active,,,employee
+EMP0026,FFL,105,SHAHID HUSSAIN,,,M-10,,,active,,,employee
+EMP0027,FFL,106,MUHAMMAD SHAFIQ,,,MT-1,,,active,,,employee
+EMP0028,FFL,121,SYED MUNAWWAR ZAMAN,,,M-11,,,active,,,employee
+EMP0029,FFL,139,MUKHTAR AHMED,,,MT-1,,,active,,,employee
+EMP0030,FFL,146,ABDUL RAUF,,,M-10,,,active,,,employee
+EMP0031,FFL,148,JAMIL-UR-REHMAN,,,MT-3,,,active,,,employee
+EMP0032,FFL,149,IHSAN AHMED,,,M-11,,,active,,,employee
+EMP0033,FFL,151,ABDUL JABBAR PATHAN,,,M-11,,,active,,,employee
+EMP0034,FFL,160,ABDUL RAB,,,M-9,,,active,,,employee
+EMP0035,FFL,172,MUHAMMAD ASLAM ZIA,,,MT-3,,,active,,,employee
+EMP0036,FFL,179,GHULAM FAREED,,,M-10,,,active,,,employee
+EMP0037,FFL,207,GHULAM MUSTAFA SOOMRO,,,MT-2,,,active,,,employee
+EMP0038,FFL,220,TALAT MEHMOOD,,,M-11,,,active,,,employee
+EMP0039,FFL,224,ZUBAIR HASSAN,,,M-9,,,active,,,employee
+EMP0040,FFL,235,RIZWAN MALIK,,,M-11,,,active,,,employee
+EMP0041,FFL,236,MUHAMMAD HASHIM,,,M-11,,,active,,,employee
+EMP0042,FFL,237,SHAUKAT ALI,,,M-10,,,active,,,employee
+EMP0043,FFL,243,UMAR YASIN,,,M-11,,,active,,,employee
+EMP0044,FFL,244,NOMAN IRSHAD,,,M-10,,,active,,,employee
+EMP0045,FFL,245,ZAHEER ABBAS,,,M-10,,,active,,,employee
+EMP0046,FFL,246,SYED NADEEM SHAH,,,M-10,,,active,,,employee
+EMP0047,FFL,247,MUHAMMAD WASEEM,,,M-10,,,active,,,employee
+EMP0048,FFL,249,FAHAD SARWAR,,,M-10,,,active,,,employee
+EMP0049,FFL,251,MUHAMMAD SHARIF,,,MT-3,,,active,,,employee
+EMP0050,FFL,253,MUHAMMAD JAMEEL,,,MT-3,,,active,,,employee
+EMP0051,FFL,257,FARRUKH IMTIAZ,,,M-11,,,active,,,employee
+EMP0052,FFL,259,NADEEM IQBAL,,,MT-2,,,active,,,employee
+EMP0053,FFL,264,MALIK FAZAL-UL-REHMAN,,,MT-2,,,active,,,employee
+EMP0054,FFL,289,MUHAMMAD RAMZAN,,,MT-4,,,active,,,employee
+EMP0055,FFL,293,MUHAMMAD KHALID JAVED,,,M-12,,,active,,,employee
+EMP0056,FFL,310,MUDASSAR SHAH,,,M-11,,,active,,,employee
+EMP0057,FFL,311,ALI AHMED JAVED,,,M-10,,,active,,,employee
+EMP0058,FFL,315,SYED USMAN KHALID,,,M-9,,,active,,,employee
+EMP0059,FFL,327,MUHAMMAD FAROOQ,,,M-10,,,active,,,employee
+EMP0060,FFL,357,NADEEM AHMED KHAN,,,M-6,,,active,,,employee
+EMP0061,FFL,354,MUHAMMAD USMAN,,,MT-1,,,active,,,employee
+EMP0062,FFL,358,MUHAMMAD ASHFAQ,,,M-9,,,active,,,employee
+EMP0063,FFL,386,IMRAN KHALID,,,M-9,,,active,,,employee
+EMP0064,FFL,390,DANISH AHMED KHAN,,,M-10,,,active,,,employee
+EMP0065,FFL,404,IBRAR JAMIL,,,M-9,,,active,,,employee
+EMP0066,FFL,405,USMAN AHMED,,,M-11,,,active,,,employee
+EMP0067,FFL,410,MUHAMMAD ADIL SHAFI,,,M-11,,,active,,,employee
+EMP0068,FFL,411,MUHAMMAD AZEEM,,,M-10,,,active,,,employee
+EMP0069,FFL,416,FARHAN AHMED,,,M-10,,,active,,,employee
+EMP0070,FFL,433,MUHAMMAD ASIF,,,M-11,,,active,,,employee
+EMP0071,FFL,444,ZULFIQAR LATIF,,,MT-3,,,active,,,employee
+EMP0072,FFL,446,USMAN AZIZ,,,M-10,,,active,,,employee
+EMP0073,FFL,463,MUHAMMAD KASHIF AYUB,,,MT-2,,,active,,,employee
+EMP0074,FFL,483,MUHAMMAD QAISAR IMRAN,,,M-11,,,active,,,employee
+EMP0075,FFL,486,HAMID ROMAN,,,M-11,,,active,,,employee
+EMP0076,FFL,487,MUHAMMAD AHSAN SARFRAZ,,,M-12,,,active,,,employee
+EMP0077,FFL,499,SAJJAD ASHRAF,,,M-11,,,active,,,employee
+EMP0078,FFL,521,WAQAS AKBAR,,,M-11,,,active,,,employee
+EMP0079,FFL,522,MUHAMMAD SAFDAR JAVED,,,MT-4,,,active,,,employee
+EMP0080,FFL,547,MUHAMMAD UBAIDULLAH,,,M-2,,,active,,,employee
+EMP0081,FFL,548,MASHOOQ ALI,,,M-8,,,active,,,employee
+EMP0082,FFL,675,HAFIZ MUHAMMAD IMRAN,,,M-10,,,active,,,employee
+EMP0083,FFL,688,MUHAMMAD FARHAN CHAUDHRY,,,M-10,,,active,,,employee
+EMP0084,FFL,699,ASAD ARSHAD,,,M-9,,,active,,,employee
+EMP0085,FFL,569,ALLAH BUKHSH NOON,,,MT-1,,,active,,,employee
+EMP0086,FFL,703,MUHAMMAD ABU BAKAR SIDDIQUE,,,M-11,,,active,,,employee
+EMP0087,FFL,710,MUHAMMAD IQBAL KHAN,,,M-11,,,active,,,employee
+EMP0088,FFL,789,ATEEQ-UR-REHMAN TOCEE,,,M-10,,,active,,,employee
+EMP0089,FFL,793,MUHAMMAD ALI,,,MT-3,,,active,,,employee
+EMP0090,FFL,795,SHUMAILA SADAF,,,M-9,,,active,,,employee
+EMP0091,FFL,925,ZESHAN MAQSOOD,,,M-10,,,active,,,employee
+EMP0092,FFL,938,QAMAR MUNIR,,,M-9,,,active,,,employee
+EMP0093,FFL,945,ASIF ABBAS,,,M-9,,,active,,,employee
+EMP0094,FFL,947,HAMZA HAMEED,,,M-9,,,active,,,employee
+EMP0095,FFL,980,Tahir Mukhtar,,,M-8,,,active,,,employee
+EMP0096,FFL,1135,ARSLAN HUSSAIN,,,M-9,,,active,,,employee
+EMP0097,FFL,1140,ANEEQ AHMED,,,M-9,,,active,,,employee
+EMP0098,FFL,1142,SAQIB RAUF,,,M-10,,,active,,,employee
+EMP0099,FFL,1144,MUHAMMAD KHALID MEHMOOD,,,M-9,,,active,,,employee
+EMP0100,FFL,1146,TAHIR MAHMOOD,,,M-9,,,active,,,employee
+EMP0101,FFL,1169,NAEEMULLAH,,,M-4,,,active,,,employee
+EMP0102,FFL,1264,MUHMMAD SAFDAR,,,M-9,,,active,,,employee
+EMP0103,FFL,1284,MUHAMMAD ABID,,,M-9,,,active,,,employee
+EMP0104,FFL,1308,ASAD AHMED SIDDIQUI,,,M-10,,,active,,,employee
+EMP0105,FFL,1310,ALI HUSSAIN,,,M-9,,,active,,,employee
+EMP0106,FFL,1311,MUHAMMAD MOHSIN KHAN,,,M-9,,,active,,,employee
+EMP0107,FFL,1383,MUHAMMAD MAZHAR ABBAS,,,M-10,,,active,,,employee
+EMP0108,FFL,1405,SABEEH AHMED,,,M-9,,,active,,,employee
+EMP0109,FFL,1445,USMAN ALI,,,M-11,,,active,,,employee
+EMP0110,FFL,1473,ABDUL REHMAN,,,M-9,,,active,,,employee
+EMP0111,FFL,1474,HASEEB HAYAT,,,M-9,,,active,,,employee
+EMP0112,FFL,1479,MUHAMMAD ARSLAN RAUF,,,M-10,,,active,,,employee
+EMP0113,FFL,1492,MUZAFFAR HUSSAIN,,,M-9,,,active,,,employee
+EMP0114,FFL,1493,SAAD AHMAD,,,M-10,,,active,,,employee
+EMP0115,FFL,1571,MUHAMMAD SAJID ARSHID,,,M-10,,,active,,,employee
+EMP0116,FFL,1576,HASEEB ASHRAF,,,M-9,,,active,,,employee
+EMP0117,FFL,1579,AAMIR RAFIQUE,,,M-9,,,active,,,employee
+EMP0118,FFL,1580,FAISAL RASHEED,,,M-10,,,active,,,employee
+EMP0119,FFL,1581,Dr. QUDSIA ANDLEEB,,,M-9,,,active,,,employee
+EMP0120,FFL,1584,QASIM IJAZ,,,M-11,,,active,,,admin
+EMP0121,FFL,1588,MUHAMMAD ZEESHAN NASEEM,,,M-12,,,active,,,employee
+EMP0122,FFL,1597,MUDUSSAR SHARIF,,,M-12,,,active,,,employee
+EMP0123,FFL,1602,Dr. JAMIL UR REHMAN,,,M-9,,,active,,,employee
+EMP0124,FFL,1605,SAMIULLAH,,,M-9,,,active,,,employee
+EMP0125,FFL,1610,QADEER AHMED,,,M-9,,,active,,,employee
+EMP0126,FFL,1653,ASGHAR ALI ANJUM,,,MT-1,,,active,,,employee
+EMP0127,FFL,1656,USMAN IFTIKHAR,,,M-9,,,active,,,employee
+EMP0128,FFL,1724,HAMZA AKHTAR,,,M-9,,,active,,,employee
+EMP0129,FFL,1728,MUHAMMAD NASIR ALTAF,,,M-11,,,active,,,employee
+EMP0130,FFL,1740,MUHAMMAD SAIFULLAH,,,MT-2,,,active,,,employee
+EMP0131,FFL,1774,AZM UL HAQ,,,M-9,,,active,,,employee
+EMP0132,FFL,1801,SALMAN SARWAR,,,M-9,,,active,,,employee
+EMP0133,FFL,1802,MUNEEB SEYAL,,,M-8,,,active,,,employee
+EMP0134,FFL,1804,MUHAMMAD UMAR,,,M-9,,,active,,,employee
+EMP0135,FFL,1805,FARMAN JAVAID,,,M-10,,,active,,,employee
+EMP0136,FFL,1884,UMAR FAROOQ,,,M-10,,,active,,,employee
+EMP0137,FFL,1980,ABDUL REHMAN,,,M-8,,,active,,,employee
+EMP0138,FFL,1981,UZAIR ASHRAF,,,M-8,,,active,,,employee
+EMP0139,FFL,2051,SYED HUSSAIN MANZOOR,,,M-8,,,active,,,employee
+EMP0140,FFL,2054,MUBEEN MUKHTAR,,,M-9,,,active,,,employee
+EMP0141,FFL,2056,MUHAMMAD FAISAL HAYAT,,,M-10,,,active,,,employee
+EMP0142,FFL,2061,SHAHID SALEEM,,,MT-1,,,active,,,employee
+EMP0143,FFL,2082,TAHIR SALEEM,,,M-8,,,active,,,employee
+EMP0144,FFL,2083,ARSLAN ISLAM,,,M-8,,,active,,,employee
+EMP0145,FFL,2086,ANAS JAVED,,,M-8,,,active,,,employee
+EMP0146,FFL,2104,MUHAMMAD TALHA,,,M-8,,,active,,,employee
+EMP0147,FFL,2105,MUHAMMAD USMAN KHALID,,,M-8,,,active,,,employee
+EMP0148,FFL,2114,SYED NASEEM QADRI,,,MT-3,,,active,,,employee
+EMP0149,FFL,2116,ABDUL WASEY KHAN NAIZI,,,M-8,,,active,,,employee
+EMP0150,FFL,2188,MUSADAQ BASHIR,,,M-9,,,active,,,employee
+EMP0151,FFL,2204,FAWAD UR REHMAN,,,M-9,,,active,,,employee
+EMP0152,FFL,2229,MAJID MOEEN SABRI,,,M-8,,,active,,,employee
+EMP0153,FFL,2230,Abdul Munam Khan,,,M-8,,,active,,,employee
+EMP0154,FFL,2393,LIAQUT ALI,,,M-11,,,active,,,employee
+EMP0155,FFL,2403,MUHAMMAD SULEMAN TARIQ,,,M-7,,,active,,,employee
+EMP0156,FFL,2435,TAIMOOR ASIF,,,M-8,,,active,,,employee
+EMP0157,FFL,2451,SYED WAQAS ALI SHAH,,,M-8,,,active,,,employee
+EMP0158,FFL,2534,MUHAMMAD NAVEED ,,,M-2,,,active,,,employee
+EMP0159,FFL,2540,M.KHALID IQBAL GONDAL,,,MT-1,,,active,,,employee
+EMP0160,FFL,2573,EHTISHAM MAQSOOD,,,M-6,,,active,,,employee
+EMP0161,FFL,2595,AATIKA RIZWAN,,,M-7,,,active,,,employee
+EMP0162,FFL,2627,MUHAMMAD HAMZA ASHRAF,,,M-7,,,active,,,employee
+EMP0163,FFL,2629,MUHAMMAD IQBAL AWAIS,,,M-8,,,active,,,employee
+EMP0164,FFL,2692,MAIN ABDUL GHAFFAR,,,MT-1,,,active,,,employee
+EMP0165,FFL,2700,AFAQ,,,M-7,,,active,,,employee
+EMP0166,FFL,2715,Nowsherwan Mazari,,,M-7,,,active,,,employee
+EMP0167,FFL,2726,Junaid Mehboob,,,M-6,,,active,,,employee
+EMP0168,FFL,2729,Ahmad Raza,,,M-6,,,active,,,employee
+EMP0169,FFL,2734,Muhammad Uzair Asif,,,M-6,,,active,,,employee
+EMP0170,FFL,2735,Syed Murtaza Ali Rizvi,,,M-6,,,active,,,employee
+EMP0171,FFL,2743,Muhammad Shumas Riaz,,,M-6,,,active,,,employee
+EMP0172,FFL,2766,Sudais Abdurrehman,,,M-6,,,active,,,employee
+EMP0173,FFL,2781,Hassan Raza,,,M-6,,,active,,,employee
+EMP0174,FFL,2783,Muhammad Jalal Khan,,,M-6,,,active,,,employee
+EMP0175,FFL,2793,Muhammad Zeeshan Khadim,,,M-8,,,active,,,employee
+EMP0176,FFL,2808,Farrukh Hussain,,,M-9,,,active,,,employee
+EMP0177,FFL,2816,Faisal Dilbagh,,,M-9,,,active,,,employee
+EMP0178,FFL,2819,Muzamil Ahmad Khan,,,M-9,,,active,,,employee
+EMP0179,FFL,2820,Umair Shoukat,,,M-8,,,active,,,employee
+EMP0180,FFL,2824,Muhammad Huzaifah,,,M-8,,,active,,,employee
+EMP0181,FFL,2912,Muhammad Tahir Ch,,,M-10,,,active,,,employee
+EMP0182,FFL,2929,MUHAMMAD HARIS ALI SIDDIQUI,,,M-6,,,active,,,employee
+EMP0183,FFL,2931,ABDUL QAYYUM,,,M-6,,,active,,,employee
+EMP0184,FFL,2932,MUHAMMAD IMRAN,,,M-6,,,active,,,employee
+EMP0185,FFL,2933,SALMAN AMJAD,,,M-6,,,active,,,employee
+EMP0186,FFL,2937,HAYATTAN SATTAR,,,M-6,,,active,,,employee
+EMP0187,FFL,2942,MUHSMMSD NAVEED AKHTAR,,,M-6,,,active,,,employee
+EMP0188,FFL,2947,HUMAIRA ZULFIQAR,,,M-6,,,active,,,employee
+EMP0189,FFL,2954,MUHAMMAD GHULAM MUHAYY UD DIN,,,M-6,,,active,,,employee
+EMP0190,FFL,2963,EMAN ASMAT,,,M-6,,,active,,,employee
+EMP0191,FFL,2983,HAFIZ MUHAMMAD RASHID,,,M-9,,,active,,,employee
+EMP0192,FFL,2984,KHALID NAWAZ,,,M-9,,,active,,,employee
+EMP0193,FFL,3003,MUHAMMAD AHMAD,,,M-7,,,active,,,employee
+EMP0194,FFL,3009,WAIS MUJEEB ARJUMAND,,,M-8,,,active,,,employee
+EMP0195,FFL,3072,URWA Ali,,,M-8,,,active,,,employee
+EMP0196,FFL,3080,Lt. Col (R) Muhammad Raihan Akhtar,,,M-10,,,active,,,employee
+EMP0197,OSL,7,UMAR RIAZ,,,M-11,,,active,,,employee
+EMP0198,OSL,8,RAJA GHAZANFAR ANSARI,,,M-10,,,active,,,developer
+EMP0199,OSL,12,ABDUL GHAFFAR,,,M-10,,,active,,,employee
+EMP0200,OSL,37,SHERAZ MANZOOR ALVI,,,M-8,,,active,,,employee
+EMP0201,OSL,47,HAFIZ SAKHAWAT ALI,,,M-7,,,active,,,employee
+EMP0202,OSL,62,ASIF NAYAB,,,M-8,,,active,,,employee
+EMP0203,OSL,71,Muhammad Tariq,,,M-5,,,active,,,employee
+EMP0204,OSL,83,Muhammad Salahuddin,,,M-9,,,active,,,employee
+EMP0205,OSL,96,Amir Khan,,,M-6,,,active,,,employee
+EMP0206,FFL,3112,SYED NOMUAN SHAH,,,M-6,,,active,,,employee
+EMP0207,FFL,3113,SHAHMIR GOHAR,,,M-6,,,active,,,employee
+EMP0208,FFL,3118,SALMAN ZAHID,,,M-6,,,active,,,employee
+EMP0209,FFL,3120,MUHAMMAD ABDUL HASEEB,,,M-6,,,active,,,employee
+EMP0210,FFL,3123,HANZLA ARSHAD,,,M-6,,,active,,,employee
+EMP0211,FFL,3125,MUHAMMAD ALI ABDULLAH,,,M-6,,,active,,,employee
+EMP0212,FFL,3131,ARSLAN SHAHZAD KHAN,,,M-6,,,active,,,employee
+EMP0213,FFL,3134,MUHAMMAD ZAIN RAZA,,,M-6,,,active,,,employee
+EMP0214,FFL,3135,MOHSIN ALI,,,M-6,,,active,,,employee
+EMP0215,FFL,3152,Hafsa Rahmeen,,,M-7,,,active,,,employee
+EMP0216,FFL,3153,Muhammad Qasim Bilal,,,M-7,,,active,,,employee
+EMP0217,FFL,3167,NAMRA JABBAR,,,M-6,,,active,,,employee
+EMP0218,FFL,3168,BRIG. (R) OBAID ULLAH ANWAR,,,M-12,,,active,,,employee
+EMP0219,FFL,3171,Somia Mehar,,,M-6,,,active,,,employee
+EMP0220,FFL,3173,Shahdev,,,M-7,,,active,,,employee
+EMP0221,FFL,3174,Qurat Ul Ain,,,M-8,,,active,,,employee
+EMP0222,FFL,3179,HAFIZ MUHAMMAD WAQAS,,,M-8,,,active,,,employee
+EMP0223,FFL,3187,WAJID ISHAQ BHATTI,,,M-13,,,active,,,employee
+EMP0224,FFL,3282,MUHAMMAD AWAIS NAWAZ,,,M-9,,,active,,,employee
+EMP0225,FFL,3317,HAFIZ MUHAMMAD ZEESHAN WASI,,,M-11,,,active,,,employee
+EMP0226,FFL,3319,Lt. Col. ® NASIR BASHIR,,,M-11,,,active,,,employee
+EMP0227,FFL,3321,SHAKOOR AHMED,,,M-7,,,active,,,employee
+EMP0228,FFL,3328,ABDUL HASEEB,,,M-6,,,active,,,employee
+EMP0229,FFL,3330,ABDUL REHMAN HAFEEZ,,,M-7,,,active,,,employee
+EMP0230,FFL,3338,ABDUL REHMAN MINHAS,,,M-8,,,active,,,employee
+EMP0231,ESB,5096,Samreen Adnan,,HM,,,,active,,,employee
+EMP0232,ESB,5143,Intikhab Alam,,Principal,,,,active,,,employee
+EMP0233,ESB,5159,Syed Salman Ahmed,,Sr. Teacher-I,,,,active,,,employee
+EMP0234,ESB,5019,Muhammad Baber Munir,,Sr.Teacher-II,,,,active,,,employee
+EMP0235,ESB,5021,Sofia Tasneem,,Sr.Teacher-II,,,,active,,,employee
+EMP0236,ESB,5023,Ruqia Rasul,,Sr.Teacher-II,,,,active,,,employee
+EMP0237,ESB,5031,Ammara Raza,,Sr.Teacher-II,,,,active,,,employee
+EMP0238,ESB,5037,Sajida Khalid,,Sr.Teacher-II,,,,active,,,employee
+EMP0239,ESB,5042,Uzma Imran,,Sr.Teacher-II,,,,active,,,employee
+EMP0240,ESB,5049,Amber John,,Sr.Teacher-II,,,,active,,,employee
+EMP0241,ESB,5055,Fatima Jabeen,,Sr.Teacher-II,,,,active,,,employee
+EMP0242,ESB,5072,Rabia Aman,,Sr.Teacher-II,,,,active,,,employee
+EMP0243,ESB,5076,Fareed Anwar Malik,,Sr.Teacher-II,,,,active,,,employee
+EMP0244,ESB,5077,Asma Latif,,Sr.Teacher-II,,,,active,,,employee
+EMP0245,ESB,5078,Sadia Hina,,Sr.Teacher-II,,,,active,,,employee
+EMP0246,ESB,5083,Aziz Ur Rehman,,Sr.Teacher-II,,,,active,,,employee
+EMP0247,ESB,5085,Iram Saba,,Sr.Teacher-II,,,,active,,,employee
+EMP0248,ESB,5107,Syed Alamdar Hussain Naqvi,,Sr.Teacher-II,,,,active,,,employee
+EMP0249,ESB,5035,Shabana Kausar,,Sr.Teacher-III,,,,active,,,employee
+EMP0250,ESB,5041,Hina Asrar,,Sr.Teacher-III,,,,active,,,employee
+EMP0251,ESB,5044,Sadia Rizwan,,Sr.Teacher-III,,,,active,,,employee
+EMP0252,ESB,5045,Fatima Rabia,,Sr.Teacher-III,,,,active,,,employee
+EMP0253,ESB,5050,Imran Hasnain,,Sr.Teacher-III,,,,active,,,employee
+EMP0254,ESB,5087,Asifa Naz Khan ,,Sr.Teacher-III,,,,active,,,employee
+EMP0255,ESB,5089,Muhammad Shahid Habib,,Sr.Teacher-III,,,,active,,,employee
+EMP0256,ESB,5090,Rana Jang Sher,,Sr.Teacher-III,,,,active,,,employee
+EMP0257,ESB,5121,Kashif Iqbal Siddiqui,,Sr.Teacher-III,,,,active,,,employee
+EMP0258,ESB,5150,Nomeeta Zainab Sultan,,Sr.Teacher-III,,,,active,,,employee
+EMP0259,ESB,5168,Abdul Waheed,,Teacher I,,,,active,,,employee
+EMP0260,ESB,5169,Hira Afzal,,Teacher I,,,,active,,,employee
+EMP0261,ESB,5166,KINZA MUSHATQ,,Teacher II,,,,active,,,employee
+EMP0262,ESB,5052,Sadia Anwar,,Teacher-I,,,,active,,,employee
+EMP0263,ESB,5062,Zafar Hayat,,Teacher-I,,,,active,,,employee
+EMP0264,ESB,5063,Aysha Raza,,Teacher-I,,,,active,,,employee
+EMP0265,ESB,5079,Shehnila Gul,,Teacher-I,,,,active,,,employee
+EMP0266,ESB,5080,Alina Fahad,,Teacher-I,,,,active,,,employee
+EMP0267,ESB,5081,Atia Kalsoom,,Teacher-I,,,,active,,,employee
+EMP0268,ESB,5088,Sajida Bibi,,Teacher-I,,,,active,,,employee
+EMP0269,ESB,5093,Khush Bakht,,Teacher-I,,,,active,,,employee
+EMP0270,ESB,5094,Sumaira Humayun,,Teacher-I,,,,active,,,employee
+EMP0271,ESB,5097,Hafiz Waqas Rauf,,Teacher-I,,,,active,,,employee
+EMP0272,ESB,5098,Afra Shahzadi,,Teacher-I,,,,active,,,employee
+EMP0273,ESB,5103,Syeda Rahiba Kazim,,Teacher-I,,,,active,,,employee
+EMP0274,ESB,5112,Saira Ashraf,,Teacher-I,,,,active,,,employee
+EMP0275,ESB,5113,Azra,,Teacher-I,,,,active,,,employee
+EMP0276,ESB,5118,Tahira Anjum,,Teacher-I,,,,active,,,employee
+EMP0277,ESB,5122,Sanaullah Khan,,Teacher-I,,,,active,,,employee
+EMP0278,ESB,5131,Aroma Khan ,,Trainee Teacher,,,,active,,,employee
+EMP0279,ESB,5132,Maimoona Zafar,,Trainee Teacher,,,,active,,,employee
+EMP0280,ESB,5127,Sumaira Khanam,,Teacher-I,,,,active,,,employee
+EMP0281,ESB,5151,Faisal Mehmood,,Teacher-I,,,,active,,,employee
+EMP0282,ESB,5139,Warda Sundas ,,Contract Teacher,,,,active,,,employee
+EMP0283,ESB,5140,Mrs.Shazia ,,Contract Teacher,,,,active,,,employee
+EMP0284,ESB,5142,Fizza Zulfiqar,,Trainee Teacher,,,,active,,,employee
+EMP0285,ESB,5164,Mr.Umair Iqbal,,Teacher-I,,,,active,,,employee
+EMP0286,ESB,5144,Saddam Hussain,,Contract Teacher,,,,active,,,employee
+EMP0287,ESB,5145,Kiran Mushtaq,,Contract Teacher,,,,active,,,employee
+EMP0288,ESB,5146,Rabia Maqsood,,Contract Teacher,,,,active,,,employee
+EMP0289,ESB,5147,Muhammad Amjad,,Contract Teacher,,,,active,,,employee
+EMP0290,ESB,5148,Nida Awnar,,Contract Teacher,,,,active,,,employee
+EMP0291,ESB,5149,Ruqaiya ,,Contract Teacher,,,,active,,,employee
+EMP0292,ESB,5105,Muniba Muhammad Ali,,Teacher-II,,,,active,,,employee
+EMP0293,ESB,5116,Noor Ul Ain Khakwani,,Teacher-II,,,,active,,,employee
+EMP0294,ESB,5152,Qari Saeed Ur Rehman,,Contract Teacher,,,,active,,,employee
+EMP0295,ESB,5153,Rizwana Farrukh,,Contract Teacher,,,,active,,,employee
+EMP0296,ESB,5154,Maheen Shafiq,,Contract Teacher,,,,active,,,employee
+EMP0297,ESB,5155,Miss Tooba Ahmed,,Contract Teacher,,,,active,,,employee
+EMP0298,ESB,5156,Sehrish Rasheed,,Contract Teacher,,,,active,,,employee
+EMP0299,ESB,5157,Nadia Nazir,,Contract Teacher,,,,active,,,employee
+EMP0300,ESB,5158,Mehwash Imran,,Contract Teacher,,,,active,,,employee
+EMP0301,ESB,5124,Romila Jacob,,Teacher-II,,,,active,,,employee
+EMP0302,ESB,5130,Sadia Noreen,,Teacher-II,,,,active,,,employee
+EMP0303,ESB,5163,Sana Fatima,,Trainee Teacher,,,,active,,,employee
+EMP0304,ESB,5117,Ambreen Zaheer,,Teacher-III,,,,active,,,employee
+EMP0305,ESB,5137,Farkhar-Un-Nisa Atiq,,Teacher-III,,,,active,,,employee
+EMP0306,ESB,5138,Nisha Safdar,,Teacher-III,,,,active,,,employee
+EMP0307,ESB,5167,GHULAM KABIR KHAN,,Contract Teacher,,,,active,,,employee
+EMP0308,ESB,5161,Miss Maria Mehmood,,Teacher-III,,,,active,,,employee
+EMP0309,ESB,5073,Ghazanfar Iqbal,,Vice Principal,,,,active,,,employee
+EMP0310,ESB,5170,Eman Muqaddus,,Contract Teacher,,,,active,,,employee
+EMP0311,ESB,5171,Anoosha Nadeem,,Contract Teacher,,,,active,,,employee

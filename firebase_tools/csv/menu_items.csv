@@ -1,0 +1,93 @@
+docId,active,name,estimated_price
+ITEM001,true,Lahori Chicken Channay,10
+ITEM002,true,Chicken White Qorma,20
+ITEM003,true,Anda alu bhujiya,30
+ITEM004,true,Chicken Nihari,50
+ITEM005,true,Aloo Kutli Zeera,51
+ITEM006,true,Mix vegetables,52
+ITEM007,true,Beef Karahi,53
+ITEM008,true,Chicken Degi Quorma,54
+ITEM009,true,Chicken Kofta,55
+ITEM010,true,Chicken Balochi Karahi,56
+ITEM011,true,Masoor Daal,57
+ITEM012,true,Kadhi Pakora,58
+ITEM013,true,Plain Channay,59
+ITEM014,true,Beef Paye,60
+ITEM015,true,Daal Makhani,61
+ITEM016,true,Sarson Saag,62
+ITEM017,true,Chicken shaljam,63
+ITEM018,true,Matar Chicken,64
+ITEM019,true,Beef Haleem,65
+ITEM020,true,Mutton Kunna,66
+ITEM021,true,Hareesa,67
+ITEM022,true,Beef Bong Nihari,68
+ITEM023,true,Chicken Hari Mirch Karahi,69
+ITEM024,true,Mutton Paye,70
+ITEM025,true,Chicken Haleem,71
+ITEM026,true,Chicken Handi,72
+ITEM027,true,Beef Kabli Pullao,73
+ITEM028,true,Zeera Rice,74
+ITEM029,true,Matar Pulao,75
+ITEM030,true,Gur Rice,76
+ITEM031,true,Plain Rice,77
+ITEM032,true,Mutanjan,78
+ITEM033,true,Chicken smoky Biryani,79
+ITEM034,true,Chicken sindhi Biryani,80
+ITEM035,true,Alu Cutlet,81
+ITEM036,true,Shami Kabab,82
+ITEM037,true,Pathora Channa,83
+ITEM038,true,Spanish Omelette,84
+ITEM039,true,French Toast,85
+ITEM040,true,Scrambled Egg,86
+ITEM041,true,Regular Omelette,87
+ITEM042,true,Boiled Egg,88
+ITEM043,true,Fried Egg,89
+ITEM044,true,Bread Slice,90
+ITEM045,true,Russian Salad,91
+ITEM046,true,Potato Salad,92
+ITEM047,true,Cesar Salad,93
+ITEM048,true,Bean Salad,94
+ITEM049,true,Kachumar Salad,95
+ITEM050,true,Grean Salad,96
+ITEM051,true,Mexican Salad,97
+ITEM052,true,Lentil Salad,98
+ITEM053,true,Plain Yogurt,99
+ITEM054,true,Raita,100
+ITEM055,true,BBQ Sauce,101
+ITEM056,true,Plum Sauce,102
+ITEM057,true,Fried Finger Fish,103
+ITEM058,true,Fried Fish (Lahori),104
+ITEM059,true,Grill Fish,105
+ITEM060,true,Chicken Steam Roast,106
+ITEM061,true,Gola Kabab,107
+ITEM062,true,Turkish Kabab,108
+ITEM063,true,Chicken Reshmi Kabab,109
+ITEM064,true,Chicken Tikka,110
+ITEM065,true,Chicken Tawa Piece,111
+ITEM066,true,Latte (Machine Made),112
+ITEM067,true,Cappucino (Machine Made),113
+ITEM068,true,Black Coffee (Machine Made),114
+ITEM069,true,Cardimom Tea (Nescafe),115
+ITEM070,true,Mix Tea,116
+ITEM071,true,Separate Tea,117
+ITEM072,true,Green Tea,118
+ITEM073,true,Qahva,119
+ITEM074,true,Black Coffee,120
+ITEM075,true,Cappucino,121
+ITEM076,true, Sweet  Lassi,122
+ITEM077,true,Salted Lassi,123
+ITEM078,true,Aaloo Puratha,124
+ITEM079,true,Mooli Puratha,125
+ITEM080,true,Chicken Puratha,126
+ITEM081,true,Plain Puratha,127
+ITEM082,true,Roti,128
+ITEM083,true,Makai Roti,129
+ITEM084,true,Plain Naan,130
+ITEM085,true,Roghni Naan,131
+ITEM086,true,Kalvanji Naan,132
+ITEM087,true,Garlic naan,133
+ITEM088,true,Chicken Naan,134
+ITEM089,true,Aaloo Naan,135
+ITEM090,true,Cheese Naan,136
+ITEM091,true,Whole Bread Naan,137
+ITEM092,true,Halwa Puri,138
