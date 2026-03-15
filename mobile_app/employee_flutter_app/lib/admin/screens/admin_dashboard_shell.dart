@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../main.dart';
+import 'active_menu_preview_screen.dart';
 import 'bulk_upload_screen.dart';
 import 'dashboard_screen.dart';
 import 'menu_cycle_management_screen.dart';
@@ -47,6 +48,11 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       icon: Icons.schedule_outlined,
     ),
     _AdminSection(
+      title: 'Active Menu Preview',
+      subtitle: 'View the consolidated resolved menu for any selected date',
+      icon: Icons.visibility_outlined,
+    ),
+    _AdminSection(
       title: 'Bulk Upload',
       subtitle: 'Upload menu items and master data in bulk',
       icon: Icons.upload_file_outlined,
@@ -83,8 +89,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       case 4:
         return MenuCycleManagementScreen(userEmail: userEmail);
       case 5:
-        return BulkUploadScreen(userEmail: userEmail);
+        return ActiveMenuPreviewScreen(userEmail: userEmail);
       case 6:
+        return BulkUploadScreen(userEmail: userEmail);
+      case 7:
         return ReportsScreen(userEmail: userEmail);
       default:
         return DashboardScreen(userEmail: userEmail);

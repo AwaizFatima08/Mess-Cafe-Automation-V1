@@ -260,3 +260,66 @@ The platform will gradually evolve from a **mess automation tool** into a **full
 - inventory
 - financial billing
 - operational analytics
+
+# Mess & Café Automation V1 — Project Command Board Status
+## Update: 16-Mar-2026
+
+### Milestone Reached
+Menu Engine Upgrade and Admin Review Controls completed.
+
+### Completed Today
+- Upgraded weekly menu template structure from plain item ID arrays to structured entries:
+  - `item_id`
+  - `item_mode`
+- Updated `menu_resolver_service.dart` to support:
+  - old weekly template format
+  - new weekly template format
+  - old menu cycle field names
+  - new menu cycle field names
+- Weekly Menu Templates screen upgraded:
+  - Create / Edit tab added
+  - Saved Templates tab added
+  - Edit existing templates working
+  - Activate / deactivate templates working
+  - Floating scroll buttons added and working
+- Menu Cycle Management screen upgraded:
+  - Create / Edit tab added
+  - Saved Cycles tab added
+  - Review existing cycles working
+  - Edit existing cycles working
+  - Activate / deactivate cycle working
+- Active Menu Preview screen added to admin dashboard
+- Consolidated preview now shows:
+  - Breakfast
+  - Lunch Combo 1
+  - Lunch Combo 2
+  - Dinner Combo 1
+  - Dinner Combo 2
+
+### Current Stable State
+Admin-side menu foundation is now operational end-to-end:
+- menu items
+- weekly templates
+- menu cycles
+- resolver
+- active menu preview
+
+### Remaining Next Priorities
+1. Add compact daily summary preview for saved templates
+2. Add compact preview for saved menu cycles
+3. Improve debug-session stability / observe disconnect behavior
+4. Begin employee-facing "Today's Menu" screen
+5. Start reservation engine after employee menu is visible
+
+### Important Architecture Notes
+- `item_mode` is stored in weekly template entries, not in `menu_items`
+- cycle field naming standard going forward:
+  - `breakfast_template_id`
+  - `lunch_combo_1_template_id`
+  - `lunch_combo_2_template_id`
+  - `dinner_combo_1_template_id`
+  - `dinner_combo_2_template_id`
+- backward compatibility retained in resolver for earlier saved cycles/templates
+
+### Current Package Name
+`com.fatimafertilizer.employee_flutter_app`
