@@ -323,3 +323,284 @@ Admin-side menu foundation is now operational end-to-end:
 
 ### Current Package Name
 `com.fatimafertilizer.employee_flutter_app`
+Last Updated
+
+16-Mar-2026
+
+Developer
+
+Dr. Humayun Shahzad
+
+Current Milestone
+
+Milestone 4 — Access Control + Employee Booking Foundation
+
+Status: Completed
+
+System Architecture Status
+Authentication Layer
+
+Implemented
+
+Technology:
+
+Firebase Authentication
+
+Entry point:
+
+lib/main.dart
+
+Flow:
+
+LoginScreen
+↓
+UserProfileService
+↓
+Firestore users collection
+↓
+Role-based routing
+
+Routing implemented:
+
+admin / developer / mess_manager
+        ↓
+AdminDashboardShell
+
+employee / mess_supervisor / unknown
+        ↓
+EmployeeDashboardShell
+Access Control Layer
+
+Firestore Collection:
+
+users
+
+Purpose:
+
+login identity
+role management
+employee linkage
+account activation control
+
+Supported roles:
+
+developer
+admin
+mess_manager
+mess_supervisor
+employee
+
+UI Management Screen:
+
+Admin → User Access Management
+lib/admin/screens/user_management_screen.dart
+
+Features:
+
+create user
+
+edit role
+
+activate/deactivate
+
+employee linking
+
+employee lookup from employees collection
+
+Organizational Master Data
+
+Firestore Collection:
+
+employees
+
+Purpose:
+
+employee identity
+department linkage
+future billing reference
+supervisor relationships
+
+UI Viewer:
+
+Admin → Employee Management
+Menu Engine
+
+Architecture implemented:
+
+menu_items
+↓
+weekly_menu_templates
+↓
+menu_cycles
+↓
+MenuResolverService
+↓
+DailyResolvedMenu
+
+Service:
+
+lib/admin/services/menu_resolver_service.dart
+
+Capabilities:
+
+resolve active menu for any date
+
+convert menu to booking-ready structure
+
+Reservation Engine
+
+Firestore Collections:
+
+meal_reservations
+reservation_settings
+
+Service:
+
+lib/services/meal_reservation_service.dart
+
+Capabilities:
+
+employee booking
+
+official guest booking
+
+multiple meal booking
+
+combo selection
+
+dine-in / takeaway selection
+
+reservation validation
+
+reservation cancellation
+
+headcount aggregation
+
+Employee Application Layer
+
+Employee navigation shell:
+
+lib/employee/screens/employee_dashboard_shell.dart
+
+Dashboard screen:
+
+lib/employee/screens/employee_dashboard_screen.dart
+
+Booking screen:
+
+lib/employee/screens/today_menu_screen.dart
+
+Capabilities implemented:
+
+load today's resolved menu
+
+breakfast / lunch / dinner display
+
+combo option selection
+
+quantity selection
+
+dine-in / takeaway selection
+
+reservation validation
+
+save reservation
+
+load existing reservation
+
+Admin Application Layer
+
+Admin shell:
+
+lib/admin/screens/admin_dashboard_shell.dart
+
+Modules currently available:
+
+Dashboard
+Menu Management
+User Management
+Weekly Menu Templates
+Menu Cycles
+Active Menu Preview
+Bulk Upload
+Reports
+Codebase Status
+
+Flutter analyzer:
+
+flutter analyze
+→ No issues found
+
+Codebase currently clean and stable.
+
+Dart File Inventory (Core)
+Entry
+lib/main.dart
+Services
+lib/services/meal_reservation_service.dart
+lib/services/user_profile_service.dart
+lib/services/employee_identity_service.dart
+Models
+lib/models/meal_option_selection.dart
+lib/models/meal_booking_request.dart
+lib/models/meal_reservation.dart
+lib/models/reservation_settings.dart
+lib/models/resolved_meal_option.dart
+lib/models/daily_resolved_menu.dart
+Employee UI
+lib/employee/screens/employee_dashboard_shell.dart
+lib/employee/screens/employee_dashboard_screen.dart
+lib/employee/screens/today_menu_screen.dart
+Admin UI
+lib/admin/screens/admin_dashboard_shell.dart
+lib/admin/screens/dashboard_screen.dart
+lib/admin/screens/user_management_screen.dart
+lib/admin/screens/menu_management_screen.dart
+lib/admin/screens/menu_cycle_management_screen.dart
+lib/admin/screens/weekly_menu_template_screen.dart
+lib/admin/screens/active_menu_preview_screen.dart
+lib/admin/screens/bulk_upload_screen.dart
+lib/admin/screens/reports_screen.dart
+System Stability Status
+
+Current system is:
+
+Analyzer clean
+Build stable
+Firebase integration working
+Role-based routing implemented
+Employee booking engine integrated
+
+Ready for operational expansion.
+
+Next Development Target
+Step 34 — Mess Operations Dashboard
+
+Purpose:
+
+Provide real-time kitchen planning dashboard.
+
+Display:
+
+Breakfast headcount
+Lunch headcount
+Dinner headcount
+
+Split into:
+
+Employee dine-in
+Employee takeaway
+Official guests
+Total
+
+Service to be used:
+
+MealReservationService
+
+Functions:
+
+getTotalHeadCountForDate()
+getEmployeeHeadCountForDateAndMealType()
+getOfficialGuestHeadCountForDateAndMealType()
+getDineInHeadCountForDateAndMealType()
+getTakeawayHeadCountForDateAndMealType()
