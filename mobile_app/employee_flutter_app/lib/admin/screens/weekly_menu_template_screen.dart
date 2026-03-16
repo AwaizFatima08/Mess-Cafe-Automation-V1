@@ -782,7 +782,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen>
                     ? const Center(child: Text('No templates found.'))
                     : ListView.separated(
                         itemCount: filteredDocs.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
                           final doc = filteredDocs[index];
                           final data = doc.data();

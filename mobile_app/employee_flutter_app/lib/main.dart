@@ -1,8 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+
 import 'admin/screens/admin_dashboard_shell.dart';
+import 'employee/screens/employee_dashboard_shell.dart';
+import 'services/user_profile_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,23 +35,70 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController(text: 'testmanager@ffc.local');
   final passwordController = TextEditingController(text: 'Test@12345');
+  final UserProfileService _userProfileService = UserProfileService();
 
   String message = 'Sign in to continue';
+  bool isLoading = false;
 
   Future<void> login() async {
+    setState(() {
+      isLoading = true;
+      message = 'Signing in...';
+    });
+
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const AdminDashboardShell()),
+      final authUser = credential.user;
+      final email = authUser?.email ?? emailController.text.trim();
+      final uid = authUser?.uid;
+
+      final profile = await _userProfileService.resolveCurrentUserProfile(
+        userEmail: email,
+        authUid: uid,
       );
+
+      if (!mounted) return;
+
+      if (profile != null && !profile.isActive) {
+        await FirebaseAuth.instance.signOut();
+
+        setState(() {
+          isLoading = false;
+          message = 'This account is inactive. Please contact admin.';
+        });
+        return;
+      }
+
+      final resolvedRole = profile?.role ?? AppUserRole.employee;
+
+      switch (resolvedRole) {
+        case AppUserRole.developer:
+        case AppUserRole.admin:
+        case AppUserRole.messManager:
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminDashboardShell()),
+          );
+          break;
+
+        case AppUserRole.messSupervisor:
+        case AppUserRole.employee:
+        case AppUserRole.unknown:
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const EmployeeDashboardShell()),
+          );
+          break;
+      }
     } catch (e) {
+      if (!mounted) return;
+
       setState(() {
+        isLoading = false;
         message = 'Login error: $e';
       });
     }
@@ -63,168 +112,46 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: login,
-                child: const Text('Login'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  Future<List<Map<String, dynamic>>> loadBreakfastMenu() async {
-    final dailyMenuDoc = await FirebaseFirestore.instance
-        .collection('daily_menus')
-        .doc('2026-03-15')
-        .get();
-
-    final dailyMenuData = dailyMenuDoc.data();
-    if (dailyMenuData == null) return [];
-
-    final breakfastItemIds =
-        List<String>.from(dailyMenuData['breakfast_items'] ?? []);
-
-    final List<Map<String, dynamic>> breakfastItems = [];
-
-    for (final itemId in breakfastItemIds) {
-      final itemDoc = await FirebaseFirestore.instance
-          .collection('menu_items')
-          .doc(itemId)
-          .get();
-
-      final itemData = itemDoc.data();
-      if (itemData != null) {
-        breakfastItems.add({
-          'id': itemId,
-          'name': itemData['name'] ?? itemId,
-          'category': itemData['category'] ?? '',
-          'veg': itemData['veg'] ?? false,
-        });
-      }
-    }
-
-    return breakfastItems;
-  }
-
-  Future<void> logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    if (!context.mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Today Menu'),
-        actions: [
-          IconButton(
-            onPressed: () => logout(context),
-            icon: const Icon(Icons.logout),
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: loadBreakfastMenu(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  'Error loading menu: ${snapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-
-          final breakfastItems = snapshot.data ?? [];
-
-          if (breakfastItems.isEmpty) {
-            return const Center(
-              child: Text('No breakfast menu found for 2026-03-15'),
-            );
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(20),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'Logged in as: ${user?.email ?? "Unknown"}',
+                  message,
+                  textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Breakfast Menu',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+                TextField(
+                  controller: emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Email',
+                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 16),
-                ...breakfastItems.map(
-                  (item) => Card(
-                    child: ListTile(
-                      title: Text(item['name']),
-                      subtitle: Text('ID: ${item['id']}'),
-                      trailing: Icon(
-                        item['veg'] == true
-                            ? Icons.eco
-                            : Icons.restaurant,
-                      ),
-                    ),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: isLoading ? null : login,
+                    child: Text(isLoading ? 'Logging in...' : 'Login'),
                   ),
                 ),
               ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }

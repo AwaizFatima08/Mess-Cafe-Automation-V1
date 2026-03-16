@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../models/daily_resolved_menu.dart';
+import '../../models/resolved_meal_option.dart';
+
 class MenuResolverService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -36,22 +39,26 @@ class MenuResolverService {
     );
 
     final lunchCombo1 = await _resolveTemplateItems(
-      cycleData['lunch_combo_1_template_id'] ?? cycleData['lunch_combo1_template_id'],
+      cycleData['lunch_combo_1_template_id'] ??
+          cycleData['lunch_combo1_template_id'],
       weekday,
     );
 
     final lunchCombo2 = await _resolveTemplateItems(
-      cycleData['lunch_combo_2_template_id'] ?? cycleData['lunch_combo2_template_id'],
+      cycleData['lunch_combo_2_template_id'] ??
+          cycleData['lunch_combo2_template_id'],
       weekday,
     );
 
     final dinnerCombo1 = await _resolveTemplateItems(
-      cycleData['dinner_combo_1_template_id'] ?? cycleData['dinner_combo1_template_id'],
+      cycleData['dinner_combo_1_template_id'] ??
+          cycleData['dinner_combo1_template_id'],
       weekday,
     );
 
     final dinnerCombo2 = await _resolveTemplateItems(
-      cycleData['dinner_combo_2_template_id'] ?? cycleData['dinner_combo2_template_id'],
+      cycleData['dinner_combo_2_template_id'] ??
+          cycleData['dinner_combo2_template_id'],
       weekday,
     );
 
@@ -66,6 +73,99 @@ class MenuResolverService {
       'dinner_combo_1': dinnerCombo1,
       'dinner_combo_2': dinnerCombo2,
     };
+  }
+
+  Future<DailyResolvedMenu?> getBookingMenuForDate(DateTime date) async {
+    final rawMenu = await getMenuForDate(date);
+    if (rawMenu == null) {
+      return null;
+    }
+
+    final weekday = (rawMenu['weekday'] ?? '').toString();
+    final cycleName = (rawMenu['cycle_name'] ?? '').toString();
+
+    final breakfastItems = _castItemList(rawMenu['breakfast']);
+    final lunchCombo1Items = _castItemList(rawMenu['lunch_combo_1']);
+    final lunchCombo2Items = _castItemList(rawMenu['lunch_combo_2']);
+    final dinnerCombo1Items = _castItemList(rawMenu['dinner_combo_1']);
+    final dinnerCombo2Items = _castItemList(rawMenu['dinner_combo_2']);
+
+    final breakfastOptions = <ResolvedMealOption>[];
+    if (breakfastItems.isNotEmpty) {
+      breakfastOptions.add(
+        _buildOption(
+          optionKey: 'breakfast_option_1',
+          optionLabel: 'Breakfast',
+          items: breakfastItems,
+        ),
+      );
+    }
+
+    final lunchOptions = <ResolvedMealOption>[];
+    if (lunchCombo1Items.isNotEmpty) {
+      lunchOptions.add(
+        _buildOption(
+          optionKey: 'lunch_combo_1',
+          optionLabel: 'Lunch Combo 1',
+          items: lunchCombo1Items,
+        ),
+      );
+    }
+    if (lunchCombo2Items.isNotEmpty) {
+      lunchOptions.add(
+        _buildOption(
+          optionKey: 'lunch_combo_2',
+          optionLabel: 'Lunch Combo 2',
+          items: lunchCombo2Items,
+        ),
+      );
+    }
+
+    final dinnerOptions = <ResolvedMealOption>[];
+    if (dinnerCombo1Items.isNotEmpty) {
+      dinnerOptions.add(
+        _buildOption(
+          optionKey: 'dinner_combo_1',
+          optionLabel: 'Dinner Combo 1',
+          items: dinnerCombo1Items,
+        ),
+      );
+    }
+    if (dinnerCombo2Items.isNotEmpty) {
+      dinnerOptions.add(
+        _buildOption(
+          optionKey: 'dinner_combo_2',
+          optionLabel: 'Dinner Combo 2',
+          items: dinnerCombo2Items,
+        ),
+      );
+    }
+
+    return DailyResolvedMenu(
+      weekday: weekday,
+      cycleName: cycleName,
+      breakfastOptions: breakfastOptions,
+      lunchOptions: lunchOptions,
+      dinnerOptions: dinnerOptions,
+    );
+  }
+
+  ResolvedMealOption _buildOption({
+    required String optionKey,
+    required String optionLabel,
+    required List<Map<String, dynamic>> items,
+  }) {
+    return ResolvedMealOption(
+      optionKey: optionKey,
+      optionLabel: optionLabel,
+      items: items,
+    );
+  }
+
+  List<Map<String, dynamic>> _castItemList(dynamic raw) {
+    return ((raw as List?) ?? const []).whereType<Map>().map(
+          (e) => Map<String, dynamic>.from(e),
+        ).toList();
   }
 
   Future<List<Map<String, dynamic>>> _resolveTemplateItems(
@@ -157,9 +257,8 @@ class MenuResolverService {
         });
       } else if (entry is Map) {
         final String itemId = (entry['item_id'] ?? '').toString().trim();
-        final String itemMode = (entry['item_mode'] ?? 'inclusive')
-            .toString()
-            .trim();
+        final String itemMode =
+            (entry['item_mode'] ?? 'inclusive').toString().trim();
 
         if (itemId.isEmpty) continue;
 
