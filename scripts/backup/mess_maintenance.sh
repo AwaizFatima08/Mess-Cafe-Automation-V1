@@ -12,23 +12,14 @@ echo "MESS AUTOMATION DAILY MAINTENANCE START" | tee -a "$LOG_FILE"
 echo "Time: $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
-# 1. Update project status
 echo "Updating project status..." | tee -a "$LOG_FILE"
 bash "$PROJECT_DIR/project_state/scripts/update_project_status.sh" | tee -a "$LOG_FILE"
 
-# 2. Run backup
 echo "Running backup..." | tee -a "$LOG_FILE"
 bash "$PROJECT_DIR/scripts/backup/daily_backup.sh" | tee -a "$LOG_FILE"
 
-# 3. Git push
 echo "Running git push..." | tee -a "$LOG_FILE"
 bash "$PROJECT_DIR/scripts/backup/git_daily_push.sh" | tee -a "$LOG_FILE"
-
-# 4. Run project status updater (if separate)
-if [[ -f "$PROJECT_DIR/project_state/scripts/update_project_status.sh" ]]; then
-  echo "Refreshing project state..." | tee -a "$LOG_FILE"
-  bash "$PROJECT_DIR/project_state/scripts/update_project_status.sh" | tee -a "$LOG_FILE"
-fi
 
 echo "========================================" | tee -a "$LOG_FILE"
 echo "MAINTENANCE COMPLETED" | tee -a "$LOG_FILE"

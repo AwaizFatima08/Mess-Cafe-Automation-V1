@@ -606,17 +606,42 @@ getDineInHeadCountForDateAndMealType()
 getTakeawayHeadCountForDateAndMealType()
 
 ----------------------------------------------------------
-## Update Entry - 18-Mar-2026 00:58
+----------------------------------------------------------
+## Update Entry - 18-Mar-2026 01:05
 
 ### Completed
--
+- Real-tablet runtime validation reviewed
+- Employee self-signup module added to codebase
+- Step 34 dashboard implementation verified in codebase
+- Role policy re-aligned and locked for Developer, Admin, Manager, Supervisor, and Employee
+- Weekly booking policy finalized as rolling next 7 days
+- Employee booking and cancellation cutoff revised to 3 hours before meal start
+- Project maintenance automation baseline created:
+  - archived `project_status.md`
+  - primary live status shifted to `project_command_board_status.md`
+  - `mess_maintenance.sh` created
+  - backup and git automation verified
+- Git commit and remote push completed successfully
+- NAS backups created successfully
 
 ### Ongoing
--
+- Real-world operational refinement of booking workflow
+- Command board consolidation and maintenance workflow hardening
+- Review of user identity linkage and signup permission issues before next coding cycle
 
 ### Next
--
+- Fix employee identity linkage affecting reservation save
+- Fix Firestore permission issue in self-signup flow
+- Enforce finalized role-policy visibility and permissions
+- Implement employee upcoming-date booking workflow
+- Implement rolling next-7-days weekly booking button
+- Implement 3-hour cutoff engine for self-booking and self-cancellation
+- Add optional booking notes field
+- Plan manager/supervisor manual booking workflows
 
 ### Decisions / Risks
--
-
+- `project_command_board_status.md` is the authoritative live project status file
+- `project_status.md` remains archived for backward compatibility only
+- Weekly booking will be available to all employees; no separate hostel classification in V1
+- Manager and Supervisor may manually book meals operationally; they must not cancel employee self-bookings
+- Placeholder auto-updates are useful only as scaffolding; meaningful entries should replace them before closeout
