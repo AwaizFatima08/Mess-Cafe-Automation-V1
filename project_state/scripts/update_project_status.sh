@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_DIR="$HOME/projects/mess_cafe_automation_v1/project_state"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 STATUS_FILE="${1:-$BASE_DIR/project_command_board_status.md}"
 STAMP="$(date '+%d-%b-%Y %H:%M')"
 

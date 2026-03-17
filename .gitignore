@@ -34,3 +34,23 @@ firebase_tools/serviceAccountKey.json
 firebase_tools/node_modules/
 firebase_tools/csv/*_backup*.csv
 firebase_tools/csv/*_live_backup*.csv
+
+# Backup archives
+*.tar.gz
+
+# Local temp/editor files
+*.tmp
+*.swp
+.DS_Store
+
+# Python cache if ever used
+__pycache__/
+*.pyc
+
+# Flutter / Dart generated noise if not already covered
+.dart_tool/
+build/
+
+# Local environment files
+.env
+.env.*
