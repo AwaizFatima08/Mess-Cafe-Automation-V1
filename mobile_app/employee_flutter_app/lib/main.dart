@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'admin/screens/admin_dashboard_shell.dart';
 import 'employee/screens/employee_dashboard_shell.dart';
+import 'employee/screens/employee_signup_screen.dart';
 import 'services/user_profile_service.dart';
 
 Future<void> main() async {
@@ -33,14 +34,31 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final emailController = TextEditingController(text: 'testmanager@ffc.local');
-  final passwordController = TextEditingController(text: 'Test@12345');
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
   final UserProfileService _userProfileService = UserProfileService();
 
   String message = 'Sign in to continue';
   bool isLoading = false;
 
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
   Future<void> login() async {
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        message = 'Please enter email and password.';
+      });
+      return;
+    }
+
     setState(() {
       isLoading = true;
       message = 'Signing in...';
@@ -48,16 +66,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text.trim(),
+        email: email,
+        password: password,
       );
 
       final authUser = credential.user;
-      final email = authUser?.email ?? emailController.text.trim();
+      final resolvedEmail = authUser?.email ?? email;
       final uid = authUser?.uid;
 
       final profile = await _userProfileService.resolveCurrentUserProfile(
-        userEmail: email,
+        userEmail: resolvedEmail,
         authUid: uid,
       );
 
@@ -104,6 +122,15 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void openEmployeeSignup() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const EmployeeSignupScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -115,8 +142,8 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: ListView(
+              shrinkWrap: true,
               children: [
                 Text(
                   message,
@@ -126,6 +153,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(
                     labelText: 'Email',
                     border: OutlineInputBorder(),
@@ -139,6 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     labelText: 'Password',
                     border: OutlineInputBorder(),
                   ),
+                  onSubmitted: (_) => isLoading ? null : login(),
                 ),
                 const SizedBox(height: 20),
                 SizedBox(
@@ -146,6 +175,41 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: ElevatedButton(
                     onPressed: isLoading ? null : login,
                     child: Text(isLoading ? 'Logging in...' : 'Login'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isLoading ? null : openEmployeeSignup,
+                    icon: const Icon(Icons.person_add_alt_1),
+                    label: const Text('Create Employee Account'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          'Access Policy',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Employees may create self-service accounts for employee access only.',
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Administrative roles including Developer, Admin, Mess Manager, and Mess Supervisor are created and authorized manually by system administration.',
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

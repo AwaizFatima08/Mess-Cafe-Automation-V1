@@ -6,6 +6,7 @@ import '../../core/constants/reservation_constants.dart';
 import '../../models/meal_booking_request.dart';
 import '../../models/meal_option_selection.dart';
 import '../../models/meal_reservation.dart';
+import '../../models/resolved_meal_option.dart';
 import '../../services/employee_identity_service.dart';
 import '../../services/meal_reservation_service.dart';
 import '../../services/user_profile_service.dart';
@@ -24,7 +25,8 @@ class TodayMenuScreen extends StatefulWidget {
 
 class _TodayMenuScreenState extends State<TodayMenuScreen> {
   final MenuResolverService _menuResolverService = MenuResolverService();
-  final MealReservationService _mealReservationService = MealReservationService();
+  final MealReservationService _mealReservationService =
+      MealReservationService();
   final EmployeeIdentityService _employeeIdentityService =
       EmployeeIdentityService();
   final UserProfileService _userProfileService = UserProfileService();
@@ -271,79 +273,123 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   }
 
   String _optionKey(dynamic option) {
-    final id = option?.id;
-    final key = option?.optionKey;
-    final name = option?.name;
-    final title = option?.title;
+    if (option is ResolvedMealOption) {
+      if (option.optionKey.trim().isNotEmpty) {
+        return option.optionKey;
+      }
 
-    if (id != null && id.toString().trim().isNotEmpty) {
-      return id.toString();
+      if (option.optionLabel.trim().isNotEmpty) {
+        return option.optionLabel;
+      }
     }
 
-    if (key != null && key.toString().trim().isNotEmpty) {
-      return key.toString();
-    }
+    if (option is Map<String, dynamic>) {
+      final id = option['id'];
+      final key = option['optionKey'] ?? option['option_key'];
+      final name = option['name'];
+      final title = option['title'];
 
-    if (name != null && name.toString().trim().isNotEmpty) {
-      return name.toString();
-    }
+      if (id != null && id.toString().trim().isNotEmpty) {
+        return id.toString();
+      }
 
-    if (title != null && title.toString().trim().isNotEmpty) {
-      return title.toString();
+      if (key != null && key.toString().trim().isNotEmpty) {
+        return key.toString();
+      }
+
+      if (name != null && name.toString().trim().isNotEmpty) {
+        return name.toString();
+      }
+
+      if (title != null && title.toString().trim().isNotEmpty) {
+        return title.toString();
+      }
     }
 
     return option.hashCode.toString();
   }
 
   String _optionTitle(dynamic option) {
-    final label = option?.optionLabel;
-    final name = option?.name;
-    final title = option?.title;
-    final itemName = option?.itemName;
+    if (option is ResolvedMealOption) {
+      if (option.optionLabel.trim().isNotEmpty) {
+        return option.optionLabel;
+      }
 
-    if (label != null && label.toString().trim().isNotEmpty) {
-      return label.toString();
+      if (option.optionKey.trim().isNotEmpty) {
+        return option.optionKey;
+      }
     }
 
-    if (name != null && name.toString().trim().isNotEmpty) {
-      return name.toString();
-    }
+    if (option is Map<String, dynamic>) {
+      final label = option['optionLabel'] ?? option['option_label'];
+      final name = option['name'];
+      final title = option['title'];
+      final itemName = option['itemName'] ?? option['item_name'];
 
-    if (title != null && title.toString().trim().isNotEmpty) {
-      return title.toString();
-    }
+      if (label != null && label.toString().trim().isNotEmpty) {
+        return label.toString();
+      }
 
-    if (itemName != null && itemName.toString().trim().isNotEmpty) {
-      return itemName.toString();
+      if (name != null && name.toString().trim().isNotEmpty) {
+        return name.toString();
+      }
+
+      if (title != null && title.toString().trim().isNotEmpty) {
+        return title.toString();
+      }
+
+      if (itemName != null && itemName.toString().trim().isNotEmpty) {
+        return itemName.toString();
+      }
     }
 
     return 'Meal Option';
   }
 
   String _optionSubtitle(dynamic option) {
-    final List<String> parts = [];
+    if (option is ResolvedMealOption) {
+      if (option.items.isNotEmpty) {
+        final itemNames = option.items
+            .map((item) {
+              final name = item['name'] ?? item['item_name'] ?? item['title'];
+              return name?.toString().trim() ?? '';
+            })
+            .where((name) => name.isNotEmpty)
+            .toList();
 
-    final category = option?.category;
-    final mealType = option?.mealType;
-    final description = option?.description;
+        if (itemNames.isNotEmpty) {
+          return itemNames.join(', ');
+        }
+      }
 
-    if (category != null && category.toString().trim().isNotEmpty) {
-      parts.add(category.toString());
-    }
-
-    if (mealType != null && mealType.toString().trim().isNotEmpty) {
-      parts.add(mealType.toString());
-    }
-
-    if (description != null && description.toString().trim().isNotEmpty) {
-      parts.add(description.toString());
-    }
-
-    if (parts.isEmpty) {
       return 'Select dine-in or takeaway and set quantity.';
     }
 
-    return parts.join(' • ');
+    if (option is Map<String, dynamic>) {
+      final List<String> parts = [];
+
+      final category = option['category'];
+      final mealType = option['mealType'] ?? option['meal_type'];
+      final description = option['description'];
+
+      if (category != null && category.toString().trim().isNotEmpty) {
+        parts.add(category.toString());
+      }
+
+      if (mealType != null && mealType.toString().trim().isNotEmpty) {
+        parts.add(mealType.toString());
+      }
+
+      if (description != null && description.toString().trim().isNotEmpty) {
+        parts.add(description.toString());
+      }
+
+      if (parts.isNotEmpty) {
+        return parts.join(' • ');
+      }
+    }
+
+    return 'Select dine-in or takeaway and set quantity.';
   }
 
   bool _hasAnySelectionForOption(dynamic option) {

@@ -4,6 +4,9 @@ set -euo pipefail
 REPO_DIR="/home/humayun/projects/mess_cafe_automation_v1"
 cd "$REPO_DIR"
 
+echo "---- Git Status Before Commit ----"
+git status
+
 git add .
 
 if git diff --cached --quiet; then
@@ -11,6 +14,11 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
-git commit -m "Daily backup commit $(date '+%d-%b-%Y %H:%M')"
+COMMIT_MSG="Daily maintenance: project state + backup ($(date '+%d-%b-%Y %H:%M'))"
+
+git commit -m "$COMMIT_MSG"
+
+echo "---- Pushing to remote ----"
 git push
-echo "Git push completed"
+
+echo "Git push completed successfully"
