@@ -1,7 +1,7 @@
 const admin = require('firebase-admin');
 const fs = require('fs');
-const csv = require('csv-parser');
 const path = require('path');
+const csv = require('csv-parser');
 
 const serviceAccount = require('./serviceAccountKey.json');
 
@@ -12,65 +12,74 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const collectionName = process.argv[2];
-
 if (!collectionName) {
-  console.error('Usage: node import_collection.js <collectionName>');
+  console.error('Usage: node import_collection.js <collection_name>');
   process.exit(1);
 }
 
-const inputFile = path.join(__dirname, 'csv', `${collectionName}.csv`);
+const csvFilePath = path.join(__dirname, 'csv', `${collectionName}.csv`);
 
 function parseValue(value) {
-  if (value === undefined || value === null || value === '') return null;
+  if (value === undefined || value === null) return null;
 
-  if (value === 'true') return true;
-  if (value === 'false') return false;
+  const trimmed = String(value).trim();
 
-  if (!isNaN(value) && value.toString().trim() !== '') {
-    return Number(value);
+  if (trimmed === '') return null;
+
+  if (trimmed.toLowerCase() === 'true') return true;
+  if (trimmed.toLowerCase() === 'false') return false;
+
+  if (trimmed.toLowerCase() === 'null') return null;
+
+  if (
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('{') && trimmed.endsWith('}'))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (e) {
+      return trimmed;
+    }
   }
 
-  return value;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  return trimmed;
 }
 
-async function importCollection() {
-  const rows = [];
+const results = [];
 
-  fs.createReadStream(inputFile)
-    .pipe(csv())
-    .on('data', (row) => rows.push(row))
-    .on('end', async () => {
-      try {
-        let successCount = 0;
+fs.createReadStream(csvFilePath)
+  .pipe(csv())
+  .on('data', (data) => results.push(data))
+  .on('end', async () => {
+    try {
+      for (const row of results) {
+        const docId = row.docId ? String(row.docId).trim() : '';
 
-        for (const row of rows) {
-          const docId = row.docId?.trim();
-
-          if (!docId) {
-            console.log('Skipped row without docId:', row);
-            continue;
-          }
-
-          const data = {};
-
-          for (const key of Object.keys(row)) {
-            if (key === 'docId') continue;
-            data[key] = parseValue(row[key]);
-          }
-
-          await db.collection(collectionName).doc(docId).set(data);
-          console.log(`Uploaded: ${docId}`);
-          successCount++;
+        if (!docId) {
+          console.warn('Skipping row with missing docId:', row);
+          continue;
         }
 
-        console.log(`Import completed. Total uploaded: ${successCount}`);
-      } catch (error) {
-        console.error('Import failed:', error);
-      }
-    })
-    .on('error', (error) => {
-      console.error('CSV read failed:', error);
-    });
-}
+        const docData = {};
 
-importCollection();
+        for (const key of Object.keys(row)) {
+          const cleanKey = String(key).trim();
+
+          if (!cleanKey || cleanKey === 'docId') continue;
+
+          docData[cleanKey] = parseValue(row[key]);
+        }
+
+        await db.collection(collectionName).doc(docId).set(docData);
+        console.log(`Uploaded document: ${docId}`);
+      }
+
+      console.log(`Import completed for collection: ${collectionName}`);
+    } catch (error) {
+      console.error('Import failed:', error);
+    }
+  });

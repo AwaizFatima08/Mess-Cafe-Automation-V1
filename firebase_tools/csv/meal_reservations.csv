@@ -1,0 +1,2 @@
+docId,reservation_date,meal_type,booking_type,employee_number,employee_name,guest_name,guest_count,created_by_uid,created_by_role,dining_mode,quantity,is_active,notes,override_reason,is_walk_in,is_issued,issued_at,issued_by_uid,applied_rate,rate_applied_at,created_at,updated_at
+1,,,,,,,,,,,,TRUE,,,,,,,,,,

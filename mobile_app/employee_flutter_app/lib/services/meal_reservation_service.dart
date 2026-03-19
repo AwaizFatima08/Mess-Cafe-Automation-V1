@@ -1,10 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../core/constants/reservation_constants.dart';
-import '../models/meal_booking_request.dart';
-import '../models/meal_reservation.dart';
-import '../models/reservation_settings.dart';
-
 class MealReservationService {
   MealReservationService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -12,484 +7,258 @@ class MealReservationService {
   final FirebaseFirestore _firestore;
 
   CollectionReference<Map<String, dynamic>> get _reservationsRef =>
-      _firestore.collection(ReservationConstants.mealReservationsCollection);
+      _firestore.collection('meal_reservations');
 
-  CollectionReference<Map<String, dynamic>> get _settingsRef =>
-      _firestore.collection(ReservationConstants.reservationSettingsCollection);
-
-  String buildDateKey(DateTime date) {
-    final normalized = DateTime(date.year, date.month, date.day);
-    final y = normalized.year.toString().padLeft(4, '0');
-    final m = normalized.month.toString().padLeft(2, '0');
-    final d = normalized.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  DateTime normalizeDate(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
-  }
-
-  String? validateBookingRequest(MealBookingRequest request) {
-    if (!ReservationConstants.mealTypes.contains(request.mealType)) {
-      return 'Invalid meal type selected.';
-    }
-
-    if (!ReservationConstants.serviceModes.contains(request.serviceMode)) {
-      return 'Invalid service mode selected.';
-    }
-
-    if (request.selectedOptions.isEmpty) {
-      return 'Please select at least one menu option.';
-    }
-
-    final hasNegativeQuantity =
-        request.selectedOptions.any((option) => option.quantity < 0);
-    if (hasNegativeQuantity) {
-      return 'Quantity cannot be negative.';
-    }
-
-    final hasPositiveSelection =
-        request.selectedOptions.any((option) => option.quantity > 0);
-    if (!hasPositiveSelection) {
-      return 'Please select quantity greater than zero.';
-    }
-
-    if (request.totalMealCount <= 0) {
-      return 'Total meal count must be greater than zero.';
-    }
-
-    return null;
-  }
-
-  MealReservation buildEmployeeReservationFromRequest({
-    required MealBookingRequest request,
+  Future<void> createReservation({
     required String employeeNumber,
     required String employeeName,
-    required String bookedByUserId,
-    String? bookedByEmployeeNumber,
-    String bookingSource = ReservationConstants.employeeApp,
-    bool overrideFlag = false,
+    required DateTime reservationDate,
+    required String mealType,
+    required String bookingType,
+    required String diningMode,
+    required int quantity,
+    required String createdByUid,
+    required String createdByRole,
+    String? guestName,
+    int guestCount = 0,
+    bool isWalkIn = false,
+    String? notes,
     String? overrideReason,
-  }) {
-    return MealReservation(
-      reservationDate: normalizeDate(request.reservationDate),
-      mealType: request.mealType,
-      reservationCategory: ReservationConstants.employee,
-      forEmployeeNumber: employeeNumber.trim(),
-      forEmployeeName: employeeName.trim(),
-      bookedByUserId: bookedByUserId.trim(),
-      bookedByEmployeeNumber:
-          (bookedByEmployeeNumber ?? employeeNumber).trim(),
-      bookingSource: bookingSource,
-      serviceMode: request.serviceMode,
-      totalMealCount: request.totalMealCount,
-      selectedOptions: request.selectedOptions,
-      status: ReservationConstants.active,
-      overrideFlag: overrideFlag,
-      overrideReason: overrideReason,
-      notes: request.notes,
-    );
-  }
-
-  MealReservation buildOfficialGuestReservationFromRequest({
-    required MealBookingRequest request,
-    required String bookedByUserId,
-    String? bookedByEmployeeNumber,
-    String bookingSource = ReservationConstants.supervisorConsole,
-    String? hostEmployeeNumber,
-    String? hostDepartment,
-    bool overrideFlag = false,
-    String? overrideReason,
-  }) {
-    return MealReservation(
-      reservationDate: normalizeDate(request.reservationDate),
-      mealType: request.mealType,
-      reservationCategory: ReservationConstants.officialGuest,
-      hostEmployeeNumber: hostEmployeeNumber?.trim(),
-      hostDepartment: hostDepartment?.trim(),
-      bookedByUserId: bookedByUserId.trim(),
-      bookedByEmployeeNumber: bookedByEmployeeNumber?.trim(),
-      bookingSource: bookingSource,
-      serviceMode: request.serviceMode,
-      totalMealCount: request.totalMealCount,
-      selectedOptions: request.selectedOptions,
-      status: ReservationConstants.active,
-      overrideFlag: overrideFlag,
-      overrideReason: overrideReason,
-      notes: request.notes,
-    );
-  }
-
-  int calculateSelectedOptionTotal(MealReservation reservation) {
-    return reservation.selectedOptions.fold<int>(
-      0,
-      (total, option) => total + option.quantity,
-    );
-  }
-
-  bool isSelectionTotalValid(MealReservation reservation) {
-    return calculateSelectedOptionTotal(reservation) ==
-        reservation.totalMealCount;
-  }
-
-  Future<ReservationSettings> getReservationSettings() async {
-    final snapshot = await _settingsRef.doc('default').get();
-
-    if (!snapshot.exists) {
-      return ReservationSettings.defaults();
-    }
-
-    final data = snapshot.data();
-    if (data == null) {
-      return ReservationSettings.defaults();
-    }
-
-    return ReservationSettings.fromMap(data);
-  }
-
-  Future<void> saveDefaultReservationSettingsIfMissing() async {
-    final docRef = _settingsRef.doc('default');
-    final snapshot = await docRef.get();
-
-    if (!snapshot.exists) {
-      await docRef.set(ReservationSettings.defaults().toMap());
-    }
-  }
-
-  Future<MealReservation?> getReservationById(String id) async {
-    final snapshot = await _reservationsRef.doc(id).get();
-
-    if (!snapshot.exists) {
-      return null;
-    }
-
-    final data = snapshot.data();
-    if (data == null) {
-      return null;
-    }
-
-    return MealReservation.fromMap(data, id: snapshot.id);
-  }
-
-  Future<String> createOrUpdateEmployeeReservation(
-    MealReservation reservation,
-  ) async {
-    if (reservation.reservationCategory != ReservationConstants.employee) {
-      throw ArgumentError(
-        'createOrUpdateEmployeeReservation only supports employee reservations.',
-      );
-    }
-
-    if ((reservation.forEmployeeNumber ?? '').trim().isEmpty) {
-      throw ArgumentError('forEmployeeNumber is required for employee booking.');
-    }
-
-    if (reservation.bookedByUserId.trim().isEmpty) {
-      throw ArgumentError('bookedByUserId is required.');
-    }
-
-    if (!ReservationConstants.mealTypes.contains(reservation.mealType)) {
-      throw ArgumentError('Invalid meal type: ${reservation.mealType}');
-    }
-
-    if (!ReservationConstants.serviceModes.contains(reservation.serviceMode)) {
-      throw ArgumentError('Invalid service mode: ${reservation.serviceMode}');
-    }
-
-    if (reservation.totalMealCount <= 0) {
-      throw ArgumentError('totalMealCount must be greater than zero.');
-    }
-
-    if (reservation.selectedOptions.isEmpty) {
-      throw ArgumentError('At least one selected option is required.');
-    }
-
-    if (!isSelectionTotalValid(reservation)) {
-      throw ArgumentError(
-        'Selected option total must match totalMealCount.',
-      );
-    }
-
-    final normalizedDate = normalizeDate(reservation.reservationDate);
-
-    final existingQuery = await _reservationsRef
-        .where(
-          'reservation_category',
-          isEqualTo: ReservationConstants.employee,
-        )
-        .where(
-          'for_employee_number',
-          isEqualTo: reservation.forEmployeeNumber?.trim(),
-        )
-        .where('meal_type', isEqualTo: reservation.mealType)
-        .where(
-          'reservation_date',
-          isEqualTo: Timestamp.fromDate(normalizedDate),
-        )
-        .where('status', isEqualTo: ReservationConstants.active)
-        .limit(1)
-        .get();
-
-    final payload = reservation.copyWith(
-      reservationDate: normalizedDate,
-      updatedAt: DateTime.now(),
-    );
-
-    if (existingQuery.docs.isNotEmpty) {
-      final doc = existingQuery.docs.first;
-
-      final updateData = payload.toMap()..remove('created_at');
-
-      await _reservationsRef.doc(doc.id).update(updateData);
-      return doc.id;
-    }
-
-    final createData = payload.copyWith(
-      createdAt: DateTime.now(),
-    ).toMap();
-
-    final docRef = await _reservationsRef.add(createData);
-    return docRef.id;
-  }
-
-  Future<String> createOfficialGuestReservation(
-    MealReservation reservation,
-  ) async {
-    if (reservation.reservationCategory !=
-        ReservationConstants.officialGuest) {
-      throw ArgumentError(
-        'createOfficialGuestReservation only supports official guest reservations.',
-      );
-    }
-
-    if (reservation.bookedByUserId.trim().isEmpty) {
-      throw ArgumentError('bookedByUserId is required.');
-    }
-
-    if (!ReservationConstants.mealTypes.contains(reservation.mealType)) {
-      throw ArgumentError('Invalid meal type: ${reservation.mealType}');
-    }
-
-    if (!ReservationConstants.serviceModes.contains(reservation.serviceMode)) {
-      throw ArgumentError('Invalid service mode: ${reservation.serviceMode}');
-    }
-
-    if (reservation.totalMealCount <= 0) {
-      throw ArgumentError('totalMealCount must be greater than zero.');
-    }
-
-    if (reservation.selectedOptions.isEmpty) {
-      throw ArgumentError('At least one selected option is required.');
-    }
-
-    if (!isSelectionTotalValid(reservation)) {
-      throw ArgumentError(
-        'Selected option total must match totalMealCount.',
-      );
-    }
-
-    final hasHostEmployee =
-        (reservation.hostEmployeeNumber ?? '').trim().isNotEmpty;
-    final hasHostDepartment =
-        (reservation.hostDepartment ?? '').trim().isNotEmpty;
-    final hasNotes = (reservation.notes ?? '').trim().isNotEmpty;
-
-    if (!hasHostEmployee && !hasHostDepartment && !hasNotes) {
-      throw ArgumentError(
-        'Official guest booking must include host employee number, host department, or notes.',
-      );
-    }
-
-    final normalizedDate = normalizeDate(reservation.reservationDate);
-
-    final payload = reservation.copyWith(
-      reservationDate: normalizedDate,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-
-    final docRef = await _reservationsRef.add(payload.toMap());
-    return docRef.id;
-  }
-
-  Future<MealReservation?> getEmployeeReservationForMeal({
-    required String employeeNumber,
-    required DateTime reservationDate,
-    required String mealType,
   }) async {
-    final normalizedDate = normalizeDate(reservationDate);
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedEmployeeName = employeeName.trim();
+    final normalizedMealType = mealType.trim().toLowerCase();
+    final normalizedBookingType = bookingType.trim().toLowerCase();
+    final normalizedDiningMode = diningMode.trim().toLowerCase();
+    final normalizedCreatedByUid = createdByUid.trim();
+    final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
+    final normalizedGuestName = (guestName ?? '').trim();
+    final normalizedNotes = (notes ?? '').trim();
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
 
-    final query = await _reservationsRef
-        .where(
-          'reservation_category',
-          isEqualTo: ReservationConstants.employee,
-        )
-        .where(
-          'for_employee_number',
-          isEqualTo: employeeNumber.trim(),
-        )
-        .where('meal_type', isEqualTo: mealType)
-        .where(
-          'reservation_date',
-          isEqualTo: Timestamp.fromDate(normalizedDate),
-        )
-        .where('status', isEqualTo: ReservationConstants.active)
-        .limit(1)
-        .get();
-
-    if (query.docs.isEmpty) {
-      return null;
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employee_number is required.');
     }
 
-    final doc = query.docs.first;
-    return MealReservation.fromMap(doc.data(), id: doc.id);
-  }
+    if (normalizedEmployeeName.isEmpty) {
+      throw ArgumentError('employee_name is required.');
+    }
 
-  Future<List<MealReservation>> getReservationsForDate(
-    DateTime reservationDate,
-  ) async {
-    final normalizedDate = normalizeDate(reservationDate);
+    if (!_isValidMealType(normalizedMealType)) {
+      throw ArgumentError('Invalid meal_type.');
+    }
 
-    final query = await _reservationsRef
-        .where(
-          'reservation_date',
-          isEqualTo: Timestamp.fromDate(normalizedDate),
-        )
-        .where('status', isEqualTo: ReservationConstants.active)
-        .get();
+    if (!_isValidBookingType(normalizedBookingType)) {
+      throw ArgumentError('Invalid booking_type.');
+    }
 
-    return query.docs
-        .map((doc) => MealReservation.fromMap(doc.data(), id: doc.id))
-        .toList();
-  }
+    if (!_isValidDiningMode(normalizedDiningMode)) {
+      throw ArgumentError('Invalid dining_mode.');
+    }
 
-  Future<List<MealReservation>> getReservationsForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final normalizedDate = normalizeDate(reservationDate);
+    if (quantity <= 0) {
+      throw ArgumentError('quantity must be greater than zero.');
+    }
 
-    final query = await _reservationsRef
-        .where(
-          'reservation_date',
-          isEqualTo: Timestamp.fromDate(normalizedDate),
-        )
-        .where('meal_type', isEqualTo: mealType)
-        .where('status', isEqualTo: ReservationConstants.active)
-        .get();
+    if (normalizedCreatedByUid.isEmpty) {
+      throw ArgumentError('created_by_uid is required.');
+    }
 
-    return query.docs
-        .map((doc) => MealReservation.fromMap(doc.data(), id: doc.id))
-        .toList();
-  }
+    if (normalizedCreatedByRole.isEmpty) {
+      throw ArgumentError('created_by_role is required.');
+    }
 
-  Future<int> getTotalHeadCountForDate(DateTime reservationDate) async {
-    final reservations = await getReservationsForDate(reservationDate);
-    return reservations.fold<int>(
-      0,
-      (total, reservation) => total + reservation.totalMealCount,
-    );
-  }
+    if (normalizedBookingType == 'guest' && guestCount <= 0) {
+      throw ArgumentError('guest_count must be greater than zero for guest bookings.');
+    }
 
-  Future<int> getTotalHeadCountForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final reservations = await getReservationsForDateAndMealType(
-      reservationDate: reservationDate,
-      mealType: mealType,
+    final normalizedDate = DateTime(
+      reservationDate.year,
+      reservationDate.month,
+      reservationDate.day,
     );
 
-    return reservations.fold<int>(
-      0,
-      (total, reservation) => total + reservation.totalMealCount,
-    );
-  }
+    final doc = _reservationsRef.doc();
 
-  Future<int> getEmployeeHeadCountForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final reservations = await getReservationsForDateAndMealType(
-      reservationDate: reservationDate,
-      mealType: mealType,
-    );
-
-    return reservations
-        .where(
-          (reservation) =>
-              reservation.reservationCategory == ReservationConstants.employee,
-        )
-        .fold<int>(
-          0,
-          (total, reservation) => total + reservation.totalMealCount,
-        );
-  }
-
-  Future<int> getOfficialGuestHeadCountForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final reservations = await getReservationsForDateAndMealType(
-      reservationDate: reservationDate,
-      mealType: mealType,
-    );
-
-    return reservations
-        .where(
-          (reservation) => reservation.reservationCategory ==
-              ReservationConstants.officialGuest,
-        )
-        .fold<int>(
-          0,
-          (total, reservation) => total + reservation.totalMealCount,
-        );
-  }
-
-  Future<int> getDineInHeadCountForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final reservations = await getReservationsForDateAndMealType(
-      reservationDate: reservationDate,
-      mealType: mealType,
-    );
-
-    return reservations
-        .where(
-          (reservation) =>
-              reservation.serviceMode == ReservationConstants.dineIn,
-        )
-        .fold<int>(
-          0,
-          (total, reservation) => total + reservation.totalMealCount,
-        );
-  }
-
-  Future<int> getTakeawayHeadCountForDateAndMealType({
-    required DateTime reservationDate,
-    required String mealType,
-  }) async {
-    final reservations = await getReservationsForDateAndMealType(
-      reservationDate: reservationDate,
-      mealType: mealType,
-    );
-
-    return reservations
-        .where(
-          (reservation) =>
-              reservation.serviceMode == ReservationConstants.takeaway,
-        )
-        .fold<int>(
-          0,
-          (total, reservation) => total + reservation.totalMealCount,
-        );
-  }
-
-  Future<void> cancelReservation(String reservationId) async {
-    await _reservationsRef.doc(reservationId).update({
-      'status': ReservationConstants.cancelled,
-      'updated_at': Timestamp.fromDate(DateTime.now()),
+    await doc.set({
+      'employee_number': normalizedEmployeeNumber,
+      'employee_name': normalizedEmployeeName,
+      'reservation_date': Timestamp.fromDate(normalizedDate),
+      'meal_type': normalizedMealType,
+      'booking_type': normalizedBookingType,
+      'dining_mode': normalizedDiningMode,
+      'quantity': quantity,
+      'guest_count': guestCount,
+      'guest_name': normalizedGuestName.isEmpty ? null : normalizedGuestName,
+      'is_walk_in': isWalkIn,
+      'is_issued': false,
+      'created_at': FieldValue.serverTimestamp(),
+      'created_by_uid': normalizedCreatedByUid,
+      'created_by_role': normalizedCreatedByRole,
+      'issued_at': null,
+      'issued_by_uid': null,
+      'status': 'booked',
+      'notes': normalizedNotes.isEmpty ? null : normalizedNotes,
+      'override_reason':
+          normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
     });
+  }
+
+  Future<void> markReservationIssued({
+    required String reservationId,
+    required String issuedByUid,
+  }) async {
+    final normalizedReservationId = reservationId.trim();
+    final normalizedIssuedByUid = issuedByUid.trim();
+
+    if (normalizedReservationId.isEmpty) {
+      throw ArgumentError('reservationId is required.');
+    }
+
+    if (normalizedIssuedByUid.isEmpty) {
+      throw ArgumentError('issuedByUid is required.');
+    }
+
+    await _reservationsRef.doc(normalizedReservationId).update({
+      'is_issued': true,
+      'issued_at': FieldValue.serverTimestamp(),
+      'issued_by_uid': normalizedIssuedByUid,
+      'status': 'issued',
+    });
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForDate({
+    required DateTime reservationDate,
+    String? mealType,
+  }) async {
+    final normalizedDate = DateTime(
+      reservationDate.year,
+      reservationDate.month,
+      reservationDate.day,
+    );
+
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+
+    Query<Map<String, dynamic>> query = _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        );
+
+    final normalizedMealType = (mealType ?? '').trim().toLowerCase();
+    if (normalizedMealType.isNotEmpty) {
+      query = query.where('meal_type', isEqualTo: normalizedMealType);
+    }
+
+    return query.get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForEmployee({
+    required String employeeNumber,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    return _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .get();
+  }
+
+  Future<Map<String, int>> getMealCountsForDate(DateTime reservationDate) async {
+    final snapshot = await getReservationsForDate(
+      reservationDate: reservationDate,
+    );
+
+    int breakfast = 0;
+    int lunch = 0;
+    int dinner = 0;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final mealType = (data['meal_type'] ?? '').toString().trim().toLowerCase();
+      final quantity = (data['quantity'] ?? 0) is int
+          ? data['quantity'] as int
+          : int.tryParse((data['quantity'] ?? '0').toString()) ?? 0;
+
+      switch (mealType) {
+        case 'breakfast':
+          breakfast += quantity;
+          break;
+        case 'lunch':
+          lunch += quantity;
+          break;
+        case 'dinner':
+          dinner += quantity;
+          break;
+      }
+    }
+
+    return {
+      'breakfast': breakfast,
+      'lunch': lunch,
+      'dinner': dinner,
+      'total': breakfast + lunch + dinner,
+    };
+  }
+
+  Future<Map<String, int>> getIssuedMealCountsForDate(DateTime reservationDate) async {
+    final snapshot = await getReservationsForDate(
+      reservationDate: reservationDate,
+    );
+
+    int breakfast = 0;
+    int lunch = 0;
+    int dinner = 0;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final isIssued = data['is_issued'] == true;
+      if (!isIssued) {
+        continue;
+      }
+
+      final mealType = (data['meal_type'] ?? '').toString().trim().toLowerCase();
+      final quantity = (data['quantity'] ?? 0) is int
+          ? data['quantity'] as int
+          : int.tryParse((data['quantity'] ?? '0').toString()) ?? 0;
+
+      switch (mealType) {
+        case 'breakfast':
+          breakfast += quantity;
+          break;
+        case 'lunch':
+          lunch += quantity;
+          break;
+        case 'dinner':
+          dinner += quantity;
+          break;
+      }
+    }
+
+    return {
+      'breakfast': breakfast,
+      'lunch': lunch,
+      'dinner': dinner,
+      'total': breakfast + lunch + dinner,
+    };
+  }
+
+  bool _isValidMealType(String value) {
+    return value == 'breakfast' || value == 'lunch' || value == 'dinner';
+  }
+
+  bool _isValidBookingType(String value) {
+    return value == 'self' || value == 'admin' || value == 'guest';
+  }
+
+  bool _isValidDiningMode(String value) {
+    return value == 'dine_in' || value == 'takeaway';
   }
 }

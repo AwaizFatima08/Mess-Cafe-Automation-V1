@@ -1,0 +1,7 @@
+docId,uid,email,employee_number,role,is_active,display_name,phone_number,approved_by,registration_request_id,created_at,updated_at
+Fl5prA40zlYJc4oX62yuZCZaK4H3,Fl5prA40zlYJc4oX62yuZCZaK4H3,fflmess.testuser@gmail.com,FFL12345,employee,TRUE,Test user,,,,,
+JPWNAyZaqFaTnlvku4VWlYm9yTj1,JPWNAyZaqFaTnlvku4VWlYm9yTj1,fflmessmanager@gmail.com,MAN00001,mess_manager,TRUE,Jahangir,,,,,
+L5Z14eIjPmVlMSpQjNNtDuGYpHN2,L5Z14eIjPmVlMSpQjNNtDuGYpHN2,fflmess.supervisor@gmail.com,SUP00001,mess_supervisor,TRUE,Tasawur,,,,,
+N0Apa23m4jdBdtFdqaXQ9YqYhQm2,N0Apa23m4jdBdtFdqaXQ9YqYhQm2,qasim.ejaz@fatima-group.com,FFL01584,admin,TRUE,QASIM IJAZ,,,,,
+cwgwrLCIMrOeTChXpab3hIeIp9b2,cwgwrLCIMrOeTChXpab3hIeIp9b2,ghazanfar.ansari@fatima-group.com,OSL00008,admin,TRUE,RAJA GHAZANFAR ANSARI,,,,,
+kfj93KdqtPPYaFIDVAnFJVsPLm82,kfj93KdqtPPYaFIDVAnFJVsPLm82,humayun.shahzad@fatima-group.com,FFL00100,developer,TRUE,Dr. HUMAYUN SHAHZAD,,,,,

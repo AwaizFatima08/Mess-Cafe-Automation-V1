@@ -1,30 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class EmployeeIdentity {
-  final String documentId;
-  final String employeeNumber;
-  final String name;
-  final String prefix;
-  final String department;
-  final String designation;
-  final String userRole;
+class EmployeeIdentityResult {
+  final bool found;
+  final String reason;
+  final String? uid;
+  final String? userDocumentId;
+  final String? employeeNumber;
+  final String? employeeDocumentId;
+  final Map<String, dynamic>? userData;
+  final Map<String, dynamic>? employeeData;
 
-  const EmployeeIdentity({
-    required this.documentId,
-    required this.employeeNumber,
-    required this.name,
-    required this.prefix,
-    required this.department,
-    required this.designation,
-    required this.userRole,
+  const EmployeeIdentityResult({
+    required this.found,
+    required this.reason,
+    this.uid,
+    this.userDocumentId,
+    this.employeeNumber,
+    this.employeeDocumentId,
+    this.userData,
+    this.employeeData,
   });
 
-  String get displayEmployeeCode {
-    if (prefix.trim().isEmpty) {
-      return employeeNumber;
-    }
-    return '$prefix-$employeeNumber';
-  }
+  bool get hasUser => userData != null;
+  bool get hasEmployeeLink => employeeNumber != null && employeeNumber!.trim().isNotEmpty;
+  bool get hasEmployee => employeeData != null;
 }
 
 class EmployeeIdentityService {
@@ -33,95 +32,105 @@ class EmployeeIdentityService {
 
   final FirebaseFirestore _firestore;
 
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
   CollectionReference<Map<String, dynamic>> get _employeesRef =>
       _firestore.collection('employees');
 
-  Future<EmployeeIdentity?> resolveForCurrentUser({
-    required String userEmail,
-    String? authUid,
-  }) async {
-    final normalizedEmail = userEmail.trim();
-    final normalizedLowerEmail = normalizedEmail.toLowerCase();
-    final normalizedUid = authUid?.trim() ?? '';
+  Future<EmployeeIdentityResult> resolveByAuthUid(String authUid) async {
+    final normalizedUid = authUid.trim();
 
-    const emailFields = [
-      'email',
-      'user_email',
-      'official_email',
-      'personal_email',
-      'login_email',
-    ];
-
-    for (final field in emailFields) {
-      final byExactEmail = await _employeesRef
-          .where(field, isEqualTo: normalizedEmail)
-          .limit(1)
-          .get();
-
-      final exactMatch = _readIdentityFromQuery(byExactEmail);
-      if (exactMatch != null) {
-        return exactMatch;
-      }
-
-      final byLowerEmail = await _employeesRef
-          .where(field, isEqualTo: normalizedLowerEmail)
-          .limit(1)
-          .get();
-
-      final lowerMatch = _readIdentityFromQuery(byLowerEmail);
-      if (lowerMatch != null) {
-        return lowerMatch;
-      }
+    if (normalizedUid.isEmpty) {
+      return const EmployeeIdentityResult(
+        found: false,
+        reason: 'missing_auth_uid',
+      );
     }
 
-    if (normalizedUid.isNotEmpty) {
-      const uidFields = [
-        'auth_uid',
-        'uid',
-        'user_id',
-      ];
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
 
-      for (final field in uidFields) {
-        final byUid = await _employeesRef
-            .where(field, isEqualTo: normalizedUid)
-            .limit(1)
-            .get();
-
-        final uidMatch = _readIdentityFromQuery(byUid);
-        if (uidMatch != null) {
-          return uidMatch;
-        }
-      }
+    if (userQuery.docs.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.uid_not_found',
+        uid: normalizedUid,
+      );
     }
 
-    return null;
+    final userDoc = userQuery.docs.first;
+    final userData = userDoc.data();
+
+    final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
+
+    if (employeeNumber.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.employee_number_missing',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        userData: userData,
+      );
+    }
+
+    final employeeDoc = await _employeesRef.doc(employeeNumber).get();
+
+    if (!employeeDoc.exists || employeeDoc.data() == null) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'employees.doc_not_found',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        employeeNumber: employeeNumber,
+        userData: userData,
+      );
+    }
+
+    return EmployeeIdentityResult(
+      found: true,
+      reason: 'resolved',
+      uid: normalizedUid,
+      userDocumentId: userDoc.id,
+      employeeNumber: employeeNumber,
+      employeeDocumentId: employeeDoc.id,
+      userData: userData,
+      employeeData: employeeDoc.data(),
+    );
   }
 
-  EmployeeIdentity? _readIdentityFromQuery(
-    QuerySnapshot<Map<String, dynamic>> query,
-  ) {
-    if (query.docs.isEmpty) {
+  Future<Map<String, dynamic>?> getEmployeeByEmployeeNumber(
+    String employeeNumber,
+  ) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
       return null;
     }
 
-    final doc = query.docs.first;
-    final data = doc.data();
+    final employeeDoc = await _employeesRef.doc(normalizedEmployeeNumber).get();
 
-    final employeeNumber = (data['employee_number'] ?? '').toString().trim();
-    final name = (data['name'] ?? '').toString().trim();
-
-    if (employeeNumber.isEmpty && name.isEmpty) {
+    if (!employeeDoc.exists) {
       return null;
     }
 
-    return EmployeeIdentity(
-      documentId: doc.id,
-      employeeNumber: employeeNumber,
-      name: name,
-      prefix: (data['prefix'] ?? '').toString().trim(),
-      department: (data['department'] ?? '').toString().trim(),
-      designation: (data['designation'] ?? '').toString().trim(),
-      userRole: (data['user_role'] ?? '').toString().trim(),
-    );
+    return employeeDoc.data();
+  }
+
+  Future<Map<String, dynamic>?> getUserByUid(String authUid) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return null;
+    }
+
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (userQuery.docs.isEmpty) {
+      return null;
+    }
+
+    return userQuery.docs.first.data();
   }
 }

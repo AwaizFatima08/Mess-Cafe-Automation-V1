@@ -1,7 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AppUserRole {
+  developer,
   admin,
+  messManager,
+  messSupervisor,
   employee,
   unknown,
 }
@@ -18,6 +21,53 @@ class ResolvedUserRole {
     this.documentId,
     this.rawData,
   });
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool get isAdminFamily {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canManageMenus {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canConfirmIssuance {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canEnterRates {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canManageUsers {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
+  }
 }
 
 class UserRoleService {
@@ -30,116 +80,100 @@ class UserRoleService {
       _firestore.collection('users');
 
   Future<ResolvedUserRole> resolveRole({
-    required String userEmail,
-    String? authUid,
+    required String authUid,
   }) async {
-    final normalizedEmail = userEmail.trim();
-    final normalizedLowerEmail = normalizedEmail.toLowerCase();
-    final normalizedUid = authUid?.trim() ?? '';
+    final normalizedUid = authUid.trim();
 
-    if (normalizedUid.isNotEmpty) {
-      const uidFields = [
-        'auth_uid',
-        'uid',
-        'user_id',
-      ];
-
-      for (final field in uidFields) {
-        final query = await _usersRef
-            .where(field, isEqualTo: normalizedUid)
-            .limit(1)
-            .get();
-
-        final resolved = _readRoleFromQuery(query, source: 'users.$field');
-        if (resolved != null) {
-          return resolved;
-        }
-      }
+    if (normalizedUid.isEmpty) {
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'missing_auth_uid',
+      );
     }
 
-    const emailFields = [
-      'email',
-      'user_email',
-      'official_email',
-      'personal_email',
-      'login_email',
-    ];
+    final query = await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
 
-    for (final field in emailFields) {
-      final exactQuery = await _usersRef
-          .where(field, isEqualTo: normalizedEmail)
-          .limit(1)
-          .get();
-
-      final exactResolved =
-          _readRoleFromQuery(exactQuery, source: 'users.$field');
-      if (exactResolved != null) {
-        return exactResolved;
-      }
-
-      final lowerQuery = await _usersRef
-          .where(field, isEqualTo: normalizedLowerEmail)
-          .limit(1)
-          .get();
-
-      final lowerResolved =
-          _readRoleFromQuery(lowerQuery, source: 'users.$field');
-      if (lowerResolved != null) {
-        return lowerResolved;
-      }
-    }
-
-    return const ResolvedUserRole(
-      role: AppUserRole.employee,
-      source: 'fallback_default_employee',
-    );
-  }
-
-  ResolvedUserRole? _readRoleFromQuery(
-    QuerySnapshot<Map<String, dynamic>> query, {
-    required String source,
-  }) {
     if (query.docs.isEmpty) {
-      return null;
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'users.uid_not_found',
+      );
     }
 
     final doc = query.docs.first;
     final data = doc.data();
 
-    final role = _extractRole(data);
-
     return ResolvedUserRole(
-      role: role,
-      source: source,
+      role: parseRole(data['role']),
+      source: 'users.uid',
       documentId: doc.id,
       rawData: data,
     );
   }
 
-  AppUserRole _extractRole(Map<String, dynamic> data) {
-    final candidateFields = [
-      data['role'],
-      data['user_role'],
-      data['access_role'],
-      data['account_role'],
-    ];
+  AppUserRole parseRole(dynamic value) {
+    final normalized = (value ?? '').toString().trim().toLowerCase();
 
-    for (final candidate in candidateFields) {
-      final normalized = (candidate ?? '').toString().trim().toLowerCase();
-
-      if (normalized == 'admin' ||
-          normalized == 'administrator' ||
-          normalized == 'super_admin') {
+    switch (normalized) {
+      case 'developer':
+        return AppUserRole.developer;
+      case 'admin':
         return AppUserRole.admin;
-      }
-
-      if (normalized == 'employee' ||
-          normalized == 'staff' ||
-          normalized == 'user') {
+      case 'mess_manager':
+        return AppUserRole.messManager;
+      case 'mess_supervisor':
+        return AppUserRole.messSupervisor;
+      case 'employee':
         return AppUserRole.employee;
-      }
+      default:
+        return AppUserRole.unknown;
     }
+  }
 
-    return AppUserRole.unknown;
+  String roleToFirestoreValue(AppUserRole role) {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool isAdminFamily(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canManageMenus(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canConfirmIssuance(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canEnterRates(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canManageUsers(AppUserRole role) {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
   }
 }

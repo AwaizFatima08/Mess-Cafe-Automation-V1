@@ -12,9 +12,9 @@ class EmployeeSignupScreen extends StatefulWidget {
 class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _employeeNoController = TextEditingController();
+  final TextEditingController _employeeNumberController =
+      TextEditingController();
   final TextEditingController _fullNameController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _cnicLast4Controller = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -26,9 +26,8 @@ class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
 
   @override
   void dispose() {
-    _employeeNoController.dispose();
+    _employeeNumberController.dispose();
     _fullNameController.dispose();
-    _phoneController.dispose();
     _cnicLast4Controller.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -52,45 +51,43 @@ class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
       return;
     }
 
+    if (_passwordController.text != _confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password and confirm password do not match.'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
       final result = await EmployeeRegistrationService().registerEmployee(
-        employeeNo: _employeeNoController.text.trim(),
+        employeeNumber: _employeeNumberController.text.trim(),
         fullName: _fullNameController.text.trim(),
-        phone: _phoneController.text.trim(),
         cnicLast4: _cnicLast4Controller.text.trim(),
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
-      if (result == 'created') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully. Please sign in.'),
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Your request has been submitted for admin approval.',
-            ),
-          ),
-        );
+      final messenger = ScaffoldMessenger.of(context);
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+        ),
+      );
+
+      if (result.success) {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -128,19 +125,21 @@ class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
             const SizedBox(height: 10),
             const Text(
               'This app is for Fatima Fertilizer mess & café services only. '
-              'Your information, including employee number, name, phone number, '
-              'CNIC last 4 digits, and login credentials, is used only for '
-              'account authentication, meal reservations, and service management.',
+              'Your employee number, name, CNIC last 4 digits, and email will '
+              'be used for account verification and access control.',
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Activity may be logged for security and audit purposes. '
-              'Do not share your login credentials. By creating an account, '
-              'you consent to this use of your data.',
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'For assistance, contact the club office through email at "mngt.club@fatima-group.com".',
+            const SizedBox(height: 10),
+            CheckboxListTile(
+              value: _acceptedNotice,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'I understand and accept this notice.',
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _acceptedNotice = value ?? false;
+                });
+              },
             ),
           ],
         ),
@@ -148,11 +147,71 @@ class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
     );
   }
 
+  String? _validateEmployeeNumber(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return 'Employee number is required.';
+    }
+    return null;
+  }
+
+  String? _validateFullName(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return 'Full name is required.';
+    }
+    return null;
+  }
+
+  String? _validateCnicLast4(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return 'CNIC last 4 digits are required.';
+    }
+    if (text.length != 4 || int.tryParse(text) == null) {
+      return 'Enter exactly 4 digits.';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return 'Email is required.';
+    }
+    if (!text.contains('@')) {
+      return 'Enter a valid email address.';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final text = value ?? '';
+    if (text.isEmpty) {
+      return 'Password is required.';
+    }
+    if (text.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    final text = value ?? '';
+    if (text.isEmpty) {
+      return 'Please confirm your password.';
+    }
+    if (text != _passwordController.text) {
+      return 'Passwords do not match.';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Employee Account'),
+        title: const Text('Employee Sign Up'),
       ),
       body: SafeArea(
         child: Form(
@@ -160,183 +219,96 @@ class _EmployeeSignupScreenState extends State<EmployeeSignupScreen> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _buildNoticeCard(),
+              const SizedBox(height: 16),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Employee Self-Registration',
-                        style: Theme.of(context).textTheme.headlineSmall,
+                      TextFormField(
+                        controller: _employeeNumberController,
+                        decoration: _inputDecoration(
+                          'Employee Number',
+                          hint: 'Enter your employee number',
+                        ),
+                        validator: _validateEmployeeNumber,
+                        textInputAction: TextInputAction.next,
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Fill in your employee details exactly as recorded in the company database. '
-                        'If your data matches the employee master, your employee account can be created. '
-                        'If your data does not match, your request may be forwarded for admin review.',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _fullNameController,
+                        decoration: _inputDecoration(
+                          'Full Name',
+                          hint: 'Enter your full name',
+                        ),
+                        validator: _validateFullName,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _cnicLast4Controller,
+                        decoration: _inputDecoration(
+                          'CNIC Last 4 Digits',
+                          hint: 'Last 4 digits only',
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: _validateCnicLast4,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _emailController,
+                        decoration: _inputDecoration(
+                          'Email',
+                          hint: 'Enter your email address',
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: _validateEmail,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: _inputDecoration('Password'),
+                        obscureText: true,
+                        validator: _validatePassword,
+                        textInputAction: TextInputAction.next,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _confirmPasswordController,
+                        decoration: _inputDecoration('Confirm Password'),
+                        obscureText: true,
+                        validator: _validateConfirmPassword,
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) {
+                          if (!_isLoading) {
+                            _register();
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _register,
+                          icon: _isLoading
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.person_add_alt_1_outlined),
+                          label: Text(
+                            _isLoading ? 'Registering...' : 'Submit Registration',
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _employeeNoController,
-                textCapitalization: TextCapitalization.characters,
-                decoration: _inputDecoration(
-                  'Employee Number',
-                  hint: 'e.g. FFL-00000, ESB-0000, OSL-00000, FAS-00000',
-                ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'Employee number is required.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _fullNameController,
-                textCapitalization: TextCapitalization.words,
-                decoration: _inputDecoration(
-                  'Full Name',
-                  hint: 'Enter your full name',
-                ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'Full name is required.';
-                  }
-                  if (text.length < 3) {
-                    return 'Enter a valid full name.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: _inputDecoration(
-                  'Phone Number',
-                  hint: '03XXXXXXXXX',
-                ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'Phone number is required.';
-                  }
-                  if (text.length < 11) {
-                    return 'Enter a valid phone number.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _cnicLast4Controller,
-                keyboardType: TextInputType.number,
-                decoration: _inputDecoration(
-                  'CNIC Last 4 Digits',
-                  hint: '1234',
-                ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'CNIC last 4 digits are required.';
-                  }
-                  if (text.length != 4) {
-                    return 'Enter exactly 4 digits.';
-                  }
-                  if (int.tryParse(text) == null) {
-                    return 'Only digits are allowed.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: _inputDecoration(
-                  'Email',
-                  hint: 'yourname@fatima-group.com',
-                ),
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'Email is required.';
-                  }
-                  if (!text.contains('@')) {
-                    return 'Enter a valid email address.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: _inputDecoration('Password'),
-                validator: (value) {
-                  final text = value ?? '';
-                  if (text.isEmpty) {
-                    return 'Password is required.';
-                  }
-                  if (text.length < 6) {
-                    return 'Password must be at least 6 characters.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _confirmPasswordController,
-                obscureText: true,
-                decoration: _inputDecoration('Confirm Password'),
-                validator: (value) {
-                  final text = value ?? '';
-                  if (text.isEmpty) {
-                    return 'Please confirm your password.';
-                  }
-                  if (text != _passwordController.text) {
-                    return 'Passwords do not match.';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildNoticeCard(),
-              const SizedBox(height: 8),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _acceptedNotice,
-                onChanged: (value) {
-                  setState(() {
-                    _acceptedNotice = value ?? false;
-                  });
-                },
-                controlAffinity: ListTileControlAffinity.leading,
-                title: const Text(
-                  'I agree to the Privacy & Usage Notice and understand that this account is for official mess & café use only.',
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed:
-                      _isLoading || !_acceptedNotice ? null : _register,
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Register'),
                 ),
               ),
             ],

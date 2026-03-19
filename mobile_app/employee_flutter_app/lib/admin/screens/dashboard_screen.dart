@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants/reservation_constants.dart';
 import '../../services/meal_reservation_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String userEmail;
 
-  const DashboardScreen({super.key, required this.userEmail});
+  const DashboardScreen({
+    super.key,
+    required this.userEmail,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -16,392 +18,386 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final MealReservationService _mealReservationService =
       MealReservationService();
 
-  final DateTime _selectedDate = DateTime.now();
+  DateTime selectedDate = DateTime.now();
 
   bool _isLoading = true;
   String? _errorMessage;
 
-  MealOpsSummary _breakfastSummary = MealOpsSummary.empty();
-  MealOpsSummary _lunchSummary = MealOpsSummary.empty();
-  MealOpsSummary _dinnerSummary = MealOpsSummary.empty();
+  Map<String, int> _plannedCounts = {
+    'breakfast': 0,
+    'lunch': 0,
+    'dinner': 0,
+    'total': 0,
+  };
+
+  Map<String, int> _issuedCounts = {
+    'breakfast': 0,
+    'lunch': 0,
+    'dinner': 0,
+    'total': 0,
+  };
 
   @override
   void initState() {
     super.initState();
-    _loadDashboard();
+    _loadDashboardData();
   }
 
-  Future<void> _loadDashboard() async {
+  Future<void> _loadDashboardData() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final results = await Future.wait<MealOpsSummary>([
-        _buildMealSummary(ReservationConstants.breakfast),
-        _buildMealSummary(ReservationConstants.lunch),
-        _buildMealSummary(ReservationConstants.dinner),
-      ]);
+      final planned = await _mealReservationService.getMealCountsForDate(
+        selectedDate,
+      );
+
+      final issued = await _mealReservationService.getIssuedMealCountsForDate(
+        selectedDate,
+      );
 
       if (!mounted) return;
 
       setState(() {
-        _breakfastSummary = results[0];
-        _lunchSummary = results[1];
-        _dinnerSummary = results[2];
+        _plannedCounts = planned;
+        _issuedCounts = issued;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = 'Failed to load mess operations dashboard: $e';
+        _errorMessage = 'Failed to load dashboard data: $e';
         _isLoading = false;
       });
     }
   }
 
-  Future<MealOpsSummary> _buildMealSummary(String mealType) async {
-    final reservations = await _mealReservationService
-        .getReservationsForDateAndMealType(
-      reservationDate: _selectedDate,
-      mealType: mealType,
-    );
-
-    int employeeDineIn = 0;
-    int employeeTakeaway = 0;
-    int officialGuest = 0;
-
-    for (final reservation in reservations) {
-      if (reservation.status != ReservationConstants.active) {
-        continue;
-      }
-
-      final count = reservation.totalMealCount;
-
-      if (reservation.reservationCategory == ReservationConstants.employee) {
-        if (reservation.serviceMode == ReservationConstants.takeaway) {
-          employeeTakeaway += count;
-        } else {
-          employeeDineIn += count;
-        }
-      } else if (reservation.reservationCategory ==
-          ReservationConstants.officialGuest) {
-        officialGuest += count;
-      }
-    }
-
-    return MealOpsSummary(
-      mealType: mealType,
-      employeeDineIn: employeeDineIn,
-      employeeTakeaway: employeeTakeaway,
-      officialGuest: officialGuest,
-    );
+  int _remainingFor(String mealType) {
+    final planned = _plannedCounts[mealType] ?? 0;
+    final issued = _issuedCounts[mealType] ?? 0;
+    final remaining = planned - issued;
+    return remaining < 0 ? 0 : remaining;
   }
 
-  String _formattedDate(DateTime date) {
+  int get _totalRemaining {
+    final remaining = (_plannedCounts['total'] ?? 0) - (_issuedCounts['total'] ?? 0);
+    return remaining < 0 ? 0 : remaining;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2025),
+      lastDate: DateTime(2035),
+    );
+
+    if (picked != null) {
+      setState(() {
+        selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+        );
+      });
+      await _loadDashboardData();
+    }
+  }
+
+  String _formatDate(DateTime date) {
     final day = date.day.toString().padLeft(2, '0');
     final month = date.month.toString().padLeft(2, '0');
     final year = date.year.toString();
     return '$day-$month-$year';
   }
 
-  String _mealTitle(String mealType) {
-    switch (mealType) {
-      case ReservationConstants.breakfast:
-        return 'Breakfast';
-      case ReservationConstants.lunch:
-        return 'Lunch';
-      case ReservationConstants.dinner:
-        return 'Dinner';
-      default:
-        return mealType;
-    }
-  }
+  @override
+  Widget build(BuildContext context) {
+    final cards = [
+      _MealSummaryCardData(
+        mealLabel: 'Breakfast',
+        planned: _plannedCounts['breakfast'] ?? 0,
+        issued: _issuedCounts['breakfast'] ?? 0,
+        remaining: _remainingFor('breakfast'),
+        icon: Icons.free_breakfast_outlined,
+      ),
+      _MealSummaryCardData(
+        mealLabel: 'Lunch',
+        planned: _plannedCounts['lunch'] ?? 0,
+        issued: _issuedCounts['lunch'] ?? 0,
+        remaining: _remainingFor('lunch'),
+        icon: Icons.lunch_dining_outlined,
+      ),
+      _MealSummaryCardData(
+        mealLabel: 'Dinner',
+        planned: _plannedCounts['dinner'] ?? 0,
+        issued: _issuedCounts['dinner'] ?? 0,
+        remaining: _remainingFor('dinner'),
+        icon: Icons.dinner_dining_outlined,
+      ),
+    ];
 
-  IconData _mealIcon(String mealType) {
-    switch (mealType) {
-      case ReservationConstants.breakfast:
-        return Icons.free_breakfast_outlined;
-      case ReservationConstants.lunch:
-        return Icons.lunch_dining_outlined;
-      case ReservationConstants.dinner:
-        return Icons.dinner_dining_outlined;
-      default:
-        return Icons.restaurant_outlined;
-    }
-  }
-
-  int get _grandTotal =>
-      _breakfastSummary.total +
-      _lunchSummary.total +
-      _dinnerSummary.total;
-
-  Widget _buildTopSummaryCard({
-    required String title,
-    required int count,
-    required IconData icon,
-  }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+    return Scaffold(
+      body: RefreshIndicator(
+        onRefresh: _loadDashboardData,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            Icon(icon, size: 30),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium,
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Wrap(
+                  runSpacing: 12,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Operational Dashboard',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Signed in as: ${widget.userEmail}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Date: ${_formatDate(selectedDate)}',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _pickDate,
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: const Text('Select Date'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _loadDashboardData,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Refresh'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-            Text(
-              '$count',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMealSection(MealOpsSummary summary) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Icon(_mealIcon(summary.mealType)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _mealTitle(summary.mealType),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    'Total ${summary.total}',
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 16),
-            _buildMetricRow(
-              label: 'Employee Dine-In',
-              value: summary.employeeDineIn,
-              icon: Icons.restaurant,
-            ),
-            const Divider(height: 20),
-            _buildMetricRow(
-              label: 'Employee Takeaway',
-              value: summary.employeeTakeaway,
-              icon: Icons.takeout_dining_outlined,
-            ),
-            const Divider(height: 20),
-            _buildMetricRow(
-              label: 'Official Guest',
-              value: summary.officialGuest,
-              icon: Icons.groups_outlined,
-            ),
-            const Divider(height: 20),
-            _buildMetricRow(
-              label: 'Total',
-              value: summary.total,
-              icon: Icons.summarize_outlined,
-              emphasized: true,
-            ),
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_errorMessage != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              )
+            else ...[
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: cards.length,
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 320,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.25,
+                ),
+                itemBuilder: (context, index) {
+                  final card = cards[index];
+                  return _MealSummaryCard(card: card);
+                },
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Daily Totals',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SummaryRow(
+                        label: 'Planned Meals',
+                        value: (_plannedCounts['total'] ?? 0).toString(),
+                      ),
+                      const SizedBox(height: 8),
+                      _SummaryRow(
+                        label: 'Issued Meals',
+                        value: (_issuedCounts['total'] ?? 0).toString(),
+                      ),
+                      const SizedBox(height: 8),
+                      _SummaryRow(
+                        label: 'Remaining Meals',
+                        value: _totalRemaining.toString(),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Next Dashboard Evolution',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 12),
+                      Text('• Planned vs issued vs remaining is now aligned.'),
+                      SizedBox(height: 6),
+                      Text('• Next layer can add live issuance operations.'),
+                      SizedBox(height: 6),
+                      Text('• Later this dashboard can include guest split, dine-in vs takeaway, and rate-linked summaries.'),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildMetricRow({
-    required String label,
-    required int value,
-    required IconData icon,
-    bool emphasized = false,
-  }) {
-    final textStyle = emphasized
-        ? Theme.of(context).textTheme.titleMedium
-        : Theme.of(context).textTheme.bodyLarge;
+class _MealSummaryCardData {
+  final String mealLabel;
+  final int planned;
+  final int issued;
+  final int remaining;
+  final IconData icon;
 
-    return Row(
-      children: [
-        Icon(icon, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            label,
-            style: textStyle,
-          ),
-        ),
-        Text(
-          '$value',
-          style: emphasized
-              ? Theme.of(context).textTheme.titleLarge
-              : Theme.of(context).textTheme.titleMedium,
-        ),
-      ],
-    );
-  }
+  const _MealSummaryCardData({
+    required this.mealLabel,
+    required this.planned,
+    required this.issued,
+    required this.remaining,
+    required this.icon,
+  });
+}
 
-  Widget _buildHeaderCard() {
+class _MealSummaryCard extends StatelessWidget {
+  final _MealSummaryCardData card;
+
+  const _MealSummaryCard({
+    required this.card,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Mess Operations Dashboard',
-              style: Theme.of(context).textTheme.headlineSmall,
+            Row(
+              children: [
+                Icon(card.icon),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    card.mealLabel,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
+            const Spacer(),
+            _MetricLine(label: 'Planned', value: card.planned),
             const SizedBox(height: 8),
-            Text(
-              'Operational meal headcount for today',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Date: ${_formattedDate(_selectedDate)}',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Logged in as: ${widget.userEmail}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            _MetricLine(label: 'Issued', value: card.issued),
+            const SizedBox(height: 8),
+            _MetricLine(label: 'Remaining', value: card.remaining),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildErrorState() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+class _MetricLine extends StatelessWidget {
+  final String label;
+  final int value;
+
+  const _MetricLine({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 42,
-                  color: Colors.redAccent,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _errorMessage ?? 'Unknown error',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: _loadDashboard,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
-                ),
-              ],
-            ),
-          ),
+        Text(label),
+        Text(
+          value.toString(),
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
       ],
     );
   }
+}
 
-  Widget _buildDashboardBody() {
-    return RefreshIndicator(
-      onRefresh: _loadDashboard,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildHeaderCard(),
-          const SizedBox(height: 12),
-          _buildTopSummaryCard(
-            title: 'Breakfast Total',
-            count: _breakfastSummary.total,
-            icon: Icons.free_breakfast_outlined,
-          ),
-          _buildTopSummaryCard(
-            title: 'Lunch Total',
-            count: _lunchSummary.total,
-            icon: Icons.lunch_dining_outlined,
-          ),
-          _buildTopSummaryCard(
-            title: 'Dinner Total',
-            count: _dinnerSummary.total,
-            icon: Icons.dinner_dining_outlined,
-          ),
-          _buildTopSummaryCard(
-            title: 'Grand Total',
-            count: _grandTotal,
-            icon: Icons.summarize_outlined,
-          ),
-          const SizedBox(height: 12),
-          _buildMealSection(_breakfastSummary),
-          const SizedBox(height: 12),
-          _buildMealSection(_lunchSummary),
-          const SizedBox(height: 12),
-          _buildMealSection(_dinnerSummary),
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
+class _SummaryRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? _buildErrorState()
-              : _buildDashboardBody(),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isLoading ? null : _loadDashboard,
-        icon: const Icon(Icons.refresh),
-        label: const Text('Refresh'),
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ],
     );
   }
-}
-
-class MealOpsSummary {
-  final String mealType;
-  final int employeeDineIn;
-  final int employeeTakeaway;
-  final int officialGuest;
-
-  const MealOpsSummary({
-    required this.mealType,
-    required this.employeeDineIn,
-    required this.employeeTakeaway,
-    required this.officialGuest,
-  });
-
-  factory MealOpsSummary.empty() {
-    return const MealOpsSummary(
-      mealType: '',
-      employeeDineIn: 0,
-      employeeTakeaway: 0,
-      officialGuest: 0,
-    );
-  }
-
-  int get total => employeeDineIn + employeeTakeaway + officialGuest;
 }

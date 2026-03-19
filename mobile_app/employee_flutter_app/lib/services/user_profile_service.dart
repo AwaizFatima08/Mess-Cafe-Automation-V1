@@ -1,13 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum AppUserRole {
-  developer,
-  admin,
-  messManager,
-  messSupervisor,
-  employee,
-  unknown,
-}
+import 'user_role_service.dart';
 
 class AppUserProfile {
   final String documentId;
@@ -17,6 +10,7 @@ class AppUserProfile {
   final String employeeNumber;
   final String employeeName;
   final bool isActive;
+  final String status;
   final Map<String, dynamic> rawData;
 
   const AppUserProfile({
@@ -27,6 +21,7 @@ class AppUserProfile {
     required this.employeeNumber,
     required this.employeeName,
     required this.isActive,
+    required this.status,
     required this.rawData,
   });
 
@@ -51,78 +46,30 @@ class AppUserProfile {
 }
 
 class UserProfileService {
-  UserProfileService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  UserProfileService({
+    FirebaseFirestore? firestore,
+    UserRoleService? userRoleService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _userRoleService = userRoleService ?? UserRoleService();
 
   final FirebaseFirestore _firestore;
+  final UserRoleService _userRoleService;
 
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _firestore.collection('users');
 
   Future<AppUserProfile?> resolveCurrentUserProfile({
-    required String userEmail,
-    String? authUid,
+    required String authUid,
   }) async {
-    final normalizedEmail = userEmail.trim();
-    final normalizedLowerEmail = normalizedEmail.toLowerCase();
-    final normalizedUid = authUid?.trim() ?? '';
+    final normalizedUid = authUid.trim();
 
-    if (normalizedUid.isNotEmpty) {
-      const uidFields = [
-        'auth_uid',
-        'uid',
-        'user_id',
-      ];
-
-      for (final field in uidFields) {
-        final query = await _usersRef
-            .where(field, isEqualTo: normalizedUid)
-            .limit(1)
-            .get();
-
-        final profile = _readProfileFromQuery(query);
-        if (profile != null) {
-          return profile;
-        }
-      }
+    if (normalizedUid.isEmpty) {
+      return null;
     }
 
-    const emailFields = [
-      'email',
-      'user_email',
-      'official_email',
-      'personal_email',
-      'login_email',
-    ];
+    final query =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
 
-    for (final field in emailFields) {
-      final exactQuery = await _usersRef
-          .where(field, isEqualTo: normalizedEmail)
-          .limit(1)
-          .get();
-
-      final exactProfile = _readProfileFromQuery(exactQuery);
-      if (exactProfile != null) {
-        return exactProfile;
-      }
-
-      final lowerQuery = await _usersRef
-          .where(field, isEqualTo: normalizedLowerEmail)
-          .limit(1)
-          .get();
-
-      final lowerProfile = _readProfileFromQuery(lowerQuery);
-      if (lowerProfile != null) {
-        return lowerProfile;
-      }
-    }
-
-    return null;
-  }
-
-  AppUserProfile? _readProfileFromQuery(
-    QuerySnapshot<Map<String, dynamic>> query,
-  ) {
     if (query.docs.isEmpty) {
       return null;
     }
@@ -130,105 +77,28 @@ class UserProfileService {
     final doc = query.docs.first;
     final data = doc.data();
 
+    final email = (data['email'] ?? '').toString().trim().toLowerCase();
+    final employeeNumber =
+        (data['employee_number'] ?? '').toString().trim();
+    final employeeName =
+        (data['employee_name'] ?? '').toString().trim();
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isActive = data['is_active'] == true;
+
     return AppUserProfile(
       documentId: doc.id,
-      authUid: _firstNonEmptyString([
-        data['auth_uid'],
-        data['uid'],
-        data['user_id'],
-      ]),
-      email: _firstNonEmptyString([
-        data['email'],
-        data['user_email'],
-        data['official_email'],
-        data['personal_email'],
-        data['login_email'],
-      ]),
-      role: _extractRole(data),
-      employeeNumber: _firstNonEmptyString([
-        data['employee_number'],
-        data['emp_no'],
-        data['employeeNo'],
-      ]),
-      employeeName: _firstNonEmptyString([
-        data['employee_name'],
-        data['name'],
-        data['full_name'],
-      ]),
-      isActive: _extractActiveFlag(data),
+      authUid: (data['uid'] ?? normalizedUid).toString().trim(),
+      email: email,
+      role: _userRoleService.parseRole(data['role']),
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      isActive: isActive,
+      status: status,
       rawData: data,
     );
   }
 
-  AppUserRole _extractRole(Map<String, dynamic> data) {
-    final candidateFields = [
-      data['role'],
-      data['user_role'],
-      data['access_role'],
-      data['account_role'],
-    ];
-
-    for (final candidate in candidateFields) {
-      final normalized = (candidate ?? '').toString().trim().toLowerCase();
-
-      if (normalized == 'developer') {
-        return AppUserRole.developer;
-      }
-
-      if (normalized == 'admin' ||
-          normalized == 'administrator' ||
-          normalized == 'super_admin') {
-        return AppUserRole.admin;
-      }
-
-      if (normalized == 'mess_manager' ||
-          normalized == 'mess manager' ||
-          normalized == 'manager') {
-        return AppUserRole.messManager;
-      }
-
-      if (normalized == 'mess_supervisor' ||
-          normalized == 'mess supervisor' ||
-          normalized == 'supervisor') {
-        return AppUserRole.messSupervisor;
-      }
-
-      if (normalized == 'employee' ||
-          normalized == 'staff' ||
-          normalized == 'user') {
-        return AppUserRole.employee;
-      }
-    }
-
-    return AppUserRole.unknown;
-  }
-
-  bool _extractActiveFlag(Map<String, dynamic> data) {
-    final value = data['is_active'];
-
-    if (value is bool) {
-      return value;
-    }
-
-    final normalized = (value ?? '').toString().trim().toLowerCase();
-
-    if (normalized == 'false' ||
-        normalized == '0' ||
-        normalized == 'inactive' ||
-        normalized == 'disabled') {
-      return false;
-    }
-
-    return true;
-  }
-
-  String _firstNonEmptyString(List<dynamic> values) {
-    for (final value in values) {
-      final text = (value ?? '').toString().trim();
-      if (text.isNotEmpty) {
-        return text;
-      }
-    }
-    return '';
+  Future<AppUserProfile?> getUserProfileByUid(String authUid) {
+    return resolveCurrentUserProfile(authUid: authUid);
   }
 }

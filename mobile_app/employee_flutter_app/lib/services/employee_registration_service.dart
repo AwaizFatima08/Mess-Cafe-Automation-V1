@@ -1,15 +1,31 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+class RegistrationResult {
+  final bool success;
+  final String message;
+  final String? uid;
+  final String? employeeNumber;
+  final String? requestId;
+
+  const RegistrationResult({
+    required this.success,
+    required this.message,
+    this.uid,
+    this.employeeNumber,
+    this.requestId,
+  });
+}
+
 class EmployeeRegistrationService {
   EmployeeRegistrationService({
-    FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+    FirebaseAuth? auth,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
 
   CollectionReference<Map<String, dynamic>> get _employeesRef =>
       _firestore.collection('employees');
@@ -20,293 +36,173 @@ class EmployeeRegistrationService {
   CollectionReference<Map<String, dynamic>> get _registrationRequestsRef =>
       _firestore.collection('registration_requests');
 
-  Future<String> registerEmployee({
-    required String employeeNo,
-    required String fullName,
-    required String phone,
-    required String cnicLast4,
+  Future<RegistrationResult> registerEmployee({
+    required String employeeNumber,
     required String email,
     required String password,
+    required String fullName,
+    required String cnicLast4,
+    String role = 'employee',
+    bool requireApproval = true,
   }) async {
-    final normalizedEmployeeNo = employeeNo.trim().toUpperCase();
-    final normalizedFullName = _normalizeText(fullName);
-    final normalizedPhone = _normalizePhone(phone);
-    final normalizedCnicLast4 = _normalizeDigits(cnicLast4);
+    final normalizedEmployeeNumber = employeeNumber.trim();
     final normalizedEmail = email.trim().toLowerCase();
+    final normalizedFullName = fullName.trim();
+    final normalizedCnicLast4 = cnicLast4.trim();
+    final normalizedRole = role.trim().toLowerCase();
 
-    if (normalizedEmployeeNo.isEmpty) {
-      throw Exception('Employee number is required.');
+    if (normalizedEmployeeNumber.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Employee number is required.',
+      );
+    }
+
+    if (normalizedEmail.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Email is required.',
+      );
     }
 
     if (normalizedFullName.isEmpty) {
-      throw Exception('Full name is required.');
+      return const RegistrationResult(
+        success: false,
+        message: 'Full name is required.',
+      );
     }
 
-    if (normalizedPhone.length < 11) {
-      throw Exception('A valid phone number is required.');
+    if (normalizedCnicLast4.isEmpty || normalizedCnicLast4.length != 4) {
+      return const RegistrationResult(
+        success: false,
+        message: 'CNIC last 4 digits are required.',
+      );
     }
 
-    if (normalizedCnicLast4.length != 4) {
-      throw Exception('CNIC last 4 digits must be exactly 4 digits.');
+    final employeeDoc =
+        await _employeesRef.doc(normalizedEmployeeNumber).get();
+
+    if (!employeeDoc.exists || employeeDoc.data() == null) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Employee record not found.',
+      );
     }
 
-    if (normalizedEmail.isEmpty || !normalizedEmail.contains('@')) {
-      throw Exception('A valid email address is required.');
+    final employeeData = employeeDoc.data()!;
+    final employeeName =
+        (employeeData['employee_name'] ?? '').toString().trim();
+    final employeeCnicLast4 =
+        (employeeData['cnic_last_4'] ?? '').toString().trim();
+
+    if (employeeCnicLast4.isNotEmpty &&
+        employeeCnicLast4 != normalizedCnicLast4) {
+      return const RegistrationResult(
+        success: false,
+        message: 'CNIC last 4 digits do not match employee record.',
+      );
     }
 
-    if (password.length < 6) {
-      throw Exception('Password must be at least 6 characters.');
+    if (employeeName.isNotEmpty &&
+        normalizedFullName.toLowerCase() != employeeName.toLowerCase()) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Full name does not match employee record.',
+      );
     }
 
     final existingUserByEmployee = await _usersRef
-        .where('employee_no', isEqualTo: normalizedEmployeeNo)
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
         .limit(1)
         .get();
 
     if (existingUserByEmployee.docs.isNotEmpty) {
-      throw Exception(
-        'An account is already linked with this employee number.',
+      return const RegistrationResult(
+        success: false,
+        message: 'A user account already exists for this employee number.',
       );
     }
 
-    final existingUserByEmail =
-        await _usersRef.where('email', isEqualTo: normalizedEmail).limit(1).get();
+    final existingUserByEmail = await _usersRef
+        .where('email', isEqualTo: normalizedEmail)
+        .limit(1)
+        .get();
 
     if (existingUserByEmail.docs.isNotEmpty) {
-      throw Exception('An account already exists with this email address.');
-    }
-
-    final employeeDoc =
-        await _findEmployeeDocumentByEmployeeNo(normalizedEmployeeNo);
-
-    if (employeeDoc == null) {
-      await _createRegistrationRequest(
-        employeeNo: normalizedEmployeeNo,
-        fullName: fullName.trim(),
-        phone: normalizedPhone,
-        cnicLast4: normalizedCnicLast4,
-        email: normalizedEmail,
-        matchedEmployee: false,
+      return const RegistrationResult(
+        success: false,
+        message: 'A user account already exists for this email.',
       );
-      return 'requested';
     }
 
-    final employeeData = employeeDoc.data();
+    final existingRequestByEmployee = await _registrationRequestsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where('status', whereIn: ['pending', 'approved'])
+        .limit(1)
+        .get();
 
-    final storedEmployeeNo = _readString(employeeData, [
-      'employee_no',
-      'employee_number',
-      'emp_no',
-      'emp_code',
-      'code',
-    ]).toUpperCase();
-
-    final storedName = _normalizeText(_readString(employeeData, [
-      'full_name',
-      'employee_name',
-      'name',
-      'display_name',
-    ]));
-
-    final storedPhone = _normalizePhone(_readString(employeeData, [
-      'phone_number',
-      'phone',
-      'mobile_number',
-      'mobile',
-      'contact_number',
-    ]));
-
-    final storedCnicLast4 = _extractLast4Digits(_readString(employeeData, [
-      'cnic_last4',
-      'cnic_last_4',
-      'cnic',
-      'cnic_number',
-      'national_id',
-    ]));
-
-    final employeeNoMatches = storedEmployeeNo == normalizedEmployeeNo;
-    final nameMatches = storedName.isNotEmpty && storedName == normalizedFullName;
-    final phoneMatches =
-        storedPhone.isNotEmpty && storedPhone == normalizedPhone;
-    final cnicMatches =
-        storedCnicLast4.isNotEmpty && storedCnicLast4 == normalizedCnicLast4;
-
-    final fullyMatched =
-        employeeNoMatches && nameMatches && phoneMatches && cnicMatches;
-
-    if (!fullyMatched) {
-      await _createRegistrationRequest(
-        employeeNo: normalizedEmployeeNo,
-        fullName: fullName.trim(),
-        phone: normalizedPhone,
-        cnicLast4: normalizedCnicLast4,
-        email: normalizedEmail,
-        matchedEmployee: true,
+    if (existingRequestByEmployee.docs.isNotEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'A registration request already exists for this employee.',
       );
-      return 'requested';
     }
 
-    UserCredential credential;
+    final userCredential = await _auth.createUserWithEmailAndPassword(
+      email: normalizedEmail,
+      password: password,
+    );
 
-    try {
-      credential = await _auth.createUserWithEmailAndPassword(
-        email: normalizedEmail,
-        password: password,
+    final uid = userCredential.user?.uid;
+    if (uid == null || uid.trim().isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'User account created but UID is missing.',
       );
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_authErrorMessage(e));
     }
 
-    final user = credential.user;
-    if (user == null) {
-      throw Exception('Failed to create authentication account.');
-    }
+    final now = FieldValue.serverTimestamp();
+    final isActive = !requireApproval;
+    final effectiveStatus = requireApproval ? 'pending' : 'approved';
 
-    final displayName = _readString(employeeData, [
-      'full_name',
-      'employee_name',
-      'name',
-      'display_name',
-    ]).trim();
-
-    await _usersRef.doc(user.uid).set({
-      'uid': user.uid,
+    await _usersRef.doc(uid).set({
+      'uid': uid,
       'email': normalizedEmail,
-      'display_name': displayName.isNotEmpty ? displayName : fullName.trim(),
-      'employee_no': normalizedEmployeeNo,
-      'role': 'employee',
-      'status': 'active',
-      'created_at': FieldValue.serverTimestamp(),
+      'employee_number': normalizedEmployeeNumber,
+      'employee_name': employeeName.isNotEmpty ? employeeName : normalizedFullName,
+      'role': normalizedRole,
+      'is_active': isActive,
+      'status': effectiveStatus,
+      'created_at': now,
+      'updated_at': now,
     });
 
-    await _auth.signOut();
+    String? requestId;
 
-    return 'created';
-  }
+    if (requireApproval) {
+      final requestDoc = _registrationRequestsRef.doc();
+      requestId = requestDoc.id;
 
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?>
-      _findEmployeeDocumentByEmployeeNo(String employeeNo) async {
-    final primaryQuery = await _employeesRef
-        .where('employee_no', isEqualTo: employeeNo)
-        .limit(1)
-        .get();
-
-    if (primaryQuery.docs.isNotEmpty) {
-      return primaryQuery.docs.first;
+      await requestDoc.set({
+        'employee_number': normalizedEmployeeNumber,
+        'employee_name': employeeName.isNotEmpty ? employeeName : normalizedFullName,
+        'email': normalizedEmail,
+        'role': normalizedRole,
+        'status': 'pending',
+        'requested_at': now,
+        'approved_by_uid': null,
+        'approved_at': null,
+      });
     }
 
-    final secondaryQuery = await _employeesRef
-        .where('employee_number', isEqualTo: employeeNo)
-        .limit(1)
-        .get();
-
-    if (secondaryQuery.docs.isNotEmpty) {
-      return secondaryQuery.docs.first;
-    }
-
-    final tertiaryQuery =
-        await _employeesRef.where('emp_no', isEqualTo: employeeNo).limit(1).get();
-
-    if (tertiaryQuery.docs.isNotEmpty) {
-      return tertiaryQuery.docs.first;
-    }
-
-    return null;
-  }
-
-  Future<void> _createRegistrationRequest({
-    required String employeeNo,
-    required String fullName,
-    required String phone,
-    required String cnicLast4,
-    required String email,
-    required bool matchedEmployee,
-  }) async {
-    final existingPending = await _registrationRequestsRef
-        .where('employee_no', isEqualTo: employeeNo)
-        .where('request_status', isEqualTo: 'pending')
-        .limit(1)
-        .get();
-
-    if (existingPending.docs.isNotEmpty) {
-      throw Exception(
-        'A pending registration request already exists for this employee number.',
-      );
-    }
-
-    await _registrationRequestsRef.add({
-      'full_name': fullName,
-      'employee_no': employeeNo,
-      'phone_number': phone,
-      'cnic_last4': cnicLast4,
-      'email': email,
-      'requested_role': 'employee',
-      'request_status': 'pending',
-      'matched_employee': matchedEmployee,
-      'submitted_at': FieldValue.serverTimestamp(),
-      'reviewed_by': '',
-      'decision_notes': '',
-    });
-  }
-
-  String _readString(Map<String, dynamic> map, List<String> keys) {
-    for (final key in keys) {
-      final value = map[key];
-      if (value != null) {
-        final text = value.toString().trim();
-        if (text.isNotEmpty) {
-          return text;
-        }
-      }
-    }
-    return '';
-  }
-
-  String _normalizeText(String value) {
-    return value
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'\s+'), ' ');
-  }
-
-  String _normalizePhone(String value) {
-    final digits = _normalizeDigits(value);
-
-    if (digits.length == 11) {
-      return digits;
-    }
-
-    if (digits.length > 11) {
-      return digits.substring(digits.length - 11);
-    }
-
-    return digits;
-  }
-
-  String _normalizeDigits(String value) {
-    return value.replaceAll(RegExp(r'[^0-9]'), '');
-  }
-
-  String _extractLast4Digits(String value) {
-    final digits = _normalizeDigits(value);
-    if (digits.length >= 4) {
-      return digits.substring(digits.length - 4);
-    }
-    return digits;
-  }
-
-  String _authErrorMessage(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use':
-        return 'An authentication account already exists with this email.';
-      case 'invalid-email':
-        return 'The email address format is invalid.';
-      case 'weak-password':
-        return 'The password is too weak.';
-      case 'operation-not-allowed':
-        return 'Email/password sign-up is not enabled in Firebase Authentication.';
-      default:
-        return e.message ?? 'Authentication account creation failed.';
-    }
+    return RegistrationResult(
+      success: true,
+      message: requireApproval
+          ? 'Registration submitted successfully and is pending approval.'
+          : 'Registration completed successfully.',
+      uid: uid,
+      employeeNumber: normalizedEmployeeNumber,
+      requestId: requestId,
+    );
   }
 }
