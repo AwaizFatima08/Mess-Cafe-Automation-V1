@@ -143,6 +143,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signIn() async {
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      setState(() {
+        _errorText = 'Please enter both email and password.';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorText = null;
@@ -150,14 +160,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailController.text.trim().toLowerCase(),
-        password: _passwordController.text.trim(),
+        email: email,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthGate()),
+        (route) => false,
       );
     } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorText = e.message ?? 'Login failed.';
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _errorText = 'Unexpected error during login.';
       });
@@ -171,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _goToSignup() async {
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const EmployeeSignupScreen(),
       ),
@@ -198,50 +217,58 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text(
                       'Sign In',
                       style: TextStyle(
-                        fontSize: 22,
+                        fontSize: 34,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     TextField(
                       controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Email',
                         border: OutlineInputBorder(),
                       ),
-                      keyboardType: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _passwordController,
+                      obscureText: true,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) {
+                        if (!_isLoading) {
+                          _signIn();
+                        }
+                      },
                       decoration: const InputDecoration(
                         labelText: 'Password',
                         border: OutlineInputBorder(),
                       ),
-                      obscureText: true,
                     ),
-                    const SizedBox(height: 16),
                     if (_errorText != null) ...[
+                      const SizedBox(height: 12),
                       Text(
                         _errorText!,
                         style: const TextStyle(color: Colors.red),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 12),
                     ],
+                    const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _signIn,
                         child: _isLoading
                             ? const SizedBox(
-                                height: 18,
                                 width: 18,
+                                height: 18,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Text('Login'),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
@@ -263,19 +290,26 @@ class _LoginScreenState extends State<LoginScreen> {
 class _LoadingScreen extends StatelessWidget {
   final String message;
 
-  const _LoadingScreen({required this.message});
+  const _LoadingScreen({
+    required this.message,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 12),
-            Text(message),
-          ],
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 16),
+                Text(message),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -298,17 +332,14 @@ class _AccessBlockedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Access Status'),
-      ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
+          constraints: const BoxConstraints(maxWidth: 480),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -318,13 +349,14 @@ class _AccessBlockedScreen extends StatelessWidget {
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     Text(
                       message,
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     ElevatedButton(
                       onPressed: () async {
                         await onActionPressed();

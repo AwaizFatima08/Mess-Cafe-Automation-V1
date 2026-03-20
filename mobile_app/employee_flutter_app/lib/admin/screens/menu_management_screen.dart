@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/add_menu_item_dialog.dart';
+import '../widgets/edit_menu_item_dialog.dart';
 
 class MenuManagementScreen extends StatelessWidget {
   final String userEmail;
@@ -11,20 +12,66 @@ class MenuManagementScreen extends StatelessWidget {
   Stream<QuerySnapshot<Map<String, dynamic>>> loadMenuItems() {
     return FirebaseFirestore.instance
         .collection('menu_items')
-        .orderBy('name')
+        .orderBy('item_name')
         .snapshots();
   }
 
-  String formatItemMode(String value) {
-    if (value == 'optional') return 'Optional';
-    return 'Inclusive';
+  String formatStatus(Map<String, dynamic> data) {
+    final isActive = data['is_active'] == true ||
+        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
+    return isActive ? 'Active' : 'Inactive';
   }
 
-  IconData getItemIcon(String itemMode) {
-    if (itemMode == 'optional') {
-      return Icons.add_circle_outline;
+  bool isItemActive(Map<String, dynamic> data) {
+    return data['is_active'] == true ||
+        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
+  }
+
+  IconData getItemIcon(String category) {
+    switch (category.trim().toLowerCase()) {
+      case 'breakfast':
+        return Icons.free_breakfast_outlined;
+      case 'lunch':
+        return Icons.lunch_dining_outlined;
+      case 'dinner':
+        return Icons.dinner_dining_outlined;
+      case 'beverage':
+      case 'hot_beverage':
+        return Icons.local_drink_outlined;
+      default:
+        return Icons.restaurant_menu;
     }
-    return Icons.restaurant;
+  }
+
+  Future<void> toggleItemActive(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final currentlyActive = isItemActive(data);
+      final nextActive = !currentlyActive;
+
+      await FirebaseFirestore.instance.collection('menu_items').doc(docId).update({
+        'is_active': nextActive,
+        'status': nextActive ? 'active' : 'inactive',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(nextActive
+              ? 'Menu item activated.'
+              : 'Menu item deactivated.'),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update menu item: $e')),
+      );
+    }
   }
 
   @override
@@ -60,10 +107,6 @@ class MenuManagementScreen extends StatelessWidget {
 
           final docs = snapshot.data?.docs ?? [];
 
-          if (docs.isEmpty) {
-            return const Center(child: Text('No menu items found'));
-          }
-
           return Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -74,34 +117,93 @@ class MenuManagementScreen extends StatelessWidget {
                   style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 12),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: docs.length,
-                    itemBuilder: (context, index) {
-                      final data = docs[index].data();
-
-                      final name = (data['name'] ?? 'Unknown').toString();
-                      final itemMode =
-                          (data['item_mode'] ?? 'inclusive').toString();
-                      final estimatedPrice = data['estimated_price'] ?? 0;
-                      final active = data['active'] == true;
-
-                      return Card(
-                        child: ListTile(
-                          leading: Icon(getItemIcon(itemMode)),
-                          title: Text(name),
-                          subtitle: Text(
-                            'Rs $estimatedPrice • ${formatItemMode(itemMode)}',
-                          ),
-                          trailing: Icon(
-                            active ? Icons.check_circle : Icons.cancel,
-                            color: active ? Colors.green : Colors.red,
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Menu Items',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      );
-                    },
+                        Text('Total: ${docs.length}'),
+                      ],
+                    ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                if (docs.isEmpty)
+                  const Expanded(
+                    child: Center(child: Text('No menu items found')),
+                  )
+                else
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final doc = docs[index];
+                        final data = doc.data();
+
+                        final itemName =
+                            (data['item_name'] ?? doc.id).toString().trim();
+                        final category =
+                            (data['category'] ?? 'uncategorized').toString();
+                        final estimatedPrice = data['estimated_price'] ?? 0;
+                        final active = isItemActive(data);
+
+                        return Card(
+                          child: ListTile(
+                            leading: Icon(getItemIcon(category)),
+                            title: Text(itemName),
+                            subtitle: Text(
+                              'ID: ${doc.id} • Category: $category • Rs $estimatedPrice',
+                            ),
+                            trailing: Wrap(
+                              spacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  formatStatus(data),
+                                  style: TextStyle(
+                                    color: active ? Colors.green : Colors.red,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Edit',
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => EditMenuItemDialog(
+                                        itemId: doc.id,
+                                        existingData: data,
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.edit_outlined),
+                                ),
+                                IconButton(
+                                  tooltip: active ? 'Deactivate' : 'Activate',
+                                  onPressed: () =>
+                                      toggleItemActive(context, doc.id, data),
+                                  icon: Icon(
+                                    active ? Icons.toggle_on : Icons.toggle_off,
+                                    color: active ? Colors.green : Colors.grey,
+                                    size: 30,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
               ],
             ),
           );

@@ -1,42 +1,53 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-class AddMenuItemDialog extends StatefulWidget {
-  const AddMenuItemDialog({super.key});
+class EditMenuItemDialog extends StatefulWidget {
+  final String itemId;
+  final Map<String, dynamic> existingData;
+
+  const EditMenuItemDialog({
+    super.key,
+    required this.itemId,
+    required this.existingData,
+  });
 
   @override
-  State<AddMenuItemDialog> createState() => _AddMenuItemDialogState();
+  State<EditMenuItemDialog> createState() => _EditMenuItemDialogState();
 }
 
-class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
-  final TextEditingController itemNameController = TextEditingController();
-  final TextEditingController priceController = TextEditingController();
+class _EditMenuItemDialogState extends State<EditMenuItemDialog> {
+  late final TextEditingController itemNameController;
+  late final TextEditingController priceController;
 
-  String category = 'other';
+  late String category;
+  late bool isActive;
+
   bool isSaving = false;
   String? errorMessage;
 
-  Future<String> _generateNextItemId() async {
-    final snapshot = await FirebaseFirestore.instance.collection('menu_items').get();
+  @override
+  void initState() {
+    super.initState();
 
-    var maxNumber = 0;
-    final regex = RegExp(r'^ITEM(\d+)$');
+    itemNameController = TextEditingController(
+      text: (widget.existingData['item_name'] ?? '').toString(),
+    );
 
-    for (final doc in snapshot.docs) {
-      final match = regex.firstMatch(doc.id.trim().toUpperCase());
-      if (match == null) continue;
+    priceController = TextEditingController(
+      text: (widget.existingData['estimated_price'] ?? 0).toString(),
+    );
 
-      final number = int.tryParse(match.group(1) ?? '0') ?? 0;
-      if (number > maxNumber) {
-        maxNumber = number;
-      }
-    }
+    category = (widget.existingData['category'] ?? 'other').toString();
 
-    final nextNumber = maxNumber + 1;
-    return 'ITEM${nextNumber.toString().padLeft(3, '0')}';
+    isActive = widget.existingData['is_active'] == true ||
+        (widget.existingData['status'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase() ==
+            'active';
   }
 
-  Future<void> createMenuItem() async {
+  Future<void> updateMenuItem() async {
     final itemName = itemNameController.text.trim();
     final priceText = priceController.text.trim();
 
@@ -61,15 +72,15 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
         errorMessage = null;
       });
 
-      final docId = await _generateNextItemId();
-
-      await FirebaseFirestore.instance.collection('menu_items').doc(docId).set({
+      await FirebaseFirestore.instance
+          .collection('menu_items')
+          .doc(widget.itemId)
+          .update({
         'item_name': itemName,
         'category': category,
         'estimated_price': estimatedPrice,
-        'status': 'active',
-        'is_active': true,
-        'created_at': FieldValue.serverTimestamp(),
+        'is_active': isActive,
+        'status': isActive ? 'active' : 'inactive',
         'updated_at': FieldValue.serverTimestamp(),
       });
 
@@ -77,7 +88,7 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
       Navigator.pop(context);
     } catch (e) {
       setState(() {
-        errorMessage = 'Failed to create menu item: $e';
+        errorMessage = 'Failed to update menu item: $e';
         isSaving = false;
       });
     }
@@ -93,11 +104,19 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Add Menu Item'),
+      title: Text('Edit Menu Item (${widget.itemId})'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Item ID',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.itemId),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: itemNameController,
               textCapitalization: TextCapitalization.words,
@@ -142,6 +161,20 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Active'),
+              subtitle: Text(
+                isActive ? 'Item is active' : 'Item is inactive',
+              ),
+              value: isActive,
+              onChanged: (value) {
+                setState(() {
+                  isActive = value;
+                });
+              },
+            ),
             if (errorMessage != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -158,8 +191,8 @@ class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: isSaving ? null : createMenuItem,
-          child: Text(isSaving ? 'Saving...' : 'Create'),
+          onPressed: isSaving ? null : updateMenuItem,
+          child: Text(isSaving ? 'Saving...' : 'Update'),
         ),
       ],
     );

@@ -45,7 +45,7 @@ class EmployeeRegistrationService {
     String role = 'employee',
     bool requireApproval = true,
   }) async {
-    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedEmployeeNumber = employeeNumber.trim().toUpperCase();
     final normalizedEmail = email.trim().toLowerCase();
     final normalizedFullName = fullName.trim();
     final normalizedCnicLast4 = cnicLast4.trim();
@@ -79,8 +79,7 @@ class EmployeeRegistrationService {
       );
     }
 
-    final employeeDoc =
-        await _employeesRef.doc(normalizedEmployeeNumber).get();
+    final employeeDoc = await _employeesRef.doc(normalizedEmployeeNumber).get();
 
     if (!employeeDoc.exists || employeeDoc.data() == null) {
       return const RegistrationResult(
@@ -91,23 +90,45 @@ class EmployeeRegistrationService {
 
     final employeeData = employeeDoc.data()!;
     final employeeName =
-        (employeeData['employee_name'] ?? '').toString().trim();
+        (employeeData['name'] ?? employeeData['employee_name'] ?? '')
+            .toString()
+            .trim();
+
+    final employeeEmail =
+        (employeeData['email'] ?? '').toString().trim().toLowerCase();
+
     final employeeCnicLast4 =
         (employeeData['cnic_last_4'] ?? '').toString().trim();
+
+    final employeeIsActive = employeeData['is_active'] == true;
+
+    if (!employeeIsActive) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Employee record is inactive.',
+      );
+    }
+
+    if (employeeEmail.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message:
+            'Official email is missing in employee master record. Contact admin.',
+      );
+    }
+
+    if (employeeEmail != normalizedEmail) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Email does not match official employee record.',
+      );
+    }
 
     if (employeeCnicLast4.isNotEmpty &&
         employeeCnicLast4 != normalizedCnicLast4) {
       return const RegistrationResult(
         success: false,
         message: 'CNIC last 4 digits do not match employee record.',
-      );
-    }
-
-    if (employeeName.isNotEmpty &&
-        normalizedFullName.toLowerCase() != employeeName.toLowerCase()) {
-      return const RegistrationResult(
-        success: false,
-        message: 'Full name does not match employee record.',
       );
     }
 
@@ -135,16 +156,16 @@ class EmployeeRegistrationService {
       );
     }
 
-    final existingRequestByEmployee = await _registrationRequestsRef
+    final existingPendingRequest = await _registrationRequestsRef
         .where('employee_number', isEqualTo: normalizedEmployeeNumber)
-        .where('status', whereIn: ['pending', 'approved'])
+        .where('status', isEqualTo: 'pending')
         .limit(1)
         .get();
 
-    if (existingRequestByEmployee.docs.isNotEmpty) {
+    if (existingPendingRequest.docs.isNotEmpty) {
       return const RegistrationResult(
         success: false,
-        message: 'A registration request already exists for this employee.',
+        message: 'A registration request is already pending approval.',
       );
     }
 
@@ -162,8 +183,8 @@ class EmployeeRegistrationService {
     }
 
     final now = FieldValue.serverTimestamp();
-    final isActive = !requireApproval;
     final effectiveStatus = requireApproval ? 'pending' : 'approved';
+    final isActive = !requireApproval;
 
     await _usersRef.doc(uid).set({
       'uid': uid,
@@ -178,22 +199,25 @@ class EmployeeRegistrationService {
     });
 
     String? requestId;
-
     if (requireApproval) {
-      final requestDoc = _registrationRequestsRef.doc();
-      requestId = requestDoc.id;
+      final requestRef = _registrationRequestsRef.doc();
+      requestId = requestRef.id;
 
-      await requestDoc.set({
+      await requestRef.set({
+        'request_id': requestId,
+        'uid': uid,
         'employee_number': normalizedEmployeeNumber,
         'employee_name': employeeName.isNotEmpty ? employeeName : normalizedFullName,
         'email': normalizedEmail,
         'role': normalizedRole,
         'status': 'pending',
         'requested_at': now,
-        'approved_by_uid': null,
-        'approved_at': null,
+        'created_at': now,
+        'updated_at': now,
       });
     }
+
+    await _auth.signOut();
 
     return RegistrationResult(
       success: true,

@@ -50,289 +50,313 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       );
 
       final role = profile?.role ?? AppUserRole.unknown;
-      final allowed = _userRoleService.canManageUsers(role);
+      final canManageUsers = _userRoleService.canManageUsers(role);
 
       setState(() {
-        _isAuthorized = allowed;
+        _isAuthorized = canManageUsers;
         _isLoadingAccess = false;
         _accessError =
-            allowed ? null : 'Only developer and admin can access user management.';
+            canManageUsers ? null : 'You are not allowed to manage users.';
       });
     } catch (e) {
       setState(() {
         _isAuthorized = false;
         _isLoadingAccess = false;
-        _accessError = 'Failed to verify access: $e';
+        _accessError = 'Failed to check access: $e';
       });
     }
   }
 
-  Future<void> _updateUserRole(String docId, String role) async {
-    await _firestore.collection('users').doc(docId).update({
-      'role': role,
-      'updated_at': FieldValue.serverTimestamp(),
-    });
+  Future<String> _resolveDisplayName(Map<String, dynamic> userData) async {
+    final directName = (userData['employee_name'] ?? '').toString().trim();
+    if (directName.isNotEmpty) {
+      return directName.toUpperCase();
+    }
+
+    final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
+    if (employeeNumber.isEmpty) {
+      return 'Unnamed User';
+    }
+
+    try {
+      final employeeDoc =
+          await _firestore.collection('employees').doc(employeeNumber).get();
+
+      if (!employeeDoc.exists || employeeDoc.data() == null) {
+        return 'Unnamed User';
+      }
+
+      final employeeName =
+          (employeeDoc.data()!['name'] ?? '').toString().trim();
+
+      if (employeeName.isEmpty) {
+        return 'Unnamed User';
+      }
+
+      return employeeName.toUpperCase();
+    } catch (_) {
+      return 'Unnamed User';
+    }
   }
 
-  Future<void> _updateUserStatus(String docId, bool isActive) async {
-    await _firestore.collection('users').doc(docId).update({
-      'is_active': isActive,
-      'status': isActive ? 'approved' : 'inactive',
-      'updated_at': FieldValue.serverTimestamp(),
-    });
+  Future<void> _updateUserRole(String uid, String newRole) async {
+    try {
+      await _firestore.collection('users').doc(uid).update({
+        'role': newRole,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User role updated.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update role: $e')),
+      );
+    }
   }
 
-  Widget _buildAccessDenied() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.lock_outline, size: 48),
-                const SizedBox(height: 12),
-                const Text(
-                  'Access Restricted',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  _accessError ?? 'You do not have permission to view this screen.',
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
+  Future<void> _updateUserStatus(
+    String uid,
+    bool isActive,
+  ) async {
+    try {
+      await _firestore.collection('users').doc(uid).update({
+        'is_active': isActive,
+        'status': isActive ? 'approved' : 'pending',
+        'updated_at': FieldValue.serverTimestamp(),
+        if (isActive) 'approved_at': FieldValue.serverTimestamp(),
+        if (isActive)
+          'approved_by_uid': FirebaseAuth.instance.currentUser?.uid,
+      });
+
+      final requestSnapshot = await _firestore
+          .collection('registration_requests')
+          .where('uid', isEqualTo: uid)
+          .where('status', isEqualTo: 'pending')
+          .get();
+
+      for (final doc in requestSnapshot.docs) {
+        await doc.reference.update({
+          'status': isActive ? 'approved' : 'pending',
+          'updated_at': FieldValue.serverTimestamp(),
+          if (isActive) 'approved_at': FieldValue.serverTimestamp(),
+          if (isActive)
+            'approved_by_uid': FirebaseAuth.instance.currentUser?.uid,
+        });
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User status updated.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update user status: $e')),
+      );
+    }
+  }
+
+  Widget _buildAccessState() {
+    if (_isLoadingAccess) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (!_isAuthorized) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(
+            _accessError ?? 'Access denied.',
+            textAlign: TextAlign.center,
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  Widget _buildRoleChip(String role) {
-    return Chip(
-      label: Text(role),
-      visualDensity: VisualDensity.compact,
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('users').orderBy('email').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Failed to load users: ${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'User Management',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Signed in as: ${widget.userEmail}'),
+                    const SizedBox(height: 4),
+                    const Text('Allowed roles: developer, admin'),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...docs.map((doc) {
+              final data = doc.data();
+              final uid = doc.id;
+              final email = (data['email'] ?? '').toString().trim();
+              final employeeNumber =
+                  (data['employee_number'] ?? '').toString().trim();
+              final role = (data['role'] ?? 'employee').toString().trim();
+              final status = (data['status'] ?? '').toString().trim();
+              final isActive = data['is_active'] == true;
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: FutureBuilder<String>(
+                    future: _resolveDisplayName(data),
+                    builder: (context, nameSnapshot) {
+                      final displayName =
+                          nameSnapshot.data ?? 'Loading...';
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 24,
+                            runSpacing: 16,
+                            crossAxisAlignment: WrapCrossAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 320,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      displayName,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text('Email: $email'),
+                                    const SizedBox(height: 6),
+                                    Text('Employee Number: $employeeNumber'),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Status: ${status.isEmpty ? (isActive ? 'approved' : 'pending') : status}',
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        Chip(label: Text(role)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(
+                                width: 320,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    DropdownButtonFormField<String>(
+                                      initialValue: role,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Role',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(
+                                          value: 'developer',
+                                          child: Text('developer'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'admin',
+                                          child: Text('admin'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'mess_manager',
+                                          child: Text('mess_manager'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'mess_supervisor',
+                                          child: Text('mess_supervisor'),
+                                        ),
+                                        DropdownMenuItem(
+                                          value: 'employee',
+                                          child: Text('employee'),
+                                        ),
+                                      ],
+                                      onChanged: (value) {
+                                        if (value == null || value == role) {
+                                          return;
+                                        }
+                                        _updateUserRole(uid, value);
+                                      },
+                                    ),
+                                    const SizedBox(height: 16),
+                                    SwitchListTile(
+                                      value: isActive,
+                                      contentPadding: EdgeInsets.zero,
+                                      title: const Text('Active'),
+                                      subtitle: Text(
+                                        isActive
+                                            ? 'User can access the system'
+                                            : 'User access is disabled',
+                                      ),
+                                      onChanged: (value) {
+                                        _updateUserStatus(uid, value);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingAccess) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    if (!_isAuthorized) {
-      return Scaffold(
-        body: _buildAccessDenied(),
-      );
-    }
-
     return Scaffold(
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: _firestore
-            .collection('users')
-            .orderBy('employee_number')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error loading users: ${snapshot.error}'),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          final docs = snapshot.data!.docs;
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Wrap(
-                    runSpacing: 8,
-                    alignment: WrapAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'User Management',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Signed in as: ${widget.userEmail}',
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Allowed roles: developer, admin',
-                            style: TextStyle(fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (docs.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('No users found.'),
-                  ),
-                )
-              else
-                ...docs.map((doc) {
-                  final data = doc.data();
-
-                  final email = (data['email'] ?? '').toString().trim();
-                  final employeeNumber =
-                      (data['employee_number'] ?? '').toString().trim();
-                  final employeeName =
-                      (data['employee_name'] ?? '').toString().trim();
-                  final role = (data['role'] ?? 'unknown').toString().trim();
-                  final isActive = data['is_active'] == true;
-                  final status = (data['status'] ?? '').toString().trim();
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Wrap(
-                        runSpacing: 12,
-                        spacing: 16,
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 360,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  employeeName.isEmpty
-                                      ? 'Unnamed User'
-                                      : employeeName,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text('Email: $email'),
-                                const SizedBox(height: 4),
-                                Text('Employee Number: $employeeNumber'),
-                                const SizedBox(height: 4),
-                                Text('Status: $status'),
-                                const SizedBox(height: 8),
-                                _buildRoleChip(role),
-                              ],
-                            ),
-                          ),
-                          SizedBox(
-                            width: 320,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                DropdownButtonFormField<String>(
-                                  initialValue: role,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Role',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'developer',
-                                      child: Text('developer'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'admin',
-                                      child: Text('admin'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'mess_manager',
-                                      child: Text('mess_manager'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'mess_supervisor',
-                                      child: Text('mess_supervisor'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'employee',
-                                      child: Text('employee'),
-                                    ),
-                                  ],
-                                  onChanged: (value) async {
-                                    if (value == null || value == role) return;
-
-                                    final messenger = ScaffoldMessenger.of(context);
-
-                                    await _updateUserRole(doc.id, value);
-
-                                    if (!mounted) return;
-                                    messenger.showSnackBar(
-                                      const SnackBar(
-                                        content: Text('User role updated.'),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 12),
-                                SwitchListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('Active'),
-                                  subtitle: Text(
-                                    isActive
-                                        ? 'User can access the system'
-                                        : 'User access is disabled',
-                                  ),
-                                  value: isActive,
-                                  onChanged: (value) async {
-                                    final messenger = ScaffoldMessenger.of(context);
-
-                                    await _updateUserStatus(doc.id, value);
-
-                                    if (!mounted) return;
-                                    messenger.showSnackBar(
-                                      const SnackBar(
-                                        content: Text('User status updated.'),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-            ],
-          );
-        },
-      ),
+      body: _buildAccessState(),
     );
   }
 }

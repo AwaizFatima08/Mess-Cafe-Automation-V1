@@ -13,575 +13,511 @@ class MenuCycleManagementScreen extends StatefulWidget {
 
 class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen>
     with SingleTickerProviderStateMixin {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final TextEditingController cycleNameController = TextEditingController();
   final FocusNode cycleNameFocusNode = FocusNode();
 
-  late final Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _allTemplatesFuture;
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _cyclesStream;
   late final TabController _tabController;
 
-  String? editingCycleId;
-
-  String? selectedBreakfastTemplate;
-  String? selectedLunch1Template;
-  String? selectedLunch2Template;
-  String? selectedDinner1Template;
-  String? selectedDinner2Template;
+  String? breakfastTemplateId;
+  String? lunchTemplate1Id;
+  String? lunchTemplate2Id;
+  String? dinnerTemplate1Id;
+  String? dinnerTemplate2Id;
 
   DateTime? startDate;
   DateTime? endDate;
-
-  bool keepActive = true;
+  bool keepActiveUntilNextChange = true;
   bool isSaving = false;
   String? statusMessage;
-  String cycleFilter = 'all';
-
-  final List<Map<String, String>> templateTypes = const [
-    {'value': 'breakfast', 'label': 'Breakfast'},
-    {'value': 'lunch_combo_1', 'label': 'Lunch Combo 1'},
-    {'value': 'lunch_combo_2', 'label': 'Lunch Combo 2'},
-    {'value': 'dinner_combo_1', 'label': 'Dinner Combo 1'},
-    {'value': 'dinner_combo_2', 'label': 'Dinner Combo 2'},
-  ];
+  String? editingCycleId;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _allTemplatesFuture = loadTemplates();
-    _cyclesStream = FirebaseFirestore.instance
-        .collection('menu_cycles')
-        .orderBy('created_at', descending: true)
-        .snapshots();
-  }
-
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> loadTemplates() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('weekly_menu_templates')
-        .where('active', isEqualTo: true)
-        .get();
-
-    final docs = snapshot.docs.toList();
-
-    docs.sort((a, b) {
-      final aName = (a.data()['name'] ?? a.id).toString().toLowerCase();
-      final bName = (b.data()['name'] ?? b.id).toString().toLowerCase();
-      return aName.compareTo(bName);
-    });
-
-    return docs;
-  }
-
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> filterTemplatesByType(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    String templateType,
-  ) {
-    return docs.where((doc) {
-      final data = doc.data();
-      return (data['template_type'] ?? '').toString() == templateType;
-    }).toList();
-  }
-
-  String formatLabel(String value) {
-    return value
-        .split('_')
-        .map(
-          (word) => word.isEmpty
-              ? word
-              : '${word[0].toUpperCase()}${word.substring(1)}',
-        )
-        .join(' ');
-  }
-
-  DateTime? toDateTime(dynamic value) {
-    if (value == null) return null;
-    if (value is Timestamp) return value.toDate();
-    if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-    return null;
-  }
-
-  String formatDate(DateTime? date) {
-    if (date == null) return 'Not set';
-    final y = date.year.toString().padLeft(4, '0');
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  Future<void> pickStartDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2100),
-      initialDate: startDate ?? DateTime.now(),
-    );
-
-    if (picked != null) {
-      setState(() => startDate = picked);
-    }
-  }
-
-  Future<void> pickEndDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2100),
-      initialDate: endDate ?? startDate ?? DateTime.now(),
-    );
-
-    if (picked != null) {
-      setState(() => endDate = picked);
-    }
   }
 
   void resetForm() {
     cycleNameController.clear();
-    editingCycleId = null;
-    selectedBreakfastTemplate = null;
-    selectedLunch1Template = null;
-    selectedLunch2Template = null;
-    selectedDinner1Template = null;
-    selectedDinner2Template = null;
+    breakfastTemplateId = null;
+    lunchTemplate1Id = null;
+    lunchTemplate2Id = null;
+    dinnerTemplate1Id = null;
+    dinnerTemplate2Id = null;
     startDate = null;
     endDate = null;
-    keepActive = true;
+    keepActiveUntilNextChange = true;
     statusMessage = null;
+    editingCycleId = null;
+
+    if (mounted) {
+      setState(() {});
+    }
   }
 
-  void loadCycleForEdit(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
-    if (data == null) return;
-
-    setState(() {
-      editingCycleId = doc.id;
-      cycleNameController.text = (data['cycle_name'] ?? '').toString();
-
-      selectedBreakfastTemplate =
-          (data['breakfast_template_id'] ?? '').toString().isEmpty
-              ? null
-              : (data['breakfast_template_id']).toString();
-
-      selectedLunch1Template =
-          (data['lunch_combo_1_template_id'] ??
-                  data['lunch_combo1_template_id'] ??
-                  '')
-              .toString()
-              .isEmpty
-              ? null
-              : (data['lunch_combo_1_template_id'] ??
-                      data['lunch_combo1_template_id'])
-                  .toString();
-
-      selectedLunch2Template =
-          (data['lunch_combo_2_template_id'] ??
-                  data['lunch_combo2_template_id'] ??
-                  '')
-              .toString()
-              .isEmpty
-              ? null
-              : (data['lunch_combo_2_template_id'] ??
-                      data['lunch_combo2_template_id'])
-                  .toString();
-
-      selectedDinner1Template =
-          (data['dinner_combo_1_template_id'] ??
-                  data['dinner_combo1_template_id'] ??
-                  '')
-              .toString()
-              .isEmpty
-              ? null
-              : (data['dinner_combo_1_template_id'] ??
-                      data['dinner_combo1_template_id'])
-                  .toString();
-
-      selectedDinner2Template =
-          (data['dinner_combo_2_template_id'] ??
-                  data['dinner_combo2_template_id'] ??
-                  '')
-              .toString()
-              .isEmpty
-              ? null
-              : (data['dinner_combo_2_template_id'] ??
-                      data['dinner_combo2_template_id'])
-                  .toString();
-
-      startDate = toDateTime(data['start_date']);
-      endDate = toDateTime(data['end_date']);
-      keepActive = data['end_date'] == null;
-      statusMessage = 'Editing cycle: ${doc.id}';
-    });
-
-    _tabController.animateTo(0);
+  String formatDate(DateTime? date) {
+    if (date == null) return 'Select date';
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day-$month-${date.year}';
   }
 
-  Future<void> setOnlyOneActiveCycle(String cycleIdToActivate) async {
-    final db = FirebaseFirestore.instance;
-    final activeCycles = await db
-        .collection('menu_cycles')
-        .where('active', isEqualTo: true)
-        .get();
+  String templateDisplay(
+    String? templateId,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    if (templateId == null || templateId.isEmpty) return 'Not selected';
 
-    for (final doc in activeCycles.docs) {
-      if (doc.id != cycleIdToActivate) {
-        await doc.reference.update({'active': false});
+    for (final doc in docs) {
+      if (doc.id == templateId) {
+        final data = doc.data();
+        final name = (data['template_name'] ?? doc.id).toString();
+        return '$name ($templateId)';
       }
     }
 
-    await db.collection('menu_cycles').doc(cycleIdToActivate).update({
-      'active': true,
-      'updated_at': FieldValue.serverTimestamp(),
-    });
+    return templateId;
   }
 
-  Future<void> toggleCycleActive(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) async {
-    final data = doc.data();
-    if (data == null) return;
-
-    final isCurrentlyActive = (data['active'] ?? false) == true;
-    final db = FirebaseFirestore.instance;
-
-    if (isCurrentlyActive) {
-      await db.collection('menu_cycles').doc(doc.id).update({
-        'active': false,
-        'updated_at': FieldValue.serverTimestamp(),
-      });
-    } else {
-      await setOnlyOneActiveCycle(doc.id);
-    }
+  bool isTemplateActive(Map<String, dynamic> data) {
+    return data['is_active'] == true ||
+        data['status'] == true ||
+        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
   }
 
-  Future<void> saveMenuCycle() async {
-    if (cycleNameController.text.trim().isEmpty) {
-      setState(() {
-        statusMessage = 'Please enter cycle name.';
-      });
-      return;
-    }
+  bool isCycleActive(Map<String, dynamic> data) {
+    return data['is_active'] == true ||
+        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
+  }
 
-    if (selectedBreakfastTemplate == null ||
-        selectedLunch1Template == null ||
-        selectedLunch2Template == null ||
-        selectedDinner1Template == null ||
-        selectedDinner2Template == null ||
-        startDate == null) {
-      setState(() {
-        statusMessage = 'Please complete all required fields.';
-      });
-      return;
-    }
+  Future<void> pickDate({required bool forStartDate}) async {
+    final initialDate =
+        (forStartDate ? startDate : endDate) ?? DateTime.now();
 
-    if (!keepActive && endDate == null) {
-      setState(() {
-        statusMessage =
-            'Please select end date or keep cycle open-ended.';
-      });
-      return;
-    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2100),
+    );
 
-    if (!keepActive && endDate!.isBefore(startDate!)) {
-      setState(() {
-        statusMessage = 'End date cannot be earlier than start date.';
-      });
-      return;
-    }
+    if (picked == null) return;
 
     setState(() {
-      isSaving = true;
-      statusMessage = null;
+      if (forStartDate) {
+        startDate = picked;
+      } else {
+        endDate = picked;
+      }
     });
+  }
+
+  Future<void> saveCycle() async {
+    final cycleName = cycleNameController.text.trim();
+
+    if (cycleName.isEmpty) {
+      setState(() {
+        statusMessage = 'Cycle name is required.';
+      });
+      return;
+    }
+
+    if (breakfastTemplateId == null ||
+        lunchTemplate1Id == null ||
+        lunchTemplate2Id == null ||
+        dinnerTemplate1Id == null ||
+        dinnerTemplate2Id == null) {
+      setState(() {
+        statusMessage = 'Select all required templates.';
+      });
+      return;
+    }
+
+    if (startDate == null) {
+      setState(() {
+        statusMessage = 'Start date is required.';
+      });
+      return;
+    }
+
+    if (!keepActiveUntilNextChange && endDate == null) {
+      setState(() {
+        statusMessage = 'End date is required when cycle is not open-ended.';
+      });
+      return;
+    }
+
+    if (!keepActiveUntilNextChange &&
+        endDate != null &&
+        endDate!.isBefore(startDate!)) {
+      setState(() {
+        statusMessage = 'End date cannot be before start date.';
+      });
+      return;
+    }
 
     try {
-      final db = FirebaseFirestore.instance;
-
-      final payload = {
-        'cycle_name': cycleNameController.text.trim(),
-        'breakfast_template_id': selectedBreakfastTemplate,
-        'lunch_combo_1_template_id': selectedLunch1Template,
-        'lunch_combo_2_template_id': selectedLunch2Template,
-        'dinner_combo_1_template_id': selectedDinner1Template,
-        'dinner_combo_2_template_id': selectedDinner2Template,
-        'start_date': Timestamp.fromDate(startDate!),
-        'end_date': keepActive || endDate == null
-            ? null
-            : Timestamp.fromDate(endDate!),
-        'active': true,
-        'updated_at': FieldValue.serverTimestamp(),
-      };
-
-      if (editingCycleId == null) {
-        final activeCycles = await db
-            .collection('menu_cycles')
-            .where('active', isEqualTo: true)
-            .get();
-
-        for (final doc in activeCycles.docs) {
-          await doc.reference.update({'active': false});
-        }
-
-        await db.collection('menu_cycles').add({
-          ...payload,
-          'created_at': FieldValue.serverTimestamp(),
-        });
-      } else {
-        final activeCycles = await db
-            .collection('menu_cycles')
-            .where('active', isEqualTo: true)
-            .get();
-
-        for (final doc in activeCycles.docs) {
-          if (doc.id != editingCycleId) {
-            await doc.reference.update({'active': false});
-          }
-        }
-
-        await db.collection('menu_cycles').doc(editingCycleId).update(payload);
-      }
-
-      if (!mounted) return;
-
       setState(() {
-        statusMessage = editingCycleId == null
-            ? 'Menu cycle created successfully.'
-            : 'Menu cycle updated successfully.';
-        isSaving = false;
-        resetForm();
+        isSaving = true;
+        statusMessage = null;
       });
 
-      FocusScope.of(context).unfocus();
+      final now = FieldValue.serverTimestamp();
+      final cyclesRef = _firestore.collection('menu_cycles');
+
+      if (editingCycleId == null) {
+        await cyclesRef.add({
+          'cycle_name': cycleName,
+          'breakfast_template_id': breakfastTemplateId,
+          'lunch_template_1_id': lunchTemplate1Id,
+          'lunch_template_2_id': lunchTemplate2Id,
+          'dinner_template_1_id': dinnerTemplate1Id,
+          'dinner_template_2_id': dinnerTemplate2Id,
+          'start_date': Timestamp.fromDate(startDate!),
+          'end_date': keepActiveUntilNextChange || endDate == null
+              ? null
+              : Timestamp.fromDate(endDate!),
+          'is_active': true,
+          'status': 'active',
+          'created_at': now,
+          'updated_at': now,
+        });
+
+        if (!mounted) return;
+        setState(() {
+          isSaving = false;
+          statusMessage = 'Menu cycle created successfully.';
+        });
+      } else {
+        await cyclesRef.doc(editingCycleId).update({
+          'cycle_name': cycleName,
+          'breakfast_template_id': breakfastTemplateId,
+          'lunch_template_1_id': lunchTemplate1Id,
+          'lunch_template_2_id': lunchTemplate2Id,
+          'dinner_template_1_id': dinnerTemplate1Id,
+          'dinner_template_2_id': dinnerTemplate2Id,
+          'start_date': Timestamp.fromDate(startDate!),
+          'end_date': keepActiveUntilNextChange || endDate == null
+              ? null
+              : Timestamp.fromDate(endDate!),
+          'updated_at': now,
+        });
+
+        if (!mounted) return;
+        setState(() {
+          isSaving = false;
+          statusMessage = 'Menu cycle updated successfully.';
+        });
+      }
+
       _tabController.animateTo(1);
+      resetForm();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         isSaving = false;
-        statusMessage = 'Error saving cycle: $e';
+        statusMessage = 'Failed to save menu cycle: $e';
       });
     }
   }
 
-  Widget templateDropdown({
+  void loadCycleForEdit(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+
+    cycleNameController.text = (data['cycle_name'] ?? '').toString().trim();
+    breakfastTemplateId =
+        (data['breakfast_template_id'] ?? '').toString().trim().isEmpty
+            ? null
+            : (data['breakfast_template_id'] ?? '').toString().trim();
+    lunchTemplate1Id =
+        (data['lunch_template_1_id'] ?? '').toString().trim().isEmpty
+            ? null
+            : (data['lunch_template_1_id'] ?? '').toString().trim();
+    lunchTemplate2Id =
+        (data['lunch_template_2_id'] ?? '').toString().trim().isEmpty
+            ? null
+            : (data['lunch_template_2_id'] ?? '').toString().trim();
+    dinnerTemplate1Id =
+        (data['dinner_template_1_id'] ?? '').toString().trim().isEmpty
+            ? null
+            : (data['dinner_template_1_id'] ?? '').toString().trim();
+    dinnerTemplate2Id =
+        (data['dinner_template_2_id'] ?? '').toString().trim().isEmpty
+            ? null
+            : (data['dinner_template_2_id'] ?? '').toString().trim();
+
+    final startTs = data['start_date'];
+    final endTs = data['end_date'];
+
+    startDate = startTs is Timestamp ? startTs.toDate() : null;
+    endDate = endTs is Timestamp ? endTs.toDate() : null;
+    keepActiveUntilNextChange = endDate == null;
+    editingCycleId = doc.id;
+    statusMessage = null;
+
+    setState(() {});
+    _tabController.animateTo(0);
+  }
+
+  Future<void> toggleCycleActive(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    try {
+      final data = doc.data();
+      final currentlyActive = isCycleActive(data);
+      final nextActive = !currentlyActive;
+
+      await doc.reference.update({
+        'is_active': nextActive,
+        'status': nextActive ? 'active' : 'inactive',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            nextActive ? 'Cycle activated.' : 'Cycle deactivated.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update cycle: $e')),
+      );
+    }
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterTemplatesByMealType(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    String mealType,
+  ) {
+    return docs.where((doc) {
+      final data = doc.data();
+      return isTemplateActive(data) &&
+          (data['meal_type'] ?? '').toString().trim() == mealType;
+    }).toList()
+      ..sort((a, b) {
+        final aName = (a.data()['template_name'] ?? a.id).toString().toLowerCase();
+        final bName = (b.data()['template_name'] ?? b.id).toString().toLowerCase();
+        return aName.compareTo(bName);
+      });
+  }
+
+  Widget _templateDropdown({
     required String label,
-    required String templateType,
+    required String mealType,
     required String? value,
     required ValueChanged<String?> onChanged,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> allTemplates,
   }) {
-    final templates = filterTemplatesByType(allTemplates, templateType);
+    final filtered = _filterTemplatesByMealType(allTemplates, mealType);
 
-    if (templates.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: DropdownButtonFormField<String>(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
           initialValue: value,
           decoration: InputDecoration(
             labelText: label,
             border: const OutlineInputBorder(),
-            helperText:
-                'No templates found for type: $templateType. Create one first.',
           ),
-          items: const [],
-          onChanged: null,
+          items: filtered
+              .map(
+                (doc) => DropdownMenuItem<String>(
+                  value: doc.id,
+                  child: Text(
+                    '${(doc.data()['template_name'] ?? doc.id)} (${doc.id})',
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: filtered.isEmpty ? null : onChanged,
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: DropdownButtonFormField<String>(
-        initialValue: value,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          helperText: '${templates.length} template(s) available',
+        const SizedBox(height: 4),
+        Text(
+          filtered.isEmpty
+              ? 'No active templates found for meal type: $mealType. Create one first.'
+              : '${filtered.length} template(s) available for $mealType.',
+          style: const TextStyle(fontSize: 12),
         ),
-        items: templates.map((doc) {
-          final data = doc.data();
-          final displayName = (data['name'] ?? doc.id).toString();
-
-          return DropdownMenuItem<String>(
-            value: doc.id,
-            child: Text(displayName),
-          );
-        }).toList(),
-        onChanged: onChanged,
-      ),
-    );
-  }
-
-  Widget buildDateTile({
-    required IconData icon,
-    required String title,
-    required DateTime? value,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: Text(
-          value == null ? 'Select date' : formatDate(value),
-        ),
-        trailing: const Icon(Icons.edit_calendar),
-        onTap: onTap,
-      ),
+      ],
     );
   }
 
   Widget buildCreateEditTab() {
-    return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      future: _allTemplatesFuture,
-      builder: (context, snapshot) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('weekly_menu_templates').snapshots(),
+      builder: (context, templateSnapshot) {
+        if (templateSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (templateSnapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Failed to load templates: ${templateSnapshot.error}',
+              ),
+            ),
+          );
+        }
+
+        final templateDocs = templateSnapshot.data?.docs ?? [];
+
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Logged in as: ${widget.userEmail}'),
-              const SizedBox(height: 20),
-              Row(
+          padding: const EdgeInsets.all(16),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      editingCycleId == null
-                          ? 'Create Menu Cycle'
-                          : 'Edit Menu Cycle',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  Text('Logged in as: ${widget.userEmail}'),
+                  const SizedBox(height: 16),
+                  Text(
+                    editingCycleId == null ? 'Create Menu Cycle' : 'Edit Menu Cycle',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (editingCycleId != null)
+                  if (editingCycleId != null) ...[
+                    const SizedBox(height: 8),
+                    Text('Editing cycle: $editingCycleId'),
                     TextButton.icon(
-                      onPressed: () {
-                        setState(resetForm);
-                      },
+                      onPressed: resetForm,
                       icon: const Icon(Icons.close),
                       label: const Text('Cancel Edit'),
                     ),
+                  ],
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: cycleNameController,
+                    focusNode: cycleNameFocusNode,
+                    decoration: const InputDecoration(
+                      labelText: 'Cycle Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _templateDropdown(
+                    label: 'Breakfast Template',
+                    mealType: 'breakfast',
+                    value: breakfastTemplateId,
+                    onChanged: (value) => setState(() {
+                      breakfastTemplateId = value;
+                    }),
+                    allTemplates: templateDocs,
+                  ),
+                  const SizedBox(height: 16),
+                  _templateDropdown(
+                    label: 'Lunch Template 1',
+                    mealType: 'lunch',
+                    value: lunchTemplate1Id,
+                    onChanged: (value) => setState(() {
+                      lunchTemplate1Id = value;
+                    }),
+                    allTemplates: templateDocs,
+                  ),
+                  const SizedBox(height: 16),
+                  _templateDropdown(
+                    label: 'Lunch Template 2',
+                    mealType: 'lunch',
+                    value: lunchTemplate2Id,
+                    onChanged: (value) => setState(() {
+                      lunchTemplate2Id = value;
+                    }),
+                    allTemplates: templateDocs,
+                  ),
+                  const SizedBox(height: 16),
+                  _templateDropdown(
+                    label: 'Dinner Template 1',
+                    mealType: 'dinner',
+                    value: dinnerTemplate1Id,
+                    onChanged: (value) => setState(() {
+                      dinnerTemplate1Id = value;
+                    }),
+                    allTemplates: templateDocs,
+                  ),
+                  const SizedBox(height: 16),
+                  _templateDropdown(
+                    label: 'Dinner Template 2',
+                    mealType: 'dinner',
+                    value: dinnerTemplate2Id,
+                    onChanged: (value) => setState(() {
+                      dinnerTemplate2Id = value;
+                    }),
+                    allTemplates: templateDocs,
+                  ),
+                  const SizedBox(height: 16),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Start Date'),
+                    subtitle: Text(formatDate(startDate)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit_calendar),
+                      onPressed: () => pickDate(forStartDate: true),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Keep this cycle active until next change'),
+                    subtitle: const Text('Do not set an end date'),
+                    value: keepActiveUntilNextChange,
+                    onChanged: (value) {
+                      setState(() {
+                        keepActiveUntilNextChange = value;
+                        if (value) {
+                          endDate = null;
+                        }
+                      });
+                    },
+                  ),
+                  if (!keepActiveUntilNextChange)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('End Date'),
+                      subtitle: Text(formatDate(endDate)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.edit_calendar),
+                        onPressed: () => pickDate(forStartDate: false),
+                      ),
+                    ),
+                  if (statusMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      statusMessage!,
+                      style: TextStyle(
+                        color: statusMessage!.toLowerCase().contains('failed') ||
+                                statusMessage!.toLowerCase().contains('required')
+                            ? Colors.red
+                            : Colors.green,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isSaving ? null : saveCycle,
+                      icon: const Icon(Icons.save),
+                      label: Text(
+                        isSaving
+                            ? 'Saving...'
+                            : editingCycleId == null
+                                ? 'Create Menu Cycle'
+                                : 'Update Menu Cycle',
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: cycleNameController,
-                focusNode: cycleNameFocusNode,
-                decoration: const InputDecoration(
-                  labelText: 'Cycle Name',
-                  hintText: 'Enter menu cycle name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (snapshot.connectionState == ConnectionState.waiting) ...[
-                const LinearProgressIndicator(),
-                const SizedBox(height: 16),
-                const Text('Loading weekly templates...'),
-              ] else if (snapshot.hasError) ...[
-                Text(
-                  'Error loading templates: ${snapshot.error}',
-                  style: const TextStyle(color: Colors.red),
-                ),
-              ] else ...[
-                templateDropdown(
-                  label: 'Breakfast Template',
-                  templateType: 'breakfast',
-                  value: selectedBreakfastTemplate,
-                  allTemplates: snapshot.data ?? [],
-                  onChanged: (v) =>
-                      setState(() => selectedBreakfastTemplate = v),
-                ),
-                templateDropdown(
-                  label: 'Lunch Combo 1 Template',
-                  templateType: 'lunch_combo_1',
-                  value: selectedLunch1Template,
-                  allTemplates: snapshot.data ?? [],
-                  onChanged: (v) =>
-                      setState(() => selectedLunch1Template = v),
-                ),
-                templateDropdown(
-                  label: 'Lunch Combo 2 Template',
-                  templateType: 'lunch_combo_2',
-                  value: selectedLunch2Template,
-                  allTemplates: snapshot.data ?? [],
-                  onChanged: (v) =>
-                      setState(() => selectedLunch2Template = v),
-                ),
-                templateDropdown(
-                  label: 'Dinner Combo 1 Template',
-                  templateType: 'dinner_combo_1',
-                  value: selectedDinner1Template,
-                  allTemplates: snapshot.data ?? [],
-                  onChanged: (v) =>
-                      setState(() => selectedDinner1Template = v),
-                ),
-                templateDropdown(
-                  label: 'Dinner Combo 2 Template',
-                  templateType: 'dinner_combo_2',
-                  value: selectedDinner2Template,
-                  allTemplates: snapshot.data ?? [],
-                  onChanged: (v) =>
-                      setState(() => selectedDinner2Template = v),
-                ),
-              ],
-              const SizedBox(height: 12),
-              buildDateTile(
-                icon: Icons.calendar_month,
-                title: 'Start Date',
-                value: startDate,
-                onTap: pickStartDate,
-              ),
-              if (!keepActive)
-                buildDateTile(
-                  icon: Icons.calendar_month,
-                  title: 'End Date',
-                  value: endDate,
-                  onTap: pickEndDate,
-                ),
-              SwitchListTile(
-                value: keepActive,
-                title: const Text('Keep this cycle active until next change'),
-                subtitle: const Text('Do not set an end date'),
-                onChanged: (value) {
-                  setState(() {
-                    keepActive = value;
-                    if (keepActive) {
-                      endDate = null;
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.save),
-                  label: Text(
-                    isSaving
-                        ? 'Saving...'
-                        : editingCycleId == null
-                            ? 'Save Menu Cycle'
-                            : 'Update Menu Cycle',
-                  ),
-                  onPressed: isSaving ? null : saveMenuCycle,
-                ),
-              ),
-              if (statusMessage != null) ...[
-                const SizedBox(height: 12),
-                Text(
-                  statusMessage!,
-                  style: TextStyle(
-                    color: statusMessage!.startsWith('Error')
-                        ? Colors.red
-                        : Colors.green,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
         );
       },
@@ -589,232 +525,159 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen>
   }
 
   Widget buildSavedCyclesTab() {
-    return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
-      future: _allTemplatesFuture,
-      builder: (context, templateSnapshot) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _firestore.collection('menu_cycles').snapshots(),
+      builder: (context, cycleSnapshot) {
+        if (cycleSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (cycleSnapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('Failed to load cycles: ${cycleSnapshot.error}'),
+            ),
+          );
+        }
+
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _cyclesStream,
-          builder: (context, cycleSnapshot) {
-            if (cycleSnapshot.connectionState == ConnectionState.waiting) {
+          stream: _firestore.collection('weekly_menu_templates').snapshots(),
+          builder: (context, templateSnapshot) {
+            if (templateSnapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            if (cycleSnapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Error loading cycles: ${cycleSnapshot.error}',
-                    textAlign: TextAlign.center,
+            final templateDocs = templateSnapshot.data?.docs ?? [];
+            final cycles = cycleSnapshot.data?.docs ?? [];
+
+            cycles.sort((a, b) {
+              final aName = (a.data()['cycle_name'] ?? a.id).toString().toLowerCase();
+              final bName = (b.data()['cycle_name'] ?? b.id).toString().toLowerCase();
+              return aName.compareTo(bName);
+            });
+
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'Saved Cycles',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ),
-              );
-            }
-
-            final cycleDocs =
-                List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-              cycleSnapshot.data?.docs ?? [],
-            );
-
-            final templateDocs =
-                List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-              templateSnapshot.data ?? [],
-            );
-
-            final Map<String, String> templateNameMap = {
-              for (final doc in templateDocs)
-                doc.id: (doc.data()['name'] ?? doc.id).toString(),
-            };
-
-            final filteredCycles = cycleDocs.where((doc) {
-              final active = (doc.data()['active'] ?? false) == true;
-              if (cycleFilter == 'all') return true;
-              if (cycleFilter == 'active') return active;
-              if (cycleFilter == 'inactive') return !active;
-              return true;
-            }).toList();
-
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: cycleFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Filter Cycles',
-                      border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                if (cycles.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(20),
+                      child: Text('No menu cycles found.'),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'all',
-                        child: Text('All Cycles'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'active',
-                        child: Text('Active Only'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'inactive',
-                        child: Text('Inactive Only'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        cycleFilter = value;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: filteredCycles.isEmpty
-                        ? const Center(child: Text('No menu cycles found.'))
-                        : ListView.separated(
-                            itemCount: filteredCycles.length,
-                            separatorBuilder: (_, _) => const SizedBox(height: 8),
-                            itemBuilder: (context, index) {
-                              final doc = filteredCycles[index];
-                              final data = doc.data();
-                              final cycleName =
-                                  (data['cycle_name'] ?? doc.id).toString();
-                              final active = (data['active'] ?? false) == true;
+                  )
+                else
+                  ...cycles.map((doc) {
+                    final data = doc.data();
+                    final cycleName =
+                        (data['cycle_name'] ?? doc.id).toString().trim();
+                    final active = isCycleActive(data);
 
-                              final breakfastId =
-                                  (data['breakfast_template_id'] ?? '')
-                                      .toString();
-                              final lunch1Id =
-                                  (data['lunch_combo_1_template_id'] ??
-                                          data['lunch_combo1_template_id'] ??
-                                          '')
-                                      .toString();
-                              final lunch2Id =
-                                  (data['lunch_combo_2_template_id'] ??
-                                          data['lunch_combo2_template_id'] ??
-                                          '')
-                                      .toString();
-                              final dinner1Id =
-                                  (data['dinner_combo_1_template_id'] ??
-                                          data['dinner_combo1_template_id'] ??
-                                          '')
-                                      .toString();
-                              final dinner2Id =
-                                  (data['dinner_combo_2_template_id'] ??
-                                          data['dinner_combo2_template_id'] ??
-                                          '')
-                                      .toString();
+                    final breakfastId =
+                        (data['breakfast_template_id'] ?? '').toString().trim();
+                    final lunch1Id =
+                        (data['lunch_template_1_id'] ?? '').toString().trim();
+                    final lunch2Id =
+                        (data['lunch_template_2_id'] ?? '').toString().trim();
+                    final dinner1Id =
+                        (data['dinner_template_1_id'] ?? '').toString().trim();
+                    final dinner2Id =
+                        (data['dinner_template_2_id'] ?? '').toString().trim();
 
-                              final start = toDateTime(data['start_date']);
-                              final end = toDateTime(data['end_date']);
+                    final startTs = data['start_date'];
+                    final endTs = data['end_date'];
 
-                              String templateDisplay(String id) {
-                                if (id.isEmpty) return 'Not set';
-                                return templateNameMap[id] ?? id;
-                              }
+                    final start = startTs is Timestamp ? startTs.toDate() : null;
+                    final end = endTs is Timestamp ? endTs.toDate() : null;
 
-                              return Card(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              cycleName,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 16,
-                                              ),
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: active
-                                                  ? Colors.green.withValues(
-                                                      alpha: 0.10,
-                                                    )
-                                                  : Colors.red.withValues(
-                                                      alpha: 0.10,
-                                                    ),
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                            ),
-                                            child: Text(
-                                              active ? 'Active' : 'Inactive',
-                                              style: TextStyle(
-                                                color: active
-                                                    ? Colors.green
-                                                    : Colors.red,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text('Start Date: ${formatDate(start)}'),
-                                      Text(
-                                        'End Date: ${end == null ? 'Open-ended' : formatDate(end)}',
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Breakfast: ${templateDisplay(breakfastId)}',
-                                      ),
-                                      Text(
-                                        'Lunch Combo 1: ${templateDisplay(lunch1Id)}',
-                                      ),
-                                      Text(
-                                        'Lunch Combo 2: ${templateDisplay(lunch2Id)}',
-                                      ),
-                                      Text(
-                                        'Dinner Combo 1: ${templateDisplay(dinner1Id)}',
-                                      ),
-                                      Text(
-                                        'Dinner Combo 2: ${templateDisplay(dinner2Id)}',
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                loadCycleForEdit(doc),
-                                            icon: const Icon(Icons.edit),
-                                            label: const Text('Edit'),
-                                          ),
-                                          OutlinedButton.icon(
-                                            onPressed: () =>
-                                                toggleCycleActive(doc),
-                                            icon: Icon(
-                                              active
-                                                  ? Icons.visibility_off
-                                                  : Icons.visibility,
-                                            ),
-                                            label: Text(
-                                              active
-                                                  ? 'Deactivate'
-                                                  : 'Activate',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              children: [
+                                Text(
+                                  cycleName,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
+                                Chip(
+                                  label: Text(active ? 'Active' : 'Inactive'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Document ID: ${doc.id}'),
+                            Text('Start Date: ${formatDate(start)}'),
+                            Text(
+                              'End Date: ${end == null ? 'Open-ended' : formatDate(end)}',
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Breakfast: ${templateDisplay(breakfastId, templateDocs)}',
+                            ),
+                            Text(
+                              'Lunch Template 1: ${templateDisplay(lunch1Id, templateDocs)}',
+                            ),
+                            Text(
+                              'Lunch Template 2: ${templateDisplay(lunch2Id, templateDocs)}',
+                            ),
+                            Text(
+                              'Dinner Template 1: ${templateDisplay(dinner1Id, templateDocs)}',
+                            ),
+                            Text(
+                              'Dinner Template 2: ${templateDisplay(dinner2Id, templateDocs)}',
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => loadCycleForEdit(doc),
+                                  icon: const Icon(Icons.edit),
+                                  label: const Text('Edit'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () => toggleCycleActive(doc),
+                                  icon: Icon(
+                                    active
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  label: Text(
+                                    active ? 'Deactivate' : 'Activate',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+              ],
             );
           },
         );
