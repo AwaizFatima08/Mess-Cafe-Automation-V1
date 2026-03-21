@@ -6,6 +6,12 @@ class MealReservationService {
 
   final FirebaseFirestore _firestore;
 
+  static const Map<String, _MealCutoffTime> _defaultCutoffTimes = {
+    'breakfast': _MealCutoffTime(hour: 7, minute: 0),
+    'lunch': _MealCutoffTime(hour: 12, minute: 0),
+    'dinner': _MealCutoffTime(hour: 19, minute: 0),
+  };
+
   CollectionReference<Map<String, dynamic>> get _reservationsRef =>
       _firestore.collection('meal_reservations');
 
@@ -69,14 +75,23 @@ class MealReservationService {
     }
 
     if (normalizedBookingType == 'guest' && guestCount <= 0) {
-      throw ArgumentError('guest_count must be greater than zero for guest bookings.');
+      throw ArgumentError(
+        'guest_count must be greater than zero for guest bookings.',
+      );
     }
 
-    final normalizedDate = DateTime(
-      reservationDate.year,
-      reservationDate.month,
-      reservationDate.day,
+    final normalizedDate = _normalizeDate(reservationDate);
+
+    final validation = validateReservationRequest(
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+      overrideReason: normalizedOverrideReason,
+      isWalkIn: isWalkIn,
     );
+
+    if (!validation.isAllowed) {
+      throw StateError(validation.message);
+    }
 
     final doc = _reservationsRef.doc();
 
@@ -97,10 +112,11 @@ class MealReservationService {
       'created_by_role': normalizedCreatedByRole,
       'issued_at': null,
       'issued_by_uid': null,
-      'status': 'booked',
+      'status': 'active',
       'notes': normalizedNotes.isEmpty ? null : normalizedNotes,
       'override_reason':
           normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
+      'updated_at': FieldValue.serverTimestamp(),
     });
   }
 
@@ -124,19 +140,233 @@ class MealReservationService {
       'issued_at': FieldValue.serverTimestamp(),
       'issued_by_uid': normalizedIssuedByUid,
       'status': 'issued',
+      'updated_at': FieldValue.serverTimestamp(),
     });
+  }
+
+  ReservationValidationResult validateReservationRequest({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+    bool isWalkIn = false,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    if (!_isValidMealType(normalizedMealType)) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Invalid meal type.',
+      );
+    }
+
+    final normalizedDate = _normalizeDate(reservationDate);
+    final current = now ?? DateTime.now();
+    final today = _normalizeDate(current);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedDate.isBefore(today)) {
+      if (normalizedOverrideReason.isNotEmpty || isWalkIn) {
+        return const ReservationValidationResult(
+          isAllowed: true,
+          message: 'Past-date reservation allowed by override.',
+        );
+      }
+
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Past-date reservations are not allowed.',
+      );
+    }
+
+    if (normalizedDate.isAfter(today)) {
+      return const ReservationValidationResult(
+        isAllowed: true,
+        message: 'Future-date reservation allowed.',
+      );
+    }
+
+    final cutoffDateTime = getMealCutoffDateTime(
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+    );
+
+    if (cutoffDateTime == null) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Cutoff configuration for meal could not be resolved.',
+      );
+    }
+
+    if (current.isAfter(cutoffDateTime)) {
+      if (normalizedOverrideReason.isNotEmpty || isWalkIn) {
+        return ReservationValidationResult(
+          isAllowed: true,
+          message:
+              '${_mealLabel(normalizedMealType)} cutoff has passed, but override is present.',
+        );
+      }
+
+      return ReservationValidationResult(
+        isAllowed: false,
+        message:
+            '${_mealLabel(normalizedMealType)} booking is closed for today. Cutoff time has passed.',
+      );
+    }
+
+    return ReservationValidationResult(
+      isAllowed: true,
+      message: '${_mealLabel(normalizedMealType)} booking is open.',
+    );
+  }
+
+  bool canBookMeal({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+    bool isWalkIn = false,
+  }) {
+    return validateReservationRequest(
+      reservationDate: reservationDate,
+      mealType: mealType,
+      now: now,
+      overrideReason: overrideReason,
+      isWalkIn: isWalkIn,
+    ).isAllowed;
+  }
+
+  ReservationValidationResult validateCancellationRequest({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    if (!_isValidMealType(normalizedMealType)) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Invalid meal type.',
+      );
+    }
+
+    final normalizedDate = _normalizeDate(reservationDate);
+    final current = now ?? DateTime.now();
+    final today = _normalizeDate(current);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedDate.isBefore(today)) {
+      if (normalizedOverrideReason.isNotEmpty) {
+        return const ReservationValidationResult(
+          isAllowed: true,
+          message: 'Past-date cancellation allowed by override.',
+        );
+      }
+
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Past-date reservation cannot be cancelled.',
+      );
+    }
+
+    if (normalizedDate.isAfter(today)) {
+      return const ReservationValidationResult(
+        isAllowed: true,
+        message: 'Future reservation can be cancelled.',
+      );
+    }
+
+    final cutoffDateTime = getMealCutoffDateTime(
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+    );
+
+    if (cutoffDateTime == null) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Cutoff configuration for meal could not be resolved.',
+      );
+    }
+
+    if (current.isAfter(cutoffDateTime)) {
+      if (normalizedOverrideReason.isNotEmpty) {
+        return ReservationValidationResult(
+          isAllowed: true,
+          message:
+              '${_mealLabel(normalizedMealType)} cancellation allowed by override after cutoff.',
+        );
+      }
+
+      return ReservationValidationResult(
+        isAllowed: false,
+        message:
+            '${_mealLabel(normalizedMealType)} reservation can no longer be cancelled. Cutoff time has passed.',
+      );
+    }
+
+    return ReservationValidationResult(
+      isAllowed: true,
+      message: '${_mealLabel(normalizedMealType)} reservation can be cancelled.',
+    );
+  }
+
+  bool canCancelMeal({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+  }) {
+    return validateCancellationRequest(
+      reservationDate: reservationDate,
+      mealType: mealType,
+      now: now,
+      overrideReason: overrideReason,
+    ).isAllowed;
+  }
+
+  DateTime? getMealCutoffDateTime({
+    required DateTime reservationDate,
+    required String mealType,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    final normalizedDate = _normalizeDate(reservationDate);
+    final cutoff = _defaultCutoffTimes[normalizedMealType];
+
+    if (cutoff == null) {
+      return null;
+    }
+
+    return DateTime(
+      normalizedDate.year,
+      normalizedDate.month,
+      normalizedDate.day,
+      cutoff.hour,
+      cutoff.minute,
+    );
+  }
+
+  String getMealCutoffDisplay({
+    required DateTime reservationDate,
+    required String mealType,
+  }) {
+    final cutoff = getMealCutoffDateTime(
+      reservationDate: reservationDate,
+      mealType: mealType,
+    );
+
+    if (cutoff == null) {
+      return 'N/A';
+    }
+
+    final hour = cutoff.hour.toString().padLeft(2, '0');
+    final minute = cutoff.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForDate({
     required DateTime reservationDate,
     String? mealType,
   }) async {
-    final normalizedDate = DateTime(
-      reservationDate.year,
-      reservationDate.month,
-      reservationDate.day,
-    );
-
+    final normalizedDate = _normalizeDate(reservationDate);
     final nextDate = normalizedDate.add(const Duration(days: 1));
 
     Query<Map<String, dynamic>> query = _reservationsRef
@@ -182,6 +412,12 @@ class MealReservationService {
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+      if (status == 'cancelled') {
+        continue;
+      }
+
       final mealType = (data['meal_type'] ?? '').toString().trim().toLowerCase();
       final quantity = (data['quantity'] ?? 0) is int
           ? data['quantity'] as int
@@ -208,7 +444,9 @@ class MealReservationService {
     };
   }
 
-  Future<Map<String, int>> getIssuedMealCountsForDate(DateTime reservationDate) async {
+  Future<Map<String, int>> getIssuedMealCountsForDate(
+    DateTime reservationDate,
+  ) async {
     final snapshot = await getReservationsForDate(
       reservationDate: reservationDate,
     );
@@ -250,6 +488,10 @@ class MealReservationService {
     };
   }
 
+  DateTime _normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
   bool _isValidMealType(String value) {
     return value == 'breakfast' || value == 'lunch' || value == 'dinner';
   }
@@ -261,4 +503,37 @@ class MealReservationService {
   bool _isValidDiningMode(String value) {
     return value == 'dine_in' || value == 'takeaway';
   }
+
+  String _mealLabel(String value) {
+    switch (value) {
+      case 'breakfast':
+        return 'Breakfast';
+      case 'lunch':
+        return 'Lunch';
+      case 'dinner':
+        return 'Dinner';
+      default:
+        return value;
+    }
+  }
+}
+
+class ReservationValidationResult {
+  final bool isAllowed;
+  final String message;
+
+  const ReservationValidationResult({
+    required this.isAllowed,
+    required this.message,
+  });
+}
+
+class _MealCutoffTime {
+  final int hour;
+  final int minute;
+
+  const _MealCutoffTime({
+    required this.hour,
+    required this.minute,
+  });
 }

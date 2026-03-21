@@ -1,9 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-
-class WeeklyMenuTemplateScreen extends StatefulWidget {
-  final String userEmail;
-
+ķķkkkk
   const WeeklyMenuTemplateScreen({
     super.key,
     required this.userEmail,
@@ -52,16 +47,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     'sunday': <String>[],
   };
 
-  final Map<String, bool> dayExpandedState = {
-    'monday': false,
-    'tuesday': false,
-    'wednesday': false,
-    'thursday': false,
-    'friday': false,
-    'saturday': false,
-    'sunday': false,
-  };
-
   @override
   void dispose() {
     templateNameController.dispose();
@@ -92,7 +77,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   Future<String> _generateNextTemplateId() async {
     final snapshot = await _firestore.collection('weekly_menu_templates').get();
 
-    int maxNumber = 0;
+    var maxNumber = 0;
     final regex = RegExp(r'^WMT(\d+)$');
 
     for (final doc in snapshot.docs) {
@@ -116,21 +101,11 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
 
     for (final day in weekDays) {
       daySelections[day] = <String>[];
-      dayExpandedState[day] = false;
     }
 
     if (mounted) {
       setState(() {});
     }
-  }
-
-  List<String> _normalizeStringList(dynamic raw) {
-    if (raw is! List) return <String>[];
-
-    return raw
-        .map((e) => e.toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
   }
 
   Future<void> saveTemplate() async {
@@ -139,13 +114,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     if (templateName.isEmpty) {
       setState(() {
         statusMessage = 'Template name is required.';
-      });
-      return;
-    }
-
-    if (!['breakfast', 'lunch', 'dinner'].contains(selectedMealType)) {
-      setState(() {
-        statusMessage = 'Please select a valid meal type.';
       });
       return;
     }
@@ -192,13 +160,11 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
 
       if (!mounted) return;
 
-      final wasEdit = editingTemplateId != null;
-
       setState(() {
         isSaving = false;
-        statusMessage = wasEdit
-            ? 'Template updated successfully.'
-            : 'Template created successfully with ID $docId.';
+        statusMessage = editingTemplateId == null
+            ? 'Template created successfully.'
+            : 'Template updated successfully.';
       });
 
       resetForm();
@@ -221,8 +187,15 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     statusMessage = null;
 
     for (final day in weekDays) {
-      daySelections[day] = _normalizeStringList(data[day]);
-      dayExpandedState[day] = false;
+      final raw = data[day];
+      if (raw is List) {
+        daySelections[day] = raw
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      } else {
+        daySelections[day] = <String>[];
+      }
     }
 
     setState(() {});
@@ -264,8 +237,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   }
 
   Widget _buildStaticFormSection() {
-    final inEditMode = editingTemplateId != null;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -273,21 +244,17 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              inEditMode
-                  ? 'Edit Weekly Menu Template'
-                  : 'Create Weekly Menu Template',
+              editingTemplateId == null
+                  ? 'Create Weekly Menu Template'
+                  : 'Edit Weekly Menu Template',
               style: const TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            if (inEditMode) ...[
+            if (editingTemplateId != null) ...[
               const SizedBox(height: 8),
-              Text(
-                'Editing template ID: $editingTemplateId',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 4),
+              Text('Editing template: $editingTemplateId'),
               TextButton.icon(
                 onPressed: resetForm,
                 icon: const Icon(Icons.close),
@@ -348,19 +315,10 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> activeMenuItems,
   }) {
     final selectedIds = daySelections[day] ?? <String>[];
-    final isExpanded = dayExpandedState[day] ?? false;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ExpansionTile(
-        key: PageStorageKey('weekly-template-$day'),
-        initiallyExpanded: isExpanded,
-        maintainState: true,
-        onExpansionChanged: (expanded) {
-          setState(() {
-            dayExpandedState[day] = expanded;
-          });
-        },
         title: Text(formatLabel(day)),
         subtitle: Text(
           selectedIds.isEmpty
@@ -395,7 +353,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                       setState(() {
                         final updated =
                             List<String>.from(daySelections[day] ?? <String>[]);
-
                         if (value == true) {
                           if (!updated.contains(itemId)) {
                             updated.add(itemId);
@@ -403,9 +360,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                         } else {
                           updated.remove(itemId);
                         }
-
                         daySelections[day] = updated;
-                        dayExpandedState[day] = true;
                       });
                     },
                   );
@@ -413,80 +368,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildSavedTemplateCard(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
-
-    final templateName =
-        (data['template_name'] ?? '').toString().trim().isEmpty
-            ? '(Untitled Template)'
-            : (data['template_name'] ?? '').toString().trim();
-
-    final mealType =
-        (data['meal_type'] ?? '').toString().trim().isEmpty
-            ? '(Missing Meal Type)'
-            : (data['meal_type'] ?? '').toString().trim();
-
-    final active = isTemplateActive(data);
-
-    int totalItems = 0;
-    for (final day in weekDays) {
-      totalItems += _normalizeStringList(data[day]).length;
-    }
-
-    return Card(
-      key: ValueKey(doc.id),
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  templateName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Chip(label: Text(active ? 'Active' : 'Inactive')),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('Meal Type: ${formatLabel(mealType)}'),
-            Text('Document ID: ${doc.id}'),
-            Text('Total selected items: $totalItems'),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => loadTemplateForEdit(doc),
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Edit'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => toggleTemplateActive(doc),
-                  icon: Icon(
-                    active ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  label: Text(active ? 'Deactivate' : 'Activate'),
-                ),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -499,13 +380,21 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
       templateDocs,
     );
 
-    filteredDocs.sort((a, b) => a.id.compareTo(b.id));
+    filteredDocs.sort((a, b) {
+      final aName =
+          (a.data()['template_name'] ?? a.id).toString().toLowerCase();
+      final bName =
+          (b.data()['template_name'] ?? b.id).toString().toLowerCase();
+      return aName.compareTo(bName);
+    });
 
     if (savedTemplateFilter != 'all') {
-      filteredDocs = filteredDocs.where((doc) {
-        final mealType = (doc.data()['meal_type'] ?? '').toString().trim();
-        return mealType == savedTemplateFilter;
-      }).toList();
+      filteredDocs = filteredDocs
+          .where(
+            (doc) =>
+                (doc.data()['meal_type'] ?? '').toString() == savedTemplateFilter,
+          )
+          .toList();
     }
 
     return Column(
@@ -596,7 +485,70 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
             ),
           )
         else
-          ...filteredDocs.map(_buildSavedTemplateCard),
+          ...filteredDocs.map((doc) {
+            final data = doc.data();
+            final templateName =
+                (data['template_name'] ?? doc.id).toString().trim();
+            final mealType = (data['meal_type'] ?? '').toString().trim();
+            final active = isTemplateActive(data);
+
+            var totalItems = 0;
+            for (final day in weekDays) {
+              final raw = data[day];
+              if (raw is List) {
+                totalItems += raw.length;
+              }
+            }
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        Text(
+                          templateName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Chip(label: Text(active ? 'Active' : 'Inactive')),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Meal Type: ${formatLabel(mealType)}'),
+                    Text('Document ID: ${doc.id}'),
+                    Text('Total selected items: $totalItems'),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => loadTemplateForEdit(doc),
+                          icon: const Icon(Icons.edit),
+                          label: const Text('Edit'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => toggleTemplateActive(doc),
+                          icon: Icon(
+                            active ? Icons.visibility_off : Icons.visibility,
+                          ),
+                          label: Text(active ? 'Deactivate' : 'Activate'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -656,8 +608,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                   });
 
                 return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream:
-                      _firestore.collection('weekly_menu_templates').snapshots(),
+                  stream: _firestore.collection('weekly_menu_templates').snapshots(),
                   builder: (context, templateSnapshot) {
                     if (templateSnapshot.connectionState ==
                         ConnectionState.waiting) {
