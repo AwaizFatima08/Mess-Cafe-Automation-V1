@@ -647,86 +647,6 @@ getTakeawayHeadCountForDateAndMealType()
 - Placeholder auto-updates are useful only as scaffolding; meaningful entries should replace them before closeout
 
 ----------------------------------------------------------
-## Update Entry - 18-Mar-2026 01:22
-
-### Completed
-- [to be filled]
-
-### Ongoing
-- [to be filled]
-
-### Next
-- [to be filled]
-
-### Decisions / Risks
-- [to be filled]
-
-
-----------------------------------------------------------
-## Update Entry - 18-Mar-2026 01:37
-
-### Completed
-- bash /home/humayun/projects/mess_cafe_automation_v1/scripts/backup/daily_backup.sh "test_tag"
-
-### Ongoing
-- bash /home/humayun/projects/mess_cafe_automation_v1/scripts/backup/git_daily_push.sh
-
-### Next
-- bash /home/humayun/projects/mess_cafe_automation_v1/scripts/backup/mess_maintenance.sh "full_stack_test"
-
-### Decisions / Risks
-- [not provided]
-
-
-----------------------------------------------------------
-## Update Entry - 20-Mar-2026 02:04
-
-### Completed
-- Phase 1 service alignment completed; Phase 2 role-based UI enforcement completed; Phase 3 signup stabilization completed; Phase 4 today_menu_screen aligned; app builds and launches; Firestore rules correction pending; login/signup runtime retest pending; menu_management_screen diagnosis pending
-
-### Ongoing
-- phase 3 review on the tab and resolution of issues faced
-
-### Next
-- planned development of discussed additional features
-
-### Decisions / Risks
-- resume tomorrow
-
-
-----------------------------------------------------------
-## Update Entry - 20-Mar-2026 23:24
-
-### Completed
-- reset of meal cycle engine
-
-### Ongoing
-- bash /home/humayun/projects/mess_cafe_automation_v1/scripts/backup/mess_maintenance.sh "menu_engine_
-
-### Next
-- menu engine validation
-
-### Decisions / Risks
-- [not provided]
-
-
-----------------------------------------------------------
-## Update Entry - 22-Mar-2026 01:10
-
-### Completed
-- - Employee dashboard upgraded from placeholder view to working menu summary interface.
-
-### Ongoing
-- - Today menu summary now appears on employee dashboard with breakfast, lunch, and dinner sections.
-
-### Next
-- - Dashboard dine-in and takeaway reservation buttons implemented and verified.
-
-### Decisions / Risks
-- - Clicking dashboard reservation buttons correctly opens reservation screen with expected default dining mode.
-
-
-----------------------------------------------------------
 ## Update Entry - 22-Mar-2026 01:12
 
 ### Completed
@@ -744,6 +664,69 @@ getTakeawayHeadCountForDateAndMealType()
 
 ----------------------------------------------------------
 ## Update Entry - 22-Mar-2026 01:14
+
+### Completed
+- Employee dashboard upgraded from placeholder view to working menu summary interface.
+- Today menu summary now appears on employee dashboard with breakfast, lunch, and dinner sections.
+- Dashboard dine-in and takeaway reservation buttons implemented and verified.
+- Clicking dashboard reservation buttons correctly opens reservation screen with expected default dining mode.
+- Today menu screen upgraded to support selected date navigation.
+- Previous, next, and date picker controls added on reservation screen.
+- Future-date menu visibility implemented successfully.
+- Future-date booking tested successfully.
+- Past-date booking restriction enforced successfully.
+- Meal reservation service hardened with validation layer for:
+  - past-date booking block
+  - future-date booking allowance
+  - same-day cutoff-based validation
+- Reservation screen now shows:
+  - selected date context
+  - cutoff time per meal
+  - booking status message per meal
+- Existing reservation loading works date-wise for selected date.
+- Manager operational dashboard verified to reflect planned meals correctly by selected date.
+- Date-wise dashboard validation confirmed for current date and future date bookings.
+- Reservation status handling shifted toward controlled service-based flow.
+### Ongoing
+- Reservation model still supports only one dining_mode per meal at a time.
+- Current reservation screen still allows either dine_in or takeaway for one meal, not both simultaneously.
+- Current reservation structure remains single-line-per-meal oriented and is now reaching architectural limit.
+- Menu cycle module still has some minor glitches pending cleanup and polish.
+- User onboarding and validation flow still needs controlled pre-verification architecture.
+### Next
+- Phase 2 reservation redesign for multiple meal booking in same time slot.
+- Move to line-item reservation model with booking_group_id for cleaner long-term structure.
+- Support simultaneous dine_in and takeaway booking within same meal window.
+- Support quantity-based booking per menu option.
+- Support multiple option booking in same meal slot.
+- Remove remaining small glitches from menu_cycle flow.
+- Build parallel user validation plan:
+  - admin manually creates/approves employee linkage first
+  - employee can then create and activate account only after validation baseline exists
+- Freeze next phase after:
+  - multi-booking model
+  - menu_cycle cleanup
+  - admin-first employee validation flow
+- Later roadmap after next stop point:
+  - feedback module
+  - push notifications
+  - pull notifications
+  - meal rate implementation
+  - billing engine based on manual rates
+### Decisions / Risks
+- Current reservation schema is not sufficient for simultaneous dine_in + takeaway in same meal slot.
+- If more UI is added on top of current model without schema redesign, technical debt will increase.
+- Some reservation updates still touch Firestore document update flow directly and should gradually be centralized further.
+- Manager dashboard currently summarizes total meals correctly, but future dine_in vs takeaway and option-wise reporting will require schema extension.
+- User identity and employee linkage remain critical dependency; weak validation can create account-link mismatches.
+- Menu cycle glitches may create downstream menu resolution inconsistencies if not cleaned before broader rollout.
+- Billing/rate logic must not start before reservation model is stabilized, otherwise rework risk will be high.
+
+----------------------------------------------------------
+
+
+----------------------------------------------------------
+## Update Entry - 23-Mar-2026 00:19
 
 ### Completed
 - [not provided]

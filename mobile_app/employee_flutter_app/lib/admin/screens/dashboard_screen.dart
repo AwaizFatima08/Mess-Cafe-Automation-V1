@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/meal_reservation_service.dart';
@@ -21,7 +22,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   DateTime selectedDate = DateTime.now();
 
   bool _isLoading = true;
+  bool _isIssuing = false;
   String? _errorMessage;
+  String? _debugStage;
 
   Map<String, int> _plannedCounts = {
     'breakfast': 0,
@@ -37,6 +40,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     'total': 0,
   };
 
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _pendingReservations = [];
+
   @override
   void initState() {
     super.initState();
@@ -47,15 +52,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _debugStage = null;
     });
 
     try {
+      _debugStage = 'Loading planned counts';
       final planned = await _mealReservationService.getMealCountsForDate(
         selectedDate,
       );
 
+      _debugStage = 'Loading issued counts';
       final issued = await _mealReservationService.getIssuedMealCountsForDate(
         selectedDate,
+      );
+
+      _debugStage = 'Loading pending reservations';
+      final pendingDocs =
+          await _mealReservationService.getPendingReservationsForDate(
+        reservationDate: selectedDate,
       );
 
       if (!mounted) return;
@@ -63,13 +77,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _plannedCounts = planned;
         _issuedCounts = issued;
+        _pendingReservations = pendingDocs;
         _isLoading = false;
+        _debugStage = 'All dashboard data loaded';
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = 'Failed to load dashboard data: $e';
+        _errorMessage =
+            'Failed during: ${_debugStage ?? 'unknown stage'}\n\n$e';
         _isLoading = false;
       });
     }
@@ -83,7 +100,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   int get _totalRemaining {
-    final remaining = (_plannedCounts['total'] ?? 0) - (_issuedCounts['total'] ?? 0);
+    final remaining =
+        (_plannedCounts['total'] ?? 0) - (_issuedCounts['total'] ?? 0);
     return remaining < 0 ? 0 : remaining;
   }
 
@@ -104,6 +122,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       });
       await _loadDashboardData();
+    }
+  }
+
+  Future<void> _issueMeal(String docId) async {
+    if (_isIssuing) return;
+
+    setState(() {
+      _isIssuing = true;
+    });
+
+    try {
+      await _mealReservationService.markReservationIssued(
+        reservationId: docId,
+        issuedByUid: widget.userEmail,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Meal issued successfully.'),
+        ),
+      );
+
+      await _loadDashboardData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Issue failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isIssuing = false;
+        });
+      }
     }
   }
 
@@ -208,7 +265,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(
+                  child: SelectableText(
                     _errorMessage!,
                     style: const TextStyle(color: Colors.red),
                   ),
@@ -269,20 +326,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        'Next Dashboard Evolution',
+                    children: [
+                      const Text(
+                        'Booked Meals (Issuance)',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 12),
-                      Text('• Planned vs issued vs remaining is now aligned.'),
-                      SizedBox(height: 6),
-                      Text('• Next layer can add live issuance operations.'),
-                      SizedBox(height: 6),
-                      Text('• Later this dashboard can include guest split, dine-in vs takeaway, and rate-linked summaries.'),
+                      const SizedBox(height: 12),
+                      if (_pendingReservations.isEmpty)
+                        const Text('No pending reservations.')
+                      else
+                        ..._pendingReservations.map(
+                          (doc) => _ReservationLineTile(
+                            data: doc.data(),
+                            docId: doc.id,
+                            isBusy: _isIssuing,
+                            onIssue: () => _issueMeal(doc.id),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -347,6 +410,95 @@ class _MealSummaryCard extends StatelessWidget {
             _MetricLine(label: 'Issued', value: card.issued),
             const SizedBox(height: 8),
             _MetricLine(label: 'Remaining', value: card.remaining),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReservationLineTile extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final String docId;
+  final bool isBusy;
+  final VoidCallback onIssue;
+
+  const _ReservationLineTile({
+    required this.data,
+    required this.docId,
+    required this.isBusy,
+    required this.onIssue,
+  });
+
+  String _mealLabel(String value) {
+    switch (value.toLowerCase()) {
+      case 'breakfast':
+        return 'Breakfast';
+      case 'lunch':
+        return 'Lunch';
+      case 'dinner':
+        return 'Dinner';
+      default:
+        return value;
+    }
+  }
+
+  String _diningModeLabel(String value) {
+    switch (value.toLowerCase()) {
+      case 'dine_in':
+        return 'Dine In';
+      case 'takeaway':
+        return 'Takeaway';
+      default:
+        return value;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final employee = (data['employee_name'] ?? '').toString();
+    final empNo = (data['employee_number'] ?? '').toString();
+    final option = (data['option_label'] ?? '').toString();
+    final mealType = (data['meal_type'] ?? '').toString();
+    final mode = (data['dining_mode'] ?? '').toString();
+    final qty = (data['quantity'] ?? 0).toString();
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              employee.isEmpty ? 'Unknown Employee' : employee,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text('Employee No: $empNo'),
+            const SizedBox(height: 4),
+            Text('Meal: ${_mealLabel(mealType)}'),
+            const SizedBox(height: 4),
+            Text('Option: $option'),
+            const SizedBox(height: 4),
+            Text('Dining Mode: ${_diningModeLabel(mode)}'),
+            const SizedBox(height: 4),
+            Text('Quantity: $qty'),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: isBusy ? null : onIssue,
+                icon: isBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check_circle_outline),
+                label: const Text('Issue Meal'),
+              ),
+            ),
           ],
         ),
       ),

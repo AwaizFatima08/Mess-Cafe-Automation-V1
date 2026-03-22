@@ -43,26 +43,29 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   AppUserProfile? _userProfile;
   EmployeeIdentityResult? _identityResult;
 
-  final Map<String, String> _selectedOptionByMeal = {};
-  final Map<String, String> _selectedDiningModeByMeal = {
-    'breakfast': 'dine_in',
-    'lunch': 'dine_in',
-    'dinner': 'dine_in',
+  final Map<String, Map<String, _MealSelectionDraft>> _draftsByMeal = {
+    'breakfast': <String, _MealSelectionDraft>{},
+    'lunch': <String, _MealSelectionDraft>{},
+    'dinner': <String, _MealSelectionDraft>{},
   };
 
-  final Map<String, DocumentSnapshot<Map<String, dynamic>>>
-      _existingReservationDocs = {};
+  final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _existingReservationsByMeal = {
+    'breakfast': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+    'lunch': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+    'dinner': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+  };
+
+  final Map<String, bool> _isEditModeByMeal = {
+    'breakfast': false,
+    'lunch': false,
+    'dinner': false,
+  };
 
   @override
   void initState() {
     super.initState();
-
     _selectedDate = _normalizeDate(DateTime.now());
-
-    _selectedDiningModeByMeal['breakfast'] = widget.initialDiningMode;
-    _selectedDiningModeByMeal['lunch'] = widget.initialDiningMode;
-    _selectedDiningModeByMeal['dinner'] = widget.initialDiningMode;
-
     _loadScreenData();
   }
 
@@ -98,16 +101,20 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       String? identityWarning;
       if (!identityResult.found) {
         identityWarning =
-            'Employee linkage is incomplete. Menu can be viewed, but reservation save/update is disabled until users.employee_number and employees linkage is correct.';
+            'Employee linkage is incomplete. Menu can be viewed, but reservation save is disabled until users.employee_number and employees linkage is correct.';
       }
 
-      final existingDocs = <String, DocumentSnapshot<Map<String, dynamic>>>{};
+      final existingReservationsByMeal =
+          <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{
+        'breakfast': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+        'lunch': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+        'dinner': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+      };
 
       if (identityResult.found &&
           identityResult.employeeNumber != null &&
           identityResult.employeeNumber!.trim().isNotEmpty) {
         final startOfDay = normalizedDate;
-        final nextDay = startOfDay.add(const Duration(days: 1));
 
         final reservationsSnapshot = await _firestore
             .collection('meal_reservations')
@@ -115,22 +122,37 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
               'employee_number',
               isEqualTo: identityResult.employeeNumber!.trim(),
             )
-            .where(
-              'reservation_date',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
-            )
-            .where(
-              'reservation_date',
-              isLessThan: Timestamp.fromDate(nextDay),
-            )
             .get();
 
         for (final doc in reservationsSnapshot.docs) {
           final data = doc.data();
+
+          final reservationTimestamp = data['reservation_date'];
+          if (reservationTimestamp is! Timestamp) {
+            continue;
+          }
+
+          final reservationDate = reservationTimestamp.toDate();
+          final normalizedReservationDate = DateTime(
+            reservationDate.year,
+            reservationDate.month,
+            reservationDate.day,
+          );
+
+          if (normalizedReservationDate != startOfDay) {
+            continue;
+          }
+
           final mealType =
               (data['meal_type'] ?? '').toString().trim().toLowerCase();
-          if (mealType.isNotEmpty) {
-            existingDocs[mealType] = doc;
+          final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+          if (mealType.isEmpty || status == 'cancelled') {
+            continue;
+          }
+
+          if (existingReservationsByMeal.containsKey(mealType)) {
+            existingReservationsByMeal[mealType]!.add(doc);
           }
         }
       }
@@ -141,13 +163,21 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
         _dailyMenu = menu;
         _userProfile = userProfile;
         _identityResult = identityResult;
-        _existingReservationDocs
-          ..clear()
-          ..addAll(existingDocs);
         _identityWarning = identityWarning;
 
-        _initializeSelectionStateFromMenu();
-        _applyExistingReservationsToUi();
+        _existingReservationsByMeal['breakfast']!
+          ..clear()
+          ..addAll(existingReservationsByMeal['breakfast']!);
+        _existingReservationsByMeal['lunch']!
+          ..clear()
+          ..addAll(existingReservationsByMeal['lunch']!);
+        _existingReservationsByMeal['dinner']!
+          ..clear()
+          ..addAll(existingReservationsByMeal['dinner']!);
+
+        _initializeDraftStateFromMenu();
+        _resetAllEditModes();
+        _prefillDraftsFromExistingReservations();
 
         _isLoading = false;
       });
@@ -161,56 +191,60 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     }
   }
 
-  void _initializeSelectionStateFromMenu() {
-    final menu = _dailyMenu;
-    if (menu == null) return;
-
-    _initializeMealOptions('breakfast', menu.breakfastOptions);
-    _initializeMealOptions('lunch', menu.lunchOptions);
-    _initializeMealOptions('dinner', menu.dinnerOptions);
+  void _resetAllEditModes() {
+    _isEditModeByMeal['breakfast'] = false;
+    _isEditModeByMeal['lunch'] = false;
+    _isEditModeByMeal['dinner'] = false;
   }
 
-  void _initializeMealOptions(
+  void _initializeDraftStateFromMenu() {
+    _initializeMealDrafts('breakfast', _optionsForMeal('breakfast'));
+    _initializeMealDrafts('lunch', _optionsForMeal('lunch'));
+    _initializeMealDrafts('dinner', _optionsForMeal('dinner'));
+  }
+
+  void _initializeMealDrafts(
     String mealType,
     List<ResolvedMealOption> options,
   ) {
-    if (options.isEmpty) return;
+    final drafts = _draftsByMeal[mealType]!;
+    drafts.clear();
 
-    _selectedOptionByMeal.putIfAbsent(mealType, () => options.first.optionKey);
-    _selectedDiningModeByMeal.putIfAbsent(
-      mealType,
-      () => widget.initialDiningMode,
-    );
-  }
-
-  void _applyExistingReservationsToUi() {
-    for (final entry in _existingReservationDocs.entries) {
-      final mealType = entry.key;
-      final data = entry.value.data();
-      if (data == null) continue;
-
-      final notes = (data['notes'] ?? '').toString();
-      final diningMode = (data['dining_mode'] ?? widget.initialDiningMode)
-          .toString()
-          .trim()
-          .toLowerCase();
-
-      final selectedKey = _extractSelectedOptionKeyFromNotes(notes);
-
-      if (selectedKey != null && selectedKey.isNotEmpty) {
-        _selectedOptionByMeal[mealType] = selectedKey;
-      }
-
-      if (diningMode == 'dine_in' || diningMode == 'takeaway') {
-        _selectedDiningModeByMeal[mealType] = diningMode;
-      }
+    for (final option in options) {
+      drafts[option.optionKey] = const _MealSelectionDraft();
     }
   }
 
-  String? _extractSelectedOptionKeyFromNotes(String notes) {
-    const prefix = 'Selected option: ';
-    if (!notes.startsWith(prefix)) return null;
-    return notes.substring(prefix.length).trim();
+  void _prefillDraftsFromExistingReservations() {
+    for (final mealType in ['breakfast', 'lunch', 'dinner']) {
+      final docs = _existingReservationsByMeal[mealType] ?? const [];
+      final drafts = _draftsByMeal[mealType];
+
+      if (drafts == null || docs.isEmpty) {
+        continue;
+      }
+
+      for (final doc in docs) {
+        final data = doc.data();
+        final optionKey = (data['menu_option_key'] ?? '').toString().trim();
+        final diningMode = (data['dining_mode'] ?? '').toString().trim();
+        final quantity = (data['quantity'] ?? 0) is int
+            ? data['quantity'] as int
+            : int.tryParse((data['quantity'] ?? '0').toString()) ?? 0;
+
+        if (optionKey.isEmpty || quantity <= 0 || !drafts.containsKey(optionKey)) {
+          continue;
+        }
+
+        final current = drafts[optionKey] ?? const _MealSelectionDraft();
+
+        if (diningMode == 'takeaway') {
+          drafts[optionKey] = current.copyWith(takeawayQuantity: quantity);
+        } else {
+          drafts[optionKey] = current.copyWith(dineInQuantity: quantity);
+        }
+      }
+    }
   }
 
   List<ResolvedMealOption> _optionsForMeal(String mealType) {
@@ -273,6 +307,13 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     );
   }
 
+  ReservationValidationResult _cancellationValidationForMeal(String mealType) {
+    return _mealReservationService.validateCancellationRequest(
+      reservationDate: _selectedDate,
+      mealType: mealType,
+    );
+  }
+
   String _cutoffDisplayForMeal(String mealType) {
     return _mealReservationService.getMealCutoffDisplay(
       reservationDate: _selectedDate,
@@ -286,11 +327,13 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     setState(() {
       _selectedDate = normalizedDate;
       _dailyMenu = null;
-      _existingReservationDocs.clear();
-      _selectedOptionByMeal.clear();
-      _selectedDiningModeByMeal['breakfast'] = widget.initialDiningMode;
-      _selectedDiningModeByMeal['lunch'] = widget.initialDiningMode;
-      _selectedDiningModeByMeal['dinner'] = widget.initialDiningMode;
+      _draftsByMeal['breakfast']!.clear();
+      _draftsByMeal['lunch']!.clear();
+      _draftsByMeal['dinner']!.clear();
+      _existingReservationsByMeal['breakfast']!.clear();
+      _existingReservationsByMeal['lunch']!.clear();
+      _existingReservationsByMeal['dinner']!.clear();
+      _resetAllEditModes();
     });
 
     await _loadScreenData();
@@ -324,12 +367,185 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     await _changeSelectedDate(_selectedDate.add(const Duration(days: 1)));
   }
 
+  int _mealDraftTotalLines(String mealType) {
+    int count = 0;
+    final drafts =
+        _draftsByMeal[mealType] ?? const <String, _MealSelectionDraft>{};
+
+    for (final draft in drafts.values) {
+      if (draft.dineInQuantity > 0) count++;
+      if (draft.takeawayQuantity > 0) count++;
+    }
+
+    return count;
+  }
+
+  int _mealDraftTotalQuantity(String mealType) {
+    int total = 0;
+    final drafts =
+        _draftsByMeal[mealType] ?? const <String, _MealSelectionDraft>{};
+
+    for (final draft in drafts.values) {
+      total += draft.dineInQuantity + draft.takeawayQuantity;
+    }
+
+    return total;
+  }
+
+  bool _hasExistingReservationForMeal(String mealType) {
+    return (_existingReservationsByMeal[mealType] ?? const []).isNotEmpty;
+  }
+
+  bool _isMealInEditMode(String mealType) {
+    return _isEditModeByMeal[mealType] == true;
+  }
+
+  void _enterEditMode(String mealType) {
+    if (_isSaving) return;
+
+    setState(() {
+      _isEditModeByMeal[mealType] = true;
+    });
+  }
+
+  void _exitEditMode(String mealType) {
+    if (_isSaving) return;
+
+    setState(() {
+      _isEditModeByMeal[mealType] = false;
+      _initializeMealDrafts(mealType, _optionsForMeal(mealType));
+      _prefillMealDraftFromExistingReservations(mealType);
+    });
+  }
+
+  void _prefillMealDraftFromExistingReservations(String mealType) {
+    final docs = _existingReservationsByMeal[mealType] ?? const [];
+    final drafts = _draftsByMeal[mealType];
+    if (drafts == null) return;
+
+    for (final optionKey in drafts.keys.toList()) {
+      drafts[optionKey] = const _MealSelectionDraft();
+    }
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final optionKey = (data['menu_option_key'] ?? '').toString().trim();
+      final diningMode = (data['dining_mode'] ?? '').toString().trim();
+      final quantity = (data['quantity'] ?? 0) is int
+          ? data['quantity'] as int
+          : int.tryParse((data['quantity'] ?? '0').toString()) ?? 0;
+
+      if (optionKey.isEmpty || quantity <= 0 || !drafts.containsKey(optionKey)) {
+        continue;
+      }
+
+      final current = drafts[optionKey] ?? const _MealSelectionDraft();
+
+      if (diningMode == 'takeaway') {
+        drafts[optionKey] = current.copyWith(takeawayQuantity: quantity);
+      } else {
+        drafts[optionKey] = current.copyWith(dineInQuantity: quantity);
+      }
+    }
+  }
+
+  void _changeDraftQuantity({
+    required String mealType,
+    required String optionKey,
+    required String diningMode,
+    required int delta,
+  }) {
+    if (!_canSaveReservation || _isSaving) {
+      return;
+    }
+
+    final hasExisting = _hasExistingReservationForMeal(mealType);
+    final isEditMode = _isMealInEditMode(mealType);
+
+    if (hasExisting && !isEditMode) {
+      return;
+    }
+
+    final drafts = _draftsByMeal[mealType];
+    if (drafts == null || !drafts.containsKey(optionKey)) {
+      return;
+    }
+
+    final current = drafts[optionKey]!;
+    final currentQty = diningMode == 'dine_in'
+        ? current.dineInQuantity
+        : current.takeawayQuantity;
+    final newQty = currentQty + delta;
+
+    if (newQty < 0) {
+      return;
+    }
+
+    setState(() {
+      if (diningMode == 'dine_in') {
+        drafts[optionKey] = current.copyWith(dineInQuantity: newQty);
+      } else {
+        drafts[optionKey] = current.copyWith(takeawayQuantity: newQty);
+      }
+    });
+  }
+
+  List<ReservationLineInput> _buildReservationLinesForMeal(
+    String mealType,
+  ) {
+    final options = _optionsForMeal(mealType);
+    final drafts =
+        _draftsByMeal[mealType] ?? const <String, _MealSelectionDraft>{};
+
+    final lines = <ReservationLineInput>[];
+
+    for (final option in options) {
+      final draft = drafts[option.optionKey];
+      if (draft == null) continue;
+
+      if (draft.dineInQuantity > 0) {
+        lines.add(
+          ReservationLineInput(
+            menuOptionKey: option.optionKey,
+            optionLabel: option.optionLabel,
+            diningMode: 'dine_in',
+            quantity: draft.dineInQuantity,
+          ),
+        );
+      }
+
+      if (draft.takeawayQuantity > 0) {
+        lines.add(
+          ReservationLineInput(
+            menuOptionKey: option.optionKey,
+            optionLabel: option.optionLabel,
+            diningMode: 'takeaway',
+            quantity: draft.takeawayQuantity,
+          ),
+        );
+      }
+    }
+
+    return lines;
+  }
+
   Future<void> _saveMealReservation(String mealType) async {
     if (!_canSaveReservation) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
             'Reservation save is disabled until employee linkage is complete and account is active.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (_hasExistingReservationForMeal(mealType)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_mealLabel(mealType)} already has an active reservation. Use Edit or Cancel.',
           ),
         ),
       );
@@ -344,29 +560,13 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       return;
     }
 
-    final selectedOptionKey = _selectedOptionByMeal[mealType];
-    if (selectedOptionKey == null || selectedOptionKey.trim().isEmpty) {
+    final lines = _buildReservationLinesForMeal(mealType);
+    if (lines.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Please select a ${_mealLabel(mealType)} option first.'),
-        ),
-      );
-      return;
-    }
-
-    final selectedDiningMode =
-        _selectedDiningModeByMeal[mealType] ?? widget.initialDiningMode;
-    final options = _optionsForMeal(mealType);
-
-    final selectedOption = options.cast<ResolvedMealOption?>().firstWhere(
-          (option) => option?.optionKey == selectedOptionKey,
-          orElse: () => null,
-        );
-
-    if (selectedOption == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Selected option could not be resolved.'),
+          content: Text(
+            'Please add at least one ${_mealLabel(mealType)} quantity before saving.',
+          ),
         ),
       );
       return;
@@ -400,43 +600,20 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       return;
     }
 
-    final existingDoc = _existingReservationDocs[mealType];
-    final notes = 'Selected option: ${selectedOption.optionKey}';
-
     setState(() {
       _isSaving = true;
     });
 
     try {
-      if (existingDoc == null) {
-        await _mealReservationService.createReservation(
-          employeeNumber: employeeNumber,
-          employeeName: employeeName,
-          reservationDate: _selectedDate,
-          mealType: mealType,
-          bookingType: 'self',
-          diningMode: selectedDiningMode,
-          quantity: 1,
-          createdByUid: authUser.uid,
-          createdByRole: _userProfile?.roleLabel ?? 'employee',
-          notes: notes,
-        );
-      } else {
-        final validation = _bookingValidationForMeal(mealType);
-        if (!validation.isAllowed) {
-          throw StateError(validation.message);
-        }
-
-        await _firestore
-            .collection('meal_reservations')
-            .doc(existingDoc.id)
-            .update({
-          'reservation_date': Timestamp.fromDate(_selectedDate),
-          'dining_mode': selectedDiningMode,
-          'notes': notes,
-          'updated_at': FieldValue.serverTimestamp(),
-        });
-      }
+      await _mealReservationService.createReservationGroup(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        reservationDate: _selectedDate,
+        mealType: mealType,
+        lines: lines,
+        createdByUid: authUser.uid,
+        createdByRole: _userProfile?.roleLabel ?? 'employee',
+      );
 
       if (!mounted) return;
 
@@ -456,6 +633,228 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
         SnackBar(
           content:
               Text('Failed to save ${_mealLabel(mealType)} reservation: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _updateMealReservation(String mealType) async {
+    if (!_canSaveReservation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Reservation update is disabled until employee linkage is complete and account is active.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!_hasExistingReservationForMeal(mealType)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No existing ${_mealLabel(mealType)} reservation found to edit.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final validation = _bookingValidationForMeal(mealType);
+    if (!validation.isAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(validation.message)),
+      );
+      return;
+    }
+
+    final lines = _buildReservationLinesForMeal(mealType);
+    if (lines.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'At least one line is required. Use Cancel Reservation if you want to remove the whole booking.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No authenticated user found.'),
+        ),
+      );
+      return;
+    }
+
+    final employeeNumber = _identityResult!.employeeNumber!.trim();
+    final employeeName = (_identityResult!.employeeData?['name'] ??
+            _identityResult!.employeeData?['employee_name'] ??
+            _identityResult!.userData?['employee_name'] ??
+            _userProfile?.employeeName ??
+            '')
+        .toString()
+        .trim();
+
+    if (employeeName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Employee name could not be resolved.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      await _mealReservationService.replaceReservationGroupForEmployeeDateMeal(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        reservationDate: _selectedDate,
+        mealType: mealType,
+        lines: lines,
+        updatedByUid: authUser.uid,
+        updatedByRole: _userProfile?.roleLabel ?? 'employee',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_mealLabel(mealType)} reservation updated successfully for ${_formatDate(_selectedDate)}.',
+          ),
+        ),
+      );
+
+      await _loadScreenData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Failed to update ${_mealLabel(mealType)} reservation: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _cancelMealReservation(String mealType) async {
+    if (!_canSaveReservation) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Reservation cancellation is disabled until employee linkage is complete and account is active.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (!_hasExistingReservationForMeal(mealType)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No existing ${_mealLabel(mealType)} reservation found to cancel.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final validation = _cancellationValidationForMeal(mealType);
+    if (!validation.isAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(validation.message)),
+      );
+      return;
+    }
+
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No authenticated user found.'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Cancel ${_mealLabel(mealType)} Reservation'),
+            content: Text(
+              'Are you sure you want to cancel the full ${_mealLabel(mealType).toLowerCase()} reservation for ${_formatDate(_selectedDate)}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('No'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Yes, Cancel'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      await _mealReservationService.cancelActiveReservationsForEmployeeDateMeal(
+        employeeNumber: _identityResult!.employeeNumber!.trim(),
+        reservationDate: _selectedDate,
+        mealType: mealType,
+        cancelledByUid: authUser.uid,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_mealLabel(mealType)} reservation cancelled successfully.',
+          ),
+        ),
+      );
+
+      await _loadScreenData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Failed to cancel ${_mealLabel(mealType)} reservation: $e'),
         ),
       );
     } finally {
@@ -559,10 +958,6 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
             Text(
               'Link Status: ${identity?.found == true ? 'Ready for reservation' : 'Link incomplete'}',
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Default Screen Mode: ${widget.initialDiningMode == 'takeaway' ? 'Takeaway' : 'Dine In'}',
-            ),
             if (_identityWarning != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -576,79 +971,302 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     );
   }
 
+  Widget _buildQuantityAdjuster({
+    required String mealType,
+    required String optionKey,
+    required String diningMode,
+    required int quantity,
+    required String label,
+  }) {
+    final hasExistingReservation = _hasExistingReservationForMeal(mealType);
+    final isEditMode = _isMealInEditMode(mealType);
+
+    final isReadOnlyBecauseExisting =
+        hasExistingReservation && !isEditMode;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            onPressed: (!_canSaveReservation ||
+                    _isSaving ||
+                    isReadOnlyBecauseExisting)
+                ? null
+                : () => _changeDraftQuantity(
+                      mealType: mealType,
+                      optionKey: optionKey,
+                      diningMode: diningMode,
+                      delta: -1,
+                    ),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          Text(
+            quantity.toString(),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          IconButton(
+            onPressed: (!_canSaveReservation ||
+                    _isSaving ||
+                    isReadOnlyBecauseExisting)
+                ? null
+                : () => _changeDraftQuantity(
+                      mealType: mealType,
+                      optionKey: optionKey,
+                      diningMode: diningMode,
+                      delta: 1,
+                    ),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOptionTile(
     String mealType,
     ResolvedMealOption option,
-    String? selectedOptionKey,
   ) {
-    final isSelected = selectedOptionKey == option.optionKey;
+    final draft = _draftsByMeal[mealType]?[option.optionKey] ??
+        const _MealSelectionDraft();
+
+    final isSelected = draft.dineInQuantity > 0 || draft.takeawayQuantity > 0;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       color: isSelected
           ? Theme.of(context).colorScheme.primaryContainer
           : null,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: !_canSaveReservation
-            ? null
-            : () {
-                setState(() {
-                  _selectedOptionByMeal[mealType] = option.optionKey;
-                });
-              },
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                isSelected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_off,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              option.optionLabel,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      option.optionLabel,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_buildItemsSummary(option)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Chip(
-                          label: Text(option.optionKey),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ),
-                  ],
+            ),
+            const SizedBox(height: 6),
+            Text(_buildItemsSummary(option)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Chip(
+                  label: Text(option.optionKey),
+                  visualDensity: VisualDensity.compact,
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+            _buildQuantityAdjuster(
+              mealType: mealType,
+              optionKey: option.optionKey,
+              diningMode: 'dine_in',
+              quantity: draft.dineInQuantity,
+              label: 'Dine In',
+            ),
+            _buildQuantityAdjuster(
+              mealType: mealType,
+              optionKey: option.optionKey,
+              diningMode: 'takeaway',
+              quantity: draft.takeawayQuantity,
+              label: 'Takeaway',
+            ),
+          ],
         ),
       ),
     );
   }
 
+  Widget _buildExistingReservationSummary(String mealType) {
+    final existingDocs = _existingReservationsByMeal[mealType] ?? const [];
+    final isEditMode = _isMealInEditMode(mealType);
+
+    if (existingDocs.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final summaryLines = <String>[];
+
+    for (final doc in existingDocs) {
+      final data = doc.data();
+      final optionLabel =
+          (data['option_label'] ?? '').toString().trim().isNotEmpty
+              ? (data['option_label'] ?? '').toString().trim()
+              : (data['menu_option_key'] ?? 'Unknown option').toString().trim();
+
+      final diningMode = (data['dining_mode'] ?? '').toString().trim();
+      final quantity = (data['quantity'] ?? 0) is int
+          ? data['quantity'] as int
+          : int.tryParse((data['quantity'] ?? '0').toString()) ?? 0;
+      final status = (data['status'] ?? '').toString().trim();
+
+      final diningModeLabel =
+          diningMode == 'takeaway' ? 'Takeaway' : 'Dine In';
+
+      summaryLines
+          .add('$optionLabel • $diningModeLabel • Qty $quantity • $status');
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isEditMode
+            ? Theme.of(context).colorScheme.primaryContainer
+            : Theme.of(context).colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isEditMode
+                ? 'Edit mode is active for this meal'
+                : 'Existing reservation already saved for selected date',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: isEditMode
+                  ? Theme.of(context).colorScheme.onPrimaryContainer
+                  : Theme.of(context).colorScheme.onSecondaryContainer,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...summaryLines.map(
+            (line) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(line),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isEditMode
+                ? 'Adjust quantities below, then press Update Reservation.'
+                : 'You can edit or cancel this reservation.',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMealActionSection({
+    required String mealType,
+    required bool hasExistingReservation,
+    required bool canBook,
+    required bool canCancel,
+    required bool hasOptions,
+  }) {
+    final isEditMode = _isMealInEditMode(mealType);
+
+    if (!hasExistingReservation) {
+      return SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: (_isSaving ||
+                  !hasOptions ||
+                  !_canSaveReservation ||
+                  !canBook)
+              ? null
+              : () => _saveMealReservation(mealType),
+          icon: _isSaving
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_outlined),
+          label: const Text('Save Reservation'),
+        ),
+      );
+    }
+
+    if (!isEditMode) {
+      return Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isSaving ? null : () => _enterEditMode(mealType),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Edit Reservation'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (_isSaving || !_canSaveReservation || !canCancel)
+                  ? null
+                  : () => _cancelMealReservation(mealType),
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Cancel Reservation'),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: (_isSaving ||
+                    !hasOptions ||
+                    !_canSaveReservation ||
+                    !canBook)
+                ? null
+                : () => _updateMealReservation(mealType),
+            icon: _isSaving
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_as_outlined),
+            label: const Text('Update Reservation'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _isSaving ? null : () => _exitEditMode(mealType),
+            icon: const Icon(Icons.close),
+            label: const Text('Cancel Edit'),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildMealCard(String mealType) {
     final options = _optionsForMeal(mealType);
-    final existingDoc = _existingReservationDocs[mealType];
-    final existingData = existingDoc?.data();
-    final selectedOptionKey = _selectedOptionByMeal[mealType];
-    final selectedDiningMode =
-        _selectedDiningModeByMeal[mealType] ?? widget.initialDiningMode;
-    final validation = _bookingValidationForMeal(mealType);
+    final bookingValidation = _bookingValidationForMeal(mealType);
+    final cancellationValidation = _cancellationValidationForMeal(mealType);
+    final hasExistingReservation = _hasExistingReservationForMeal(mealType);
+    final draftLineCount = _mealDraftTotalLines(mealType);
+    final draftTotalQuantity = _mealDraftTotalQuantity(mealType);
+    final isEditMode = _isMealInEditMode(mealType);
 
     return Card(
       child: Padding(
@@ -667,93 +1285,53 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
             Text('Cutoff Time: ${_cutoffDisplayForMeal(mealType)}'),
             const SizedBox(height: 6),
             Text(
-              'Booking Status: ${validation.message}',
+              'Booking Status: ${bookingValidation.message}',
               style: TextStyle(
-                color: validation.isAllowed
+                color: bookingValidation.isAllowed
                     ? Colors.green
                     : Theme.of(context).colorScheme.error,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 10),
-            if (existingData != null) ...[
+            if (hasExistingReservation) ...[
+              const SizedBox(height: 6),
               Text(
-                'Existing reservation found for selected date.',
+                'Cancellation Status: ${cancellationValidation.message}',
                 style: TextStyle(
+                  color: cancellationValidation.isAllowed
+                      ? Colors.green
+                      : Theme.of(context).colorScheme.error,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
-              const SizedBox(height: 10),
             ],
+            const SizedBox(height: 6),
+            Text(
+              'Draft Summary: $draftLineCount line(s), total quantity $draftTotalQuantity',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            if (hasExistingReservation && isEditMode) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Edit Mode: active',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            _buildExistingReservationSummary(mealType),
             if (options.isEmpty)
               const Text('No menu options available.')
             else
-              ...options.map(
-                (option) => _buildOptionTile(
-                  mealType,
-                  option,
-                  selectedOptionKey,
-                ),
-              ),
-            const SizedBox(height: 12),
-            const Text(
-              'Dining Mode',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('Dine In'),
-                  selected: selectedDiningMode == 'dine_in',
-                  onSelected: !_canSaveReservation
-                      ? null
-                      : (selected) {
-                          if (!selected) return;
-                          setState(() {
-                            _selectedDiningModeByMeal[mealType] = 'dine_in';
-                          });
-                        },
-                ),
-                ChoiceChip(
-                  label: const Text('Takeaway'),
-                  selected: selectedDiningMode == 'takeaway',
-                  onSelected: !_canSaveReservation
-                      ? null
-                      : (selected) {
-                          if (!selected) return;
-                          setState(() {
-                            _selectedDiningModeByMeal[mealType] = 'takeaway';
-                          });
-                        },
-                ),
-              ],
-            ),
+              ...options.map((option) => _buildOptionTile(mealType, option)),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: (_isSaving ||
-                        options.isEmpty ||
-                        !_canSaveReservation ||
-                        !validation.isAllowed)
-                    ? null
-                    : () => _saveMealReservation(mealType),
-                icon: _isSaving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(
-                  existingData == null
-                      ? 'Save Reservation'
-                      : 'Update Reservation',
-                ),
-              ),
+            _buildMealActionSection(
+              mealType: mealType,
+              hasExistingReservation: hasExistingReservation,
+              canBook: bookingValidation.isAllowed,
+              canCancel: cancellationValidation.isAllowed,
+              hasOptions: options.isNotEmpty,
             ),
           ],
         ),
@@ -844,6 +1422,26 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MealSelectionDraft {
+  final int dineInQuantity;
+  final int takeawayQuantity;
+
+  const _MealSelectionDraft({
+    this.dineInQuantity = 0,
+    this.takeawayQuantity = 0,
+  });
+
+  _MealSelectionDraft copyWith({
+    int? dineInQuantity,
+    int? takeawayQuantity,
+  }) {
+    return _MealSelectionDraft(
+      dineInQuantity: dineInQuantity ?? this.dineInQuantity,
+      takeawayQuantity: takeawayQuantity ?? this.takeawayQuantity,
     );
   }
 }

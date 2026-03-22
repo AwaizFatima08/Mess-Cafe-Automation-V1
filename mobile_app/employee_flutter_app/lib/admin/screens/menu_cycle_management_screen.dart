@@ -41,6 +41,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     super.dispose();
   }
 
+  void _dismissKeyboard() {
+    FocusScope.of(context).unfocus();
+  }
+
   void resetForm() {
     cycleNameController.clear();
     breakfastTemplateId = null;
@@ -78,6 +82,8 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   }
 
   Future<void> pickDate({required bool forStartDate}) async {
+    _dismissKeyboard();
+
     final initialDate =
         (forStartDate ? startDate : endDate) ?? DateTime.now();
 
@@ -100,6 +106,8 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   }
 
   Future<void> saveCycle() async {
+    _dismissKeyboard();
+
     final cycleName = cycleNameController.text.trim();
 
     if (cycleName.isEmpty) {
@@ -207,6 +215,8 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   }
 
   void loadCycleForEdit(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    _dismissKeyboard();
+
     final data = doc.data();
 
     cycleNameController.text = (data['cycle_name'] ?? '').toString().trim();
@@ -256,6 +266,8 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   Future<void> toggleCycleActive(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
+    _dismissKeyboard();
+
     try {
       final data = doc.data();
       final currentlyActive = isCycleActive(data);
@@ -309,6 +321,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       children: [
         DropdownButtonFormField<String>(
           initialValue: value,
+          onTap: _dismissKeyboard,
           decoration: InputDecoration(
             labelText: label,
             border: const OutlineInputBorder(),
@@ -473,6 +486,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   subtitle: const Text('Do not set an end date'),
                   value: keepActiveUntilNextChange,
                   onChanged: (value) {
+                    _dismissKeyboard();
                     setState(() {
                       keepActiveUntilNextChange = value;
                       if (value) {
@@ -609,78 +623,82 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       appBar: AppBar(
         title: const Text('Menu Cycles'),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 0,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Column(
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Logged in as: ${widget.userEmail}'),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildStaticFormSection(),
-                ],
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _dismissKeyboard,
+        child: Column(
+          children: [
+            Expanded(
+              flex: 0,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('Logged in as: ${widget.userEmail}'),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildStaticFormSection(),
+                  ],
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _firestore.collection('weekly_menu_templates').snapshots(),
-              builder: (context, templateSnapshot) {
-                if (templateSnapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _firestore.collection('weekly_menu_templates').snapshots(),
+                builder: (context, templateSnapshot) {
+                  if (templateSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                if (templateSnapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        'Failed to load templates: ${templateSnapshot.error}',
-                      ),
-                    ),
-                  );
-                }
-
-                final templateDocs = templateSnapshot.data?.docs ?? [];
-
-                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _firestore.collection('menu_cycles').snapshots(),
-                  builder: (context, cycleSnapshot) {
-                    if (cycleSnapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    if (cycleSnapshot.hasError) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(
-                            'Failed to load cycles: ${cycleSnapshot.error}',
-                          ),
+                  if (templateSnapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(
+                          'Failed to load templates: ${templateSnapshot.error}',
                         ),
-                      );
-                    }
-
-                    final cycleDocs = cycleSnapshot.data?.docs ?? [];
-
-                    return ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        _buildDynamicSection(templateDocs, cycleDocs),
-                      ],
+                      ),
                     );
-                  },
-                );
-              },
+                  }
+
+                  final templateDocs = templateSnapshot.data?.docs ?? [];
+
+                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: _firestore.collection('menu_cycles').snapshots(),
+                    builder: (context, cycleSnapshot) {
+                      if (cycleSnapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      if (cycleSnapshot.hasError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Text(
+                              'Failed to load cycles: ${cycleSnapshot.error}',
+                            ),
+                          ),
+                        );
+                      }
+
+                      final cycleDocs = cycleSnapshot.data?.docs ?? [];
+
+                      return ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          _buildDynamicSection(templateDocs, cycleDocs),
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
