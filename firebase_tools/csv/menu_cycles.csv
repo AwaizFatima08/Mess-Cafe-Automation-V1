@@ -1,2 +1,2 @@
-docId,cycle_name,start_date,end_date,is_active,breakfast_template_id,lunch_template_1_id,lunch_template_2_id,dinner_template_1_id,dinner_template_2_id,created_at,updated_at
-1,,,,,,,,,,,
+docId,end_date,created_at,lunch_template_1_id,lunch_template_2_id,cycle_name,breakfast_template_id,dinner_template_2_id,dinner_template_1_id,start_date,is_active,updated_at,status
+1,,,WMT0002,WMT0003,March 2026,WMT0001,WMT0005,WMT0004,"{""_seconds"":1774033200,""_nanoseconds"":0}",true,"{""_seconds"":1774104297,""_nanoseconds"":40000000}",active

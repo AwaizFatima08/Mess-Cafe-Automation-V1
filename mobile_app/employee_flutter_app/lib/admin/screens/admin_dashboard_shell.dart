@@ -10,6 +10,7 @@ import 'active_menu_preview_screen.dart';
 import 'bulk_upload_screen.dart';
 import 'dashboard_screen.dart';
 import 'employee_master_management_screen.dart';
+import 'guest_meal_booking_screen.dart';
 import 'menu_cycle_management_screen.dart';
 import 'menu_management_screen.dart';
 import 'reports_screen.dart';
@@ -48,6 +49,12 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         title: 'Dashboard',
         subtitle: 'Operational overview and issuance',
         icon: Icons.dashboard_outlined,
+      ),
+      const _AdminSection(
+        key: 'operator_booking',
+        title: 'Guest / Proxy Booking',
+        subtitle: 'Book meals for guests and employees',
+        icon: Icons.assignment_ind_outlined,
       ),
       const _AdminSection(
         key: 'menu_management',
@@ -126,6 +133,9 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     switch (section.key) {
       case 'dashboard':
         return DashboardScreen(userEmail: userEmail);
+
+      case 'operator_booking':
+        return GuestMealBookingScreen(userEmail: userEmail);
 
       case 'menu_management':
         return MenuManagementScreen(userEmail: userEmail);

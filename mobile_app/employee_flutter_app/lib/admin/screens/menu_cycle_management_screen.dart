@@ -42,10 +42,15 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   }
 
   void _dismissKeyboard() {
-    FocusScope.of(context).unfocus();
+    final currentFocus = FocusScope.of(context);
+    if (!currentFocus.hasPrimaryFocus && currentFocus.focusedChild != null) {
+      currentFocus.unfocus();
+    }
   }
 
   void resetForm() {
+    _dismissKeyboard();
+
     cycleNameController.clear();
     breakfastTemplateId = null;
     lunchTemplate1Id = null;
@@ -302,12 +307,108 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     return docs.where((doc) {
       final data = doc.data();
       return isTemplateActive(data) &&
-          (data['meal_type'] ?? '').toString().trim() == mealType;
+          (data['meal_type'] ?? '').toString().trim().toLowerCase() ==
+              mealType.trim().toLowerCase();
     }).toList()
-      ..sort((a, b) => a.id.compareTo(b.id));
+      ..sort((a, b) {
+        final aName =
+            (a.data()['template_name'] ?? a.id).toString().trim().toLowerCase();
+        final bName =
+            (b.data()['template_name'] ?? b.id).toString().trim().toLowerCase();
+        return aName.compareTo(bName);
+      });
   }
 
-  Widget _templateDropdown({
+  String _selectedTemplateName({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered,
+    required String? value,
+  }) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Select template';
+    }
+
+    for (final doc in filtered) {
+      if (doc.id == value) {
+        return (doc.data()['template_name'] ?? doc.id).toString();
+      }
+    }
+
+    return 'Selected template not found';
+  }
+
+  Future<void> _showTemplateSelector({
+    required String label,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered,
+    required ValueChanged<String?> onChanged,
+  }) async {
+    _dismissKeyboard();
+
+    if (filtered.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No active templates available for $label.')),
+      );
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(sheetContext).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: filtered.length,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final doc = filtered[index];
+                    final templateName =
+                        (doc.data()['template_name'] ?? doc.id).toString();
+
+                    return ListTile(
+                      title: Text(templateName),
+                      subtitle: Text('Template ID: ${doc.id}'),
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        onChanged(doc.id);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _templateSelector({
     required String label,
     required String mealType,
     required String? value,
@@ -315,28 +416,33 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> allTemplates,
   }) {
     final filtered = _filterTemplatesByMealType(allTemplates, mealType);
+    final selectedName = _selectedTemplateName(
+      filtered: filtered,
+      value: value,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: value,
-          onTap: _dismissKeyboard,
-          decoration: InputDecoration(
-            labelText: label,
-            border: const OutlineInputBorder(),
+        InkWell(
+          onTap: () => _showTemplateSelector(
+            label: label,
+            filtered: filtered,
+            onChanged: onChanged,
           ),
-          items: filtered
-              .map(
-                (doc) => DropdownMenuItem<String>(
-                  value: doc.id,
-                  child: Text(
-                    '${(doc.data()['template_name'] ?? doc.id)} (${doc.id})',
-                  ),
-                ),
-              )
-              .toList(),
-          onChanged: filtered.isEmpty ? null : onChanged,
+          child: InputDecorator(
+            decoration: InputDecoration(
+              labelText: label,
+              border: const OutlineInputBorder(),
+              suffixIcon: const Icon(Icons.arrow_drop_down),
+            ),
+            child: Text(
+              selectedName,
+              style: TextStyle(
+                color: value == null ? Colors.grey.shade700 : Colors.black,
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -382,6 +488,9 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
             TextField(
               controller: cycleNameController,
               focusNode: cycleNameFocusNode,
+              textInputAction: TextInputAction.done,
+              onTapOutside: (_) => _dismissKeyboard(),
+              onSubmitted: (_) => _dismissKeyboard(),
               decoration: const InputDecoration(
                 labelText: 'Cycle Name',
                 border: OutlineInputBorder(),
@@ -421,7 +530,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                _templateDropdown(
+                _templateSelector(
                   label: 'Breakfast Template',
                   mealType: 'breakfast',
                   value: breakfastTemplateId,
@@ -431,7 +540,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   allTemplates: templateDocs,
                 ),
                 const SizedBox(height: 16),
-                _templateDropdown(
+                _templateSelector(
                   label: 'Lunch Template 1',
                   mealType: 'lunch',
                   value: lunchTemplate1Id,
@@ -441,7 +550,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   allTemplates: templateDocs,
                 ),
                 const SizedBox(height: 16),
-                _templateDropdown(
+                _templateSelector(
                   label: 'Lunch Template 2',
                   mealType: 'lunch',
                   value: lunchTemplate2Id,
@@ -451,7 +560,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   allTemplates: templateDocs,
                 ),
                 const SizedBox(height: 16),
-                _templateDropdown(
+                _templateSelector(
                   label: 'Dinner Template 1',
                   mealType: 'dinner',
                   value: dinnerTemplate1Id,
@@ -461,7 +570,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   allTemplates: templateDocs,
                 ),
                 const SizedBox(height: 16),
-                _templateDropdown(
+                _templateSelector(
                   label: 'Dinner Template 2',
                   mealType: 'dinner',
                   value: dinnerTemplate2Id,
@@ -623,82 +732,80 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       appBar: AppBar(
         title: const Text('Menu Cycles'),
       ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _dismissKeyboard,
-        child: Column(
-          children: [
-            Expanded(
-              flex: 0,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Column(
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('Logged in as: ${widget.userEmail}'),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildStaticFormSection(),
-                  ],
-                ),
+      body: Column(
+        children: [
+          Expanded(
+            flex: 0,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Column(
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Logged in as: ${widget.userEmail}'),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildStaticFormSection(),
+                ],
               ),
             ),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: _firestore.collection('weekly_menu_templates').snapshots(),
-                builder: (context, templateSnapshot) {
-                  if (templateSnapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+          ),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _firestore.collection('weekly_menu_templates').snapshots(),
+              builder: (context, templateSnapshot) {
+                if (templateSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                  if (templateSnapshot.hasError) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Text(
-                          'Failed to load templates: ${templateSnapshot.error}',
-                        ),
+                if (templateSnapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        'Failed to load templates: ${templateSnapshot.error}',
                       ),
-                    );
-                  }
-
-                  final templateDocs = templateSnapshot.data?.docs ?? [];
-
-                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    stream: _firestore.collection('menu_cycles').snapshots(),
-                    builder: (context, cycleSnapshot) {
-                      if (cycleSnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (cycleSnapshot.hasError) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Text(
-                              'Failed to load cycles: ${cycleSnapshot.error}',
-                            ),
-                          ),
-                        );
-                      }
-
-                      final cycleDocs = cycleSnapshot.data?.docs ?? [];
-
-                      return ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          _buildDynamicSection(templateDocs, cycleDocs),
-                        ],
-                      );
-                    },
+                    ),
                   );
-                },
-              ),
+                }
+
+                final templateDocs = templateSnapshot.data?.docs ?? [];
+
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _firestore.collection('menu_cycles').snapshots(),
+                  builder: (context, cycleSnapshot) {
+                    if (cycleSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (cycleSnapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            'Failed to load cycles: ${cycleSnapshot.error}',
+                          ),
+                        ),
+                      );
+                    }
+
+                    final cycleDocs = cycleSnapshot.data?.docs ?? [];
+
+                    return ListView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _buildDynamicSection(templateDocs, cycleDocs),
+                      ],
+                    );
+                  },
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

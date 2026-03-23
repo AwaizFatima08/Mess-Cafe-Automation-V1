@@ -24,7 +24,6 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   final UserRoleService _userRoleService = UserRoleService();
   final EmployeeIdentityService _employeeIdentityService =
       EmployeeIdentityService();
-  final TextEditingController _searchController = TextEditingController();
 
   bool _isAuthorized = false;
   bool _isLoadingAccess = true;
@@ -46,12 +45,6 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   void initState() {
     super.initState();
     _checkAccess();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   Future<void> _checkAccess() async {
@@ -85,6 +78,48 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         _isAuthorized = false;
         _isLoadingAccess = false;
         _accessError = 'Failed to check access: $e';
+      });
+    }
+  }
+
+  Future<void> _openSearchDialog() async {
+    final controller = TextEditingController(text: _searchQuery);
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Search Users'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.search,
+            decoration: const InputDecoration(
+              labelText: 'Name / Email / Employee Number',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) {
+              Navigator.of(dialogContext).pop(value.trim());
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(''),
+              child: const Text('Clear'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              child: const Text('Apply'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        _searchQuery = result;
       });
     }
   }
@@ -185,9 +220,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       reasons.add('User email does not match employee master email.');
     }
 
-    if (identity.blockingReason.trim().isNotEmpty &&
-        !identity.isBookingEligible) {
-      reasons.add(identity.blockingReason.trim());
+    final blocking = identity.blockingReason.trim().toLowerCase();
+    if (blocking.isNotEmpty) {
+      if (!blocking.contains('user account is inactive')) {
+        reasons.add(identity.blockingReason.trim());
+      }
     }
 
     if (employeeNumber.isNotEmpty) {
@@ -782,33 +819,42 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     );
   }
 
-  Widget _buildSearchBar() {
+  Widget _buildSearchControls() {
+    final hasSearch = _searchQuery.trim().isNotEmpty;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            labelText: 'Search (Name / Email / Employee Number)',
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _openSearchDialog,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search Users'),
+                ),
+                if (hasSearch)
+                  OutlinedButton.icon(
                     onPressed: () {
                       setState(() {
                         _searchQuery = '';
-                        _searchController.clear();
                       });
                     },
-                  )
-                : null,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (value) {
-            setState(() {
-              _searchQuery = value;
-            });
-          },
+                    icon: const Icon(Icons.clear),
+                    label: const Text('Clear Search'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              hasSearch ? 'Search: $_searchQuery' : 'Search: none',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
       ),
     );
@@ -885,6 +931,32 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 },
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(int totalUsers) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'User Management',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('Signed in as: ${widget.userEmail}'),
+            const SizedBox(height: 4),
+            const Text('Allowed roles: developer, admin'),
+            const SizedBox(height: 4),
+            Text('Total loaded users: $totalUsers'),
           ],
         ),
       ),
@@ -991,6 +1063,253 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     return const SizedBox.shrink();
   }
 
+  List<Widget> _buildUserCards(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs.map((doc) {
+      final data = doc.data();
+      final uid = doc.id;
+      final email = (data['email'] ?? '').toString().trim();
+      final employeeNumber =
+          (data['employee_number'] ?? '').toString().trim();
+      final role = (data['role'] ?? 'employee').toString().trim();
+      final rawStatus = (data['status'] ?? '').toString().trim();
+      final isActive = data['is_active'] == true;
+      final effectiveStatus = _effectiveStatus(
+        rawStatus: rawStatus,
+        isActive: isActive,
+      );
+      final isBusy = _busyUserIds.contains(uid);
+
+      return FutureBuilder<String>(
+        future: _resolveDisplayName(data),
+        builder: (context, nameSnapshot) {
+          final displayName = nameSnapshot.data ?? 'Loading...';
+
+          if (nameSnapshot.connectionState == ConnectionState.done &&
+              !_matchesSearch(
+                email: email,
+                employeeNumber: employeeNumber,
+                displayName: displayName,
+              )) {
+            return const SizedBox.shrink();
+          }
+
+          return FutureBuilder<EmployeeIdentityResult>(
+            future: _employeeIdentityService.resolveByAuthUid(uid),
+            builder: (context, identitySnapshot) {
+              if (identitySnapshot.connectionState == ConnectionState.waiting) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              final identity = identitySnapshot.data;
+
+              if (!_matchesFilter(
+                filterMode: _filterMode,
+                effectiveStatus: effectiveStatus,
+                identity: identity,
+              )) {
+                return const SizedBox.shrink();
+              }
+
+              if (!_matchesSearch(
+                email: email,
+                employeeNumber: employeeNumber,
+                displayName: displayName,
+              )) {
+                return const SizedBox.shrink();
+              }
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 24,
+                        runSpacing: 16,
+                        crossAxisAlignment: WrapCrossAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: 340,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  displayName,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text('Email: $email'),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Employee Number: ${employeeNumber.isEmpty ? 'Not assigned' : employeeNumber}',
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Workflow Status: ${_workflowStatusLabel(effectiveStatus)}',
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    Chip(label: Text(role)),
+                                    Chip(
+                                      label: Text(
+                                        _workflowStatusLabel(effectiveStatus),
+                                      ),
+                                      backgroundColor:
+                                          _statusColorForWorkflow(
+                                        effectiveStatus,
+                                        context,
+                                      ).withValues(alpha: 0.12),
+                                    ),
+                                    Chip(
+                                      label: Text(
+                                        isActive
+                                            ? 'User Active'
+                                            : 'User Inactive',
+                                      ),
+                                      backgroundColor: isActive
+                                          ? Colors.green.withValues(alpha: 0.12)
+                                          : Colors.orange.withValues(
+                                              alpha: 0.12,
+                                            ),
+                                    ),
+                                    if (identity != null)
+                                      Chip(
+                                        label: Text(
+                                          identity.isBookingEligible
+                                              ? 'Booking Eligible'
+                                              : 'Booking Blocked',
+                                        ),
+                                        backgroundColor:
+                                            identity.isBookingEligible
+                                                ? Colors.green.withValues(
+                                                    alpha: 0.12,
+                                                  )
+                                                : Colors.red.withValues(
+                                                    alpha: 0.12,
+                                                  ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 340,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                DropdownButtonFormField<String>(
+                                  initialValue: _roleOptions.contains(role)
+                                      ? role
+                                      : 'employee',
+                                  isExpanded: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Role',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  items: _roleOptions
+                                      .map(
+                                        (value) => DropdownMenuItem(
+                                          value: value,
+                                          child: Text(value),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: isBusy
+                                      ? null
+                                      : (value) {
+                                          if (value == null || value == role) {
+                                            return;
+                                          }
+                                          _updateUserRole(
+                                            uid: uid,
+                                            newRole: value,
+                                            effectiveStatus: effectiveStatus,
+                                          );
+                                        },
+                                ),
+                                const SizedBox(height: 16),
+                                _buildActionButtons(
+                                  uid: uid,
+                                  effectiveStatus: effectiveStatus,
+                                  isBusy: isBusy,
+                                  userData: data,
+                                  identity: identity,
+                                ),
+                                if (isBusy) ...[
+                                  const SizedBox(height: 12),
+                                  const LinearProgressIndicator(),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (identitySnapshot.hasError)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            'Validation load failed: ${identitySnapshot.error}',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        )
+                      else if (identity != null)
+                        _buildIdentitySummaryCard(identity),
+                      _buildAuditTrailCard(data),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    }).toList();
+  }
+
+  Widget _buildResultsSection(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final cards = _buildUserCards(docs);
+
+    return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.zero,
+      children: cards,
+    );
+  }
+
   Widget _buildAccessState() {
     if (_isLoadingAccess) {
       return const Center(child: CircularProgressIndicator());
@@ -1029,278 +1348,30 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
         final docs = snapshot.data?.docs ?? [];
 
-        return ListView(
-          padding: const EdgeInsets.all(16),
+        return Column(
           children: [
-            Card(
+            Expanded(
+              flex: 0,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'User Management',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text('Signed in as: ${widget.userEmail}'),
-                    const SizedBox(height: 4),
-                    const Text('Allowed roles: developer, admin'),
-                    const SizedBox(height: 4),
-                    Text('Total loaded users: ${docs.length}'),
+                    _buildHeaderCard(docs.length),
+                    const SizedBox(height: 16),
+                    _buildSearchControls(),
+                    const SizedBox(height: 16),
+                    _buildFilterBar(),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            _buildSearchBar(),
-            const SizedBox(height: 16),
-            _buildFilterBar(),
-            const SizedBox(height: 16),
-            ...docs.map((doc) {
-              final data = doc.data();
-              final uid = doc.id;
-              final email = (data['email'] ?? '').toString().trim();
-              final employeeNumber =
-                  (data['employee_number'] ?? '').toString().trim();
-              final role = (data['role'] ?? 'employee').toString().trim();
-              final rawStatus = (data['status'] ?? '').toString().trim();
-              final isActive = data['is_active'] == true;
-              final effectiveStatus = _effectiveStatus(
-                rawStatus: rawStatus,
-                isActive: isActive,
-              );
-              final isBusy = _busyUserIds.contains(uid);
-
-              return FutureBuilder<String>(
-                future: _resolveDisplayName(data),
-                builder: (context, nameSnapshot) {
-                  final displayName = nameSnapshot.data ?? 'Loading...';
-
-                  if (nameSnapshot.connectionState == ConnectionState.done &&
-                      !_matchesSearch(
-                        email: email,
-                        employeeNumber: employeeNumber,
-                        displayName: displayName,
-                      )) {
-                    return const SizedBox.shrink();
-                  }
-
-                  return FutureBuilder<EmployeeIdentityResult>(
-                    future: _employeeIdentityService.resolveByAuthUid(uid),
-                    builder: (context, identitySnapshot) {
-                      if (identitySnapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                const LinearProgressIndicator(),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      final identity = identitySnapshot.data;
-
-                      if (!_matchesFilter(
-                        filterMode: _filterMode,
-                        effectiveStatus: effectiveStatus,
-                        identity: identity,
-                      )) {
-                        return const SizedBox.shrink();
-                      }
-
-                      if (!_matchesSearch(
-                        email: email,
-                        employeeNumber: employeeNumber,
-                        displayName: displayName,
-                      )) {
-                        return const SizedBox.shrink();
-                      }
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Wrap(
-                                spacing: 24,
-                                runSpacing: 16,
-                                crossAxisAlignment: WrapCrossAlignment.start,
-                                children: [
-                                  SizedBox(
-                                    width: 340,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          displayName,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text('Email: $email'),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          'Employee Number: ${employeeNumber.isEmpty ? 'Not assigned' : employeeNumber}',
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          'Workflow Status: ${_workflowStatusLabel(effectiveStatus)}',
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Wrap(
-                                          spacing: 8,
-                                          runSpacing: 8,
-                                          children: [
-                                            Chip(label: Text(role)),
-                                            Chip(
-                                              label: Text(
-                                                _workflowStatusLabel(
-                                                  effectiveStatus,
-                                                ),
-                                              ),
-                                              backgroundColor:
-                                                  _statusColorForWorkflow(
-                                                effectiveStatus,
-                                                context,
-                                              ).withValues(alpha: 0.12),
-                                            ),
-                                            Chip(
-                                              label: Text(
-                                                isActive
-                                                    ? 'User Active'
-                                                    : 'User Inactive',
-                                              ),
-                                              backgroundColor: isActive
-                                                  ? Colors.green.withValues(
-                                                      alpha: 0.12,
-                                                    )
-                                                  : Colors.orange.withValues(
-                                                      alpha: 0.12,
-                                                    ),
-                                            ),
-                                            if (identity != null)
-                                              Chip(
-                                                label: Text(
-                                                  identity.isBookingEligible
-                                                      ? 'Booking Eligible'
-                                                      : 'Booking Blocked',
-                                                ),
-                                                backgroundColor:
-                                                    identity.isBookingEligible
-                                                        ? Colors.green
-                                                            .withValues(
-                                                            alpha: 0.12,
-                                                          )
-                                                        : Colors.red.withValues(
-                                                            alpha: 0.12,
-                                                          ),
-                                              ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: 340,
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        DropdownButtonFormField<String>(
-                                          initialValue:
-                                              _roleOptions.contains(role)
-                                                  ? role
-                                                  : 'employee',
-                                          decoration: const InputDecoration(
-                                            labelText: 'Role',
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          items: _roleOptions
-                                              .map(
-                                                (value) => DropdownMenuItem(
-                                                  value: value,
-                                                  child: Text(value),
-                                                ),
-                                              )
-                                              .toList(),
-                                          onChanged: isBusy
-                                              ? null
-                                              : (value) {
-                                                  if (value == null ||
-                                                      value == role) {
-                                                    return;
-                                                  }
-                                                  _updateUserRole(
-                                                    uid: uid,
-                                                    newRole: value,
-                                                    effectiveStatus:
-                                                        effectiveStatus,
-                                                  );
-                                                },
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _buildActionButtons(
-                                          uid: uid,
-                                          effectiveStatus: effectiveStatus,
-                                          isBusy: isBusy,
-                                          userData: data,
-                                          identity: identity,
-                                        ),
-                                        if (isBusy) ...[
-                                          const SizedBox(height: 12),
-                                          const LinearProgressIndicator(),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (identitySnapshot.hasError)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: Text(
-                                    'Validation load failed: ${identitySnapshot.error}',
-                                    style: TextStyle(
-                                      color:
-                                          Theme.of(context).colorScheme.error,
-                                    ),
-                                  ),
-                                )
-                              else if (identity != null)
-                                _buildIdentitySummaryCard(identity),
-                              _buildAuditTrailCard(data),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            }),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _buildResultsSection(docs),
+              ),
+            ),
           ],
         );
       },
