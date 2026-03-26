@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'meal_rate_service.dart';
+
 class MealReservationService {
   MealReservationService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
+  final MealRateService _mealRateService = MealRateService();
 
   static const Map<String, _MealCutoffTime> _defaultCutoffTimes = {
     'breakfast': _MealCutoffTime(hour: 4, minute: 0),
@@ -22,6 +25,13 @@ class MealReservationService {
   static const String subjectEmployeeSelf = 'employee_self';
   static const String subjectEmployeeProxy = 'employee_proxy';
   static const String subjectOfficialGuest = 'official_guest';
+
+  static const String bookingModeSelf = 'self';
+  static const String bookingModeProxy = 'proxy';
+  static const String bookingModeGuest = 'guest';
+
+  static const String selectionModeCycleCombo = 'cycle_combo';
+  static const String selectionModeManualItem = 'manual_item';
 
   CollectionReference<Map<String, dynamic>> get _reservationsRef =>
       _firestore.collection('meal_reservations');
@@ -50,7 +60,7 @@ class MealReservationService {
     final normalizedMealType = _normalizeMealType(mealType);
     final normalizedDate = _normalizeDate(reservationDate);
     final normalizedCreatedByUid = createdByUid.trim();
-    final normalizedCreatedByRole = createdByRole.trim();
+    final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
     final normalizedOverrideReason = (overrideReason ?? '').trim();
 
     if (normalizedEmployeeNumber.isEmpty) {
@@ -72,19 +82,24 @@ class MealReservationService {
     final sanitizedLines = lines
         .where((line) => line.quantity > 0)
         .map((line) => line.normalized())
+        .where(
+          (line) =>
+              line.optionKey.isNotEmpty &&
+              line.optionLabel.isNotEmpty &&
+              line.diningMode.isNotEmpty,
+        )
         .toList();
 
     if (sanitizedLines.isEmpty) {
-      throw ArgumentError('At least one reservation line is required.');
+      throw ArgumentError('At least one valid reservation line is required.');
     }
 
     if (!skipValidation) {
       final validation = validateReservationRequest(
         reservationDate: normalizedDate,
         mealType: normalizedMealType,
-        overrideReason: normalizedOverrideReason.isEmpty
-            ? null
-            : normalizedOverrideReason,
+        overrideReason:
+            normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
       );
 
       if (!validation.isAllowed) {
@@ -120,6 +135,8 @@ class MealReservationService {
         'dining_mode': line.diningMode,
         'quantity': line.quantity,
         'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
+        'unit_rate': null,
+        'amount': null,
         'notes': notes?.trim() ?? '',
         'created_at': now,
         'booking_time': now,
@@ -159,8 +176,34 @@ class MealReservationService {
     String? overrideReason,
     bool skipValidation = false,
     String? bookingSource,
+    String selectionMode = selectionModeCycleCombo,
+    String requestContext = 'proxy_request',
+    bool isSpecialMeal = false,
+    bool allowAnyMenuItem = false,
+    Map<String, dynamic>? extraFields,
   }) async {
     final normalizedRole = createdByRole.trim().toLowerCase();
+    final roleCanWaiveCutoff = canWaiveCutoffForRole(normalizedRole);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+    final effectiveSkipValidation = skipValidation || roleCanWaiveCutoff;
+
+    final effectiveExtraFields = <String, dynamic>{
+      'booking_mode': bookingModeProxy,
+      'selection_mode': selectionMode.trim().isEmpty
+          ? selectionModeCycleCombo
+          : selectionMode.trim().toLowerCase(),
+      'request_context':
+          requestContext.trim().isEmpty ? 'proxy_request' : requestContext.trim(),
+      'is_special_meal': isSpecialMeal,
+      'allow_any_menu_item': allowAnyMenuItem,
+      'cutoff_waived': roleCanWaiveCutoff,
+      'proxy_override_used':
+          roleCanWaiveCutoff || normalizedOverrideReason.isNotEmpty,
+    };
+
+    if (extraFields != null && extraFields.isNotEmpty) {
+      effectiveExtraFields.addAll(extraFields);
+    }
 
     return createReservationGroup(
       employeeNumber: employeeNumber,
@@ -174,12 +217,15 @@ class MealReservationService {
       createdByName: createdByName,
       notes: notes,
       bookingGroupId: bookingGroupId,
-      skipValidation: skipValidation,
-      bookingSource: bookingSource ??
+      skipValidation: effectiveSkipValidation,
+      bookingSource:
+          bookingSource ??
           _resolveOperatorBookingSource(createdByRole: normalizedRole),
       bookingSubjectType: subjectEmployeeProxy,
       reservationCategory: categoryEmployee,
-      overrideReason: overrideReason,
+      overrideReason:
+          normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
+      extraFields: effectiveExtraFields,
     );
   }
 
@@ -227,19 +273,24 @@ class MealReservationService {
     final sanitizedLines = lines
         .where((line) => line.quantity > 0)
         .map((line) => line.normalized())
+        .where(
+          (line) =>
+              line.optionKey.isNotEmpty &&
+              line.optionLabel.isNotEmpty &&
+              line.diningMode.isNotEmpty,
+        )
         .toList();
 
     if (sanitizedLines.isEmpty) {
-      throw ArgumentError('At least one reservation line is required.');
+      throw ArgumentError('At least one valid reservation line is required.');
     }
 
     if (!skipValidation) {
       final validation = validateReservationRequest(
         reservationDate: normalizedDate,
         mealType: normalizedMealType,
-        overrideReason: normalizedOverrideReason.isEmpty
-            ? null
-            : normalizedOverrideReason,
+        overrideReason:
+            normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
       );
 
       if (!validation.isAllowed) {
@@ -253,7 +304,8 @@ class MealReservationService {
             ? bookingGroupId!.trim()
             : _reservationsRef.doc().id;
 
-    final effectiveBookingSource = bookingSource ??
+    final effectiveBookingSource =
+        bookingSource ??
         _resolveOperatorBookingSource(createdByRole: normalizedCreatedByRole);
 
     final batch = _firestore.batch();
@@ -266,6 +318,8 @@ class MealReservationService {
         'reservation_category': categoryOfficialGuest,
         'booking_source': effectiveBookingSource,
         'booking_subject_type': subjectOfficialGuest,
+        'booking_mode': bookingModeGuest,
+        'selection_mode': selectionModeCycleCombo,
         'employee_number': '',
         'employee_name': '',
         'guest_name': normalizedGuestName,
@@ -278,6 +332,8 @@ class MealReservationService {
         'dining_mode': line.diningMode,
         'quantity': line.quantity,
         'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
+        'unit_rate': null,
+        'amount': null,
         'notes': notes?.trim() ?? '',
         'created_at': now,
         'booking_time': now,
@@ -403,6 +459,27 @@ class MealReservationService {
         .get();
   }
 
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForDateAndMealType({
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+    final normalizedMealType = _normalizeMealType(mealType);
+
+    return _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .where('meal_type', isEqualTo: normalizedMealType)
+        .get();
+  }
+
   Future<void> cancelReservation({
     required String reservationId,
     required String cancelledByUid,
@@ -431,7 +508,7 @@ class MealReservationService {
       'status': 'cancelled',
       'cancelled_at': Timestamp.now(),
       'cancelled_by_uid': cancelledByUid.trim(),
-      'cancelled_by_role': cancelledByRole.trim(),
+      'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
       'override_reason': overrideReason?.trim() ?? '',
     });
   }
@@ -460,7 +537,7 @@ class MealReservationService {
         'status': 'cancelled',
         'cancelled_at': now,
         'cancelled_by_uid': cancelledByUid.trim(),
-        'cancelled_by_role': cancelledByRole.trim(),
+        'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
         'override_reason': overrideReason?.trim() ?? '',
       });
     }
@@ -496,7 +573,7 @@ class MealReservationService {
       'status': 'issued',
       'issued_at': Timestamp.now(),
       'issued_by_uid': issuedByUid.trim(),
-      'issued_by_role': issuedByRole.trim(),
+      'issued_by_role': issuedByRole.trim().toLowerCase(),
     });
   }
 
@@ -532,7 +609,8 @@ class MealReservationService {
   }
 
   Future<Map<String, int>> getIssuedMealCountsForDate(
-      DateTime reservationDate) async {
+    DateTime reservationDate,
+  ) async {
     final snapshot = await getReservationsForDate(
       reservationDate: reservationDate,
     );
@@ -562,6 +640,14 @@ class MealReservationService {
     }
 
     return counts;
+  }
+
+  Future<int> applyRatesToReservationsForDate(DateTime date) async {
+    return _mealRateService.applyRatesToReservationsForDate(date);
+  }
+
+  String extractMenuItemId(Map<String, dynamic> reservationData) {
+    return _mealRateService.extractReservationMenuItemId(reservationData);
   }
 
   ReservationValidationResult validateReservationRequest({
@@ -835,6 +921,14 @@ class MealReservationService {
     return '$hour:$minute';
   }
 
+  bool canWaiveCutoffForRole(String role) {
+    final normalizedRole = role.trim().toLowerCase();
+    return normalizedRole == 'admin' ||
+        normalizedRole == 'developer' ||
+        normalizedRole == 'mess_manager' ||
+        normalizedRole == 'mess_supervisor';
+  }
+
   String _resolveOperatorBookingSource({
     required String createdByRole,
   }) {
@@ -898,15 +992,46 @@ class ReservationLineInput {
     this.menuSnapshot,
   }) : optionKey = (optionKey ?? menuOptionKey ?? '');
 
+  factory ReservationLineInput.forManualItem({
+    required String itemId,
+    required String itemName,
+    required String diningMode,
+    required int quantity,
+    required String mealType,
+    String? itemCategory,
+    Map<String, dynamic>? extraSnapshot,
+  }) {
+    final snapshot = <String, dynamic>{
+      'selection_type': MealReservationService.selectionModeManualItem,
+      'source_scope': 'full_menu_master',
+      'is_cycle_item': false,
+      'item_id': itemId.trim(),
+      'item_name': itemName.trim(),
+      'item_category': (itemCategory ?? '').trim(),
+      'meal_type': mealType.trim().toLowerCase(),
+    };
+
+    if (extraSnapshot != null && extraSnapshot.isNotEmpty) {
+      snapshot.addAll(extraSnapshot);
+    }
+
+    return ReservationLineInput(
+      optionKey: itemId.trim(),
+      optionLabel: itemName.trim(),
+      diningMode: diningMode,
+      quantity: quantity,
+      menuSnapshot: snapshot,
+    );
+  }
+
   ReservationLineInput normalized() {
     return ReservationLineInput(
       optionKey: optionKey.trim(),
       optionLabel: optionLabel.trim(),
       diningMode: diningMode.trim().toLowerCase(),
       quantity: quantity,
-      menuSnapshot: menuSnapshot == null
-          ? null
-          : Map<String, dynamic>.from(menuSnapshot!),
+      menuSnapshot:
+          menuSnapshot == null ? null : Map<String, dynamic>.from(menuSnapshot!),
     );
   }
 }

@@ -77,6 +77,11 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
   bool _employeeLoaded = false;
   bool _loadedEmployeeIsActive = false;
 
+  String _proxySelectionMode = 'combo';
+  List<Map<String, dynamic>> _allMenuItems = [];
+  String? _selectedManualItemId;
+  bool _isLoadingMenuItems = false;
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +115,10 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       _loadReservationSettings(),
     ]);
 
-    await _loadMenuForDate(_selectedDate);
+    await Future.wait([
+      _loadMenuForDate(_selectedDate),
+      _loadAllMenuItems(),
+    ]);
   }
 
   Future<void> _loadCurrentUserProfile() async {
@@ -198,11 +206,55 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       if (!mounted) return;
       setState(() {
         _resolvedMenu = null;
+        _selectedDate = _startOfDay(date);
+        _selectedGuestOptionKey = null;
+        _selectedProxyOptionKey = null;
       });
     } finally {
       if (mounted) {
         setState(() {
           _isLoadingMenu = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAllMenuItems() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingMenuItems = true;
+    });
+
+    try {
+      final snapshot = await _firestore
+          .collection('menu_items')
+          .where('is_active', isEqualTo: true)
+          .get();
+
+      if (!mounted) return;
+
+      final items = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return <String, dynamic>{
+          'id': doc.id,
+          'name': (data['name'] ?? data['item_name'] ?? '').toString().trim(),
+          'category': (data['category'] ?? '').toString().trim().toLowerCase(),
+        };
+      }).where((item) => (item['name'] as String).isNotEmpty).toList();
+
+      items.sort((a, b) =>
+          (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
+
+      setState(() {
+        _allMenuItems = items;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      _showSnackBar('Failed to load menu items.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMenuItems = false;
         });
       }
     }
@@ -307,6 +359,12 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       return;
     }
 
+    final guestName = _guestNameController.text.trim();
+    if (guestName.isEmpty) {
+      _showSnackBar('Guest name / label is required.');
+      return;
+    }
+
     _guestQuantity = int.tryParse(_guestQuantityController.text.trim()) ?? 1;
     if (_guestQuantity <= 0) {
       _showSnackBar('Quantity must be greater than zero.');
@@ -339,6 +397,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         optionLabel: selectedOption.optionLabel,
         diningMode: _selectedGuestDiningMode!,
         quantity: _guestQuantity,
+        menuSnapshot: {
+          'selection_type': MealReservationService.selectionModeCycleCombo,
+          'option_key': selectedOption.optionKey,
+          'option_label': selectedOption.optionLabel,
+          'meal_type': _selectedGuestMealType,
+          'items': selectedOption.items,
+        },
       ),
     ];
 
@@ -355,7 +420,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         createdByRole: profile.roleLabel,
         createdByEmployeeNumber: profile.employeeNumber,
         createdByName: profile.employeeName,
-        guestName: _guestNameController.text.trim(),
+        guestName: guestName,
         hostEmployeeNumber: _guestHostEmployeeNumberController.text.trim(),
         hostEmployeeName: _guestHostEmployeeNameController.text.trim(),
         notes: _guestNotesController.text.trim(),
@@ -409,7 +474,6 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     final employeeNumber =
         _proxyEmployeeNumberController.text.trim().toUpperCase();
     final employeeName = _proxyEmployeeNameController.text.trim();
-    final selectedOption = _selectedProxyOption;
 
     if (employeeNumber.isEmpty) {
       _showSnackBar('Employee number is required.');
@@ -431,11 +495,6 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       return;
     }
 
-    if (selectedOption == null) {
-      _showSnackBar('Select a valid menu option first.');
-      return;
-    }
-
     if (_selectedProxyDiningMode == null || _selectedProxyDiningMode!.isEmpty) {
       _showSnackBar('Select dining mode.');
       return;
@@ -448,33 +507,81 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
 
     final overrideReason = _proxyOverrideReasonController.text.trim();
+    final role = profile.roleLabel.trim().toLowerCase();
+    final isPrivileged = _mealReservationService.canWaiveCutoffForRole(role);
+
     final validation = _mealReservationService.validateReservationRequest(
       reservationDate: _selectedDate,
       mealType: _selectedProxyMealType,
       overrideReason: overrideReason,
     );
 
-    if (!validation.isAllowed) {
+    if (!validation.isAllowed && !isPrivileged) {
       _showSnackBar(validation.message);
       return;
     }
 
-    final needsOverrideReason =
-        validation.message.toLowerCase().contains('override');
-
-    if (_requireOverrideReason && needsOverrideReason && overrideReason.isEmpty) {
-      _showSnackBar('Override reason is required for this booking.');
+    if (_requireOverrideReason && isPrivileged && overrideReason.isEmpty) {
+      _showSnackBar('Override reason is required for proxy override booking.');
       return;
     }
 
-    final lines = [
-      ReservationLineInput(
-        menuOptionKey: selectedOption.optionKey,
-        optionLabel: selectedOption.optionLabel,
-        diningMode: _selectedProxyDiningMode!,
-        quantity: _proxyQuantity,
-      ),
-    ];
+    List<ReservationLineInput> lines;
+    String selectionMode;
+    bool allowAnyMenuItem = false;
+    bool isSpecialMeal = false;
+    String requestContext = 'proxy_request';
+
+    if (_proxySelectionMode == 'combo') {
+      final selectedOption = _selectedProxyOption;
+
+      if (selectedOption == null) {
+        _showSnackBar('Select a valid menu option first.');
+        return;
+      }
+
+      lines = [
+        ReservationLineInput(
+          menuOptionKey: selectedOption.optionKey,
+          optionLabel: selectedOption.optionLabel,
+          diningMode: _selectedProxyDiningMode!,
+          quantity: _proxyQuantity,
+          menuSnapshot: {
+            'selection_type': MealReservationService.selectionModeCycleCombo,
+            'option_key': selectedOption.optionKey,
+            'option_label': selectedOption.optionLabel,
+            'meal_type': _selectedProxyMealType,
+            'items': selectedOption.items,
+          },
+        ),
+      ];
+      selectionMode = MealReservationService.selectionModeCycleCombo;
+    } else {
+      final manualItem = _selectedManualItem;
+      if (manualItem == null) {
+        _showSnackBar('Select a special item from full menu.');
+        return;
+      }
+
+      lines = [
+        ReservationLineInput.forManualItem(
+          itemId: (manualItem['id'] ?? '').toString(),
+          itemName: (manualItem['name'] ?? '').toString(),
+          diningMode: _selectedProxyDiningMode!,
+          quantity: _proxyQuantity,
+          mealType: _selectedProxyMealType,
+          itemCategory: (manualItem['category'] ?? '').toString(),
+          extraSnapshot: {
+            'source_scope': 'full_menu_master',
+            'selected_for_meal_type': _selectedProxyMealType,
+          },
+        ),
+      ];
+      selectionMode = MealReservationService.selectionModeManualItem;
+      allowAnyMenuItem = true;
+      isSpecialMeal = true;
+      requestContext = 'special_request';
+    }
 
     setState(() {
       _isSaving = true;
@@ -493,6 +600,10 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         createdByName: profile.employeeName,
         notes: _proxyNotesController.text.trim(),
         overrideReason: overrideReason.isEmpty ? null : overrideReason,
+        selectionMode: selectionMode,
+        requestContext: requestContext,
+        isSpecialMeal: isSpecialMeal,
+        allowAnyMenuItem: allowAnyMenuItem,
       );
 
       if (!mounted) return;
@@ -507,7 +618,11 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         _proxyQuantityController.text = '1';
         _employeeLoaded = false;
         _loadedEmployeeIsActive = false;
+        _selectedManualItemId = null;
+        _selectedProxyOptionKey = null;
       });
+
+      _ensureValidProxySelection();
 
       _showSnackBar(
         'Proxy employee booking saved for ${_mealLabel(_selectedProxyMealType)} on ${_formatDate(_selectedDate)}.',
@@ -542,6 +657,24 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
   }
 
+  List<Map<String, dynamic>> _menuItemsForMealType(String mealType) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+
+    final filtered = _allMenuItems.where((item) {
+      final category = (item['category'] ?? '').toString().trim().toLowerCase();
+      if (category.isEmpty) {
+        return true;
+      }
+      return category == normalizedMealType;
+    }).toList();
+
+    if (filtered.isNotEmpty) {
+      return filtered;
+    }
+
+    return _allMenuItems;
+  }
+
   ResolvedMealOption? get _selectedGuestOption {
     final options = _optionsForMealType(_selectedGuestMealType);
     if (options.isEmpty) {
@@ -572,6 +705,19 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
   }
 
+  Map<String, dynamic>? get _selectedManualItem {
+    final items = _menuItemsForMealType(_selectedProxyMealType);
+    if (items.isEmpty || _selectedManualItemId == null) {
+      return null;
+    }
+
+    try {
+      return items.firstWhere((item) => item['id'] == _selectedManualItemId);
+    } catch (_) {
+      return null;
+    }
+  }
+
   void _ensureValidGuestSelection() {
     final options = _optionsForMealType(_selectedGuestMealType);
 
@@ -588,6 +734,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
 
   void _ensureValidProxySelection() {
     final options = _optionsForMealType(_selectedProxyMealType);
+    final manualItems = _menuItemsForMealType(_selectedProxyMealType);
 
     if (!mounted) return;
     setState(() {
@@ -596,6 +743,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       } else if (_selectedProxyOptionKey == null ||
           !options.any((item) => item.optionKey == _selectedProxyOptionKey)) {
         _selectedProxyOptionKey = options.first.optionKey;
+      }
+
+      if (manualItems.isEmpty) {
+        _selectedManualItemId = null;
+      } else if (_selectedManualItemId == null ||
+          !manualItems.any((item) => item['id'] == _selectedManualItemId)) {
+        _selectedManualItemId = manualItems.first['id'] as String;
       }
     });
   }
@@ -732,33 +886,6 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       );
     }
 
-    if (_resolvedMenu == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'No active menu found for selected date.',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Assign an active cycle or choose another date before booking.',
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _pickReservationDate,
-                icon: const Icon(Icons.calendar_today_outlined),
-                label: const Text('Change Date'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -774,7 +901,12 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
             ActionChip(
               avatar: const Icon(Icons.refresh, size: 18),
               label: const Text('Reload Menu'),
-              onPressed: () => _loadMenuForDate(_selectedDate),
+              onPressed: () async {
+                await Future.wait([
+                  _loadMenuForDate(_selectedDate),
+                  _loadAllMenuItems(),
+                ]);
+              },
             ),
             if (!_allowGuestBooking)
               const Chip(
@@ -783,6 +915,14 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
             if (!_allowProxyEmployeeBooking)
               const Chip(
                 label: Text('Proxy booking disabled'),
+              ),
+            if (_resolvedMenu == null)
+              const Chip(
+                label: Text('No active cycle menu'),
+              ),
+            if (_isLoadingMenuItems)
+              const Chip(
+                label: Text('Loading full menu items...'),
               ),
           ],
         ),
@@ -838,15 +978,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                             child: Text('Dinner'),
                           ),
                         ],
-                        onChanged: _resolvedMenu == null
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _selectedGuestMealType = value;
-                                });
-                                _ensureValidGuestSelection();
-                              },
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _selectedGuestMealType = value;
+                          });
+                          _ensureValidGuestSelection();
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -899,6 +1037,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                           });
                         },
                 ),
+                if (options.isEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'No guest bookable combo found for selected meal/date.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
                 if (selectedOption != null) ...[
                   const SizedBox(height: 10),
                   Container(
@@ -974,7 +1119,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: (_resolvedMenu == null || _isSaving)
+                  onPressed: (_isSaving || options.isEmpty)
                       ? null
                       : _saveGuestBooking,
                   icon: const Icon(Icons.group_add_outlined),
@@ -991,6 +1136,8 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
   Widget _buildProxyTab() {
     final options = _optionsForMealType(_selectedProxyMealType);
     final selectedOption = _selectedProxyOption;
+    final manualItems = _menuItemsForMealType(_selectedProxyMealType);
+    final selectedManualItem = _selectedManualItem;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1086,15 +1233,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                             child: Text('Dinner'),
                           ),
                         ],
-                        onChanged: _resolvedMenu == null
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() {
-                                  _selectedProxyMealType = value;
-                                });
-                                _ensureValidProxySelection();
-                              },
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _selectedProxyMealType = value;
+                          });
+                          _ensureValidProxySelection();
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -1126,41 +1271,131 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedProxyOptionKey,
+                  initialValue: _proxySelectionMode,
                   decoration: const InputDecoration(
-                    labelText: 'Menu Option',
+                    labelText: 'Booking Type',
                     border: OutlineInputBorder(),
                   ),
-                  items: options
-                      .map(
-                        (option) => DropdownMenuItem<String>(
-                          value: option.optionKey,
-                          child: Text(option.optionLabel),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: options.isEmpty
-                      ? null
-                      : (value) {
-                          setState(() {
-                            _selectedProxyOptionKey = value;
-                          });
-                        },
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'combo',
+                      child: Text('Combo'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'manual_item',
+                      child: Text('Special Item'),
+                    ),
+                  ],
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    setState(() {
+                      _proxySelectionMode = value;
+                    });
+
+                    if (value == 'manual_item' && _allMenuItems.isEmpty) {
+                      await _loadAllMenuItems();
+                    }
+                    _ensureValidProxySelection();
+                  },
                 ),
-                if (selectedOption != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 12),
+                if (_proxySelectionMode == 'combo') ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedProxyOptionKey,
+                    decoration: const InputDecoration(
+                      labelText: 'Menu Option',
+                      border: OutlineInputBorder(),
                     ),
-                    child: Text(
-                      _buildItemsSummary(selectedOption),
-                    ),
+                    items: options
+                        .map(
+                          (option) => DropdownMenuItem<String>(
+                            value: option.optionKey,
+                            child: Text(option.optionLabel),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: options.isEmpty
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _selectedProxyOptionKey = value;
+                            });
+                          },
                   ),
+                  if (options.isEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'No combo option found in current cycle for selected meal/date.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                  if (selectedOption != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _buildItemsSummary(selectedOption),
+                      ),
+                    ),
+                  ],
+                ] else ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedManualItemId,
+                    decoration: const InputDecoration(
+                      labelText: 'Select Item (Full Menu)',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: manualItems
+                        .map(
+                          (item) => DropdownMenuItem<String>(
+                            value: item['id'] as String,
+                            child: Text(item['name'] as String),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: manualItems.isEmpty
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _selectedManualItemId = value;
+                            });
+                          },
+                  ),
+                  if (_isLoadingMenuItems) ...[
+                    const SizedBox(height: 10),
+                    const LinearProgressIndicator(),
+                  ],
+                  if (manualItems.isEmpty && !_isLoadingMenuItems) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'No active menu items available for special booking.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                  if (selectedManualItem != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Selected special item: ${selectedManualItem['name']}'
+                        '${((selectedManualItem['category'] ?? '').toString().isNotEmpty) ? ' (${selectedManualItem['category']})' : ''}',
+                      ),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 12),
                 TextField(
@@ -1196,9 +1431,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
-                  onPressed: (_resolvedMenu == null || _isSaving)
-                      ? null
-                      : _saveProxyEmployeeBooking,
+                  onPressed: _isSaving ? null : _saveProxyEmployeeBooking,
                   icon: const Icon(Icons.person_add_alt_1_outlined),
                   label: const Text('Save Employee Booking'),
                 ),
@@ -1261,7 +1494,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                       ],
                     ),
                     SizedBox(
-                      height: 840,
+                      height: 920,
                       child: TabBarView(
                         controller: _tabController,
                         children: [

@@ -5,13 +5,16 @@ import '../../main.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/user_role_service.dart';
 import 'employee_dashboard_screen.dart';
+import 'meal_feedback_submission_screen.dart';
+import 'my_meal_history_screen.dart';
 import 'today_menu_screen.dart';
 
 class EmployeeDashboardShell extends StatefulWidget {
   const EmployeeDashboardShell({super.key});
 
   @override
-  State<EmployeeDashboardShell> createState() => _EmployeeDashboardShellState();
+  State<EmployeeDashboardShell> createState() =>
+      _EmployeeDashboardShellState();
 }
 
 class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
@@ -46,18 +49,52 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       _EmployeeSection(
         key: 'today_menu',
         title: 'Today’s Menu',
-        subtitle: 'Book breakfast, lunch, and dinner',
+        subtitle: 'Book meals',
         icon: Icons.restaurant_menu,
+      ),
+      _EmployeeSection(
+        key: 'meal_history',
+        title: 'My Meal History',
+        subtitle: 'View consumption and cost',
+        icon: Icons.receipt_long_outlined,
+      ),
+      _EmployeeSection(
+        key: 'feedback',
+        title: 'Meal Feedback',
+        subtitle: 'Rate meals and share feedback',
+        icon: Icons.feedback_outlined,
       ),
     ];
   }
 
-  Widget _buildSelectedScreen(String userEmail, _EmployeeSection section) {
+  Widget _buildSelectedScreen({
+    required String userEmail,
+    required String employeeNumber,
+    required String employeeName,
+    required String userUid,
+    required _EmployeeSection section,
+  }) {
     switch (section.key) {
       case 'dashboard':
         return EmployeeDashboardScreen(userEmail: userEmail);
+
       case 'today_menu':
         return TodayMenuScreen(userEmail: userEmail);
+
+      case 'meal_history':
+        return MyMealHistoryScreen(
+          employeeNumber: employeeNumber,
+          employeeName: employeeName,
+          userUid: userUid,
+        );
+
+      case 'feedback':
+        return MealFeedbackSubmissionScreen(
+          employeeNumber: employeeNumber,
+          employeeName: employeeName,
+          userUid: userUid,
+        );
+
       default:
         return EmployeeDashboardScreen(userEmail: userEmail);
     }
@@ -133,7 +170,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
         final profile = snapshot.data;
         final role = profile?.role ?? AppUserRole.unknown;
 
-        if (role != AppUserRole.employee) {
+        if (role != AppUserRole.employee || profile == null) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Access Restricted'),
@@ -169,6 +206,10 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
           );
         }
 
+        final employeeNumber = profile.employeeNumber.trim();
+        final employeeName = profile.employeeName.trim();
+        final userUid = authUser.uid;
+
         final sections = _sectionsForRole(role);
 
         if (sections.isEmpty) {
@@ -188,7 +229,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
 
         final currentSection = sections[selectedIndex];
         final isWideScreen = MediaQuery.of(context).size.width >= 900;
-        final roleLabel = profile?.roleLabel ?? 'unknown';
+        final roleLabel = profile.roleLabel;
 
         return Scaffold(
           appBar: AppBar(
@@ -223,6 +264,11 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                               Text(
                                 userEmail,
                                 style: const TextStyle(fontSize: 14),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                employeeName.isEmpty ? '—' : employeeName,
+                                style: const TextStyle(fontSize: 13),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -274,6 +320,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                     });
                   },
                   labelType: NavigationRailLabelType.all,
+                  destinations: sections
+                      .map(
+                        (section) => NavigationRailDestination(
+                          icon: Icon(section.icon),
+                          label: Text(section.title),
+                        ),
+                      )
+                      .toList(),
                   trailing: Expanded(
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -289,17 +343,15 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                       ),
                     ),
                   ),
-                  destinations: sections
-                      .map(
-                        (section) => NavigationRailDestination(
-                          icon: Icon(section.icon),
-                          label: Text(section.title),
-                        ),
-                      )
-                      .toList(),
                 ),
               Expanded(
-                child: _buildSelectedScreen(userEmail, currentSection),
+                child: _buildSelectedScreen(
+                  userEmail: userEmail,
+                  employeeNumber: employeeNumber,
+                  employeeName: employeeName,
+                  userUid: userUid,
+                  section: currentSection,
+                ),
               ),
             ],
           ),

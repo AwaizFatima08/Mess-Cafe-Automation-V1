@@ -1,2 +1,2 @@
-docId,rate_date,breakfast_rate,lunch_rate,dinner_rate,entered_by_uid,notes,created_at,updated_at
-0,,,,,,,,
+docId,menu_item_id,item_name,category,rate_date,unit_rate,is_active,entered_by_uid,entered_by_name,created_at,updated_at
+0,,,,,,,,,,
