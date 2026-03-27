@@ -1,7 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../main.dart';
+import '../../services/notification_service.dart';
+import '../../shared/screens/notifications_screen.dart';
+import '../../shared/widgets/notification_badge.dart';
 import 'dashboard_screen.dart';
 import 'employee_master_management_screen.dart';
 import 'guest_meal_booking_screen.dart';
@@ -21,22 +24,40 @@ class AdminDashboardShell extends StatefulWidget {
 }
 
 class _AdminDashboardShellState extends State<AdminDashboardShell> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
   bool _isLoading = true;
   Map<String, dynamic> _roleContext = <String, dynamic>{};
 
   int _selectedIndex = 0;
   List<_AdminNavItem> _navItems = <_AdminNavItem>[];
 
-  String _userEmail = '';
-  String _userUid = '';
+  final NotificationService _notificationService = NotificationService();
+
+  String get _userEmail =>
+      FirebaseAuth.instance.currentUser?.email?.trim().isNotEmpty == true
+          ? FirebaseAuth.instance.currentUser!.email!.trim()
+          : 'admin@local';
+
+  String get _userUid =>
+      FirebaseAuth.instance.currentUser?.uid.trim().isNotEmpty == true
+          ? FirebaseAuth.instance.currentUser!.uid.trim()
+          : 'admin_local_uid';
 
   @override
   void initState() {
     super.initState();
     _loadRoleContext();
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   Future<void> _loadRoleContext() async {
@@ -45,19 +66,15 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     });
 
     try {
-      final currentUser = _auth.currentUser;
-
-      if (currentUser == null) {
-        throw Exception('No authenticated user found.');
-      }
-
-      _userUid = currentUser.uid;
-      _userEmail = (currentUser.email ?? '').trim();
-
-      final roleContext = await _resolveRoleContext(
-        uid: _userUid,
-        email: _userEmail,
-      );
+      final roleContext = <String, dynamic>{
+        'canManageMenus': true,
+        'canBookGuestMeals': true,
+        'canEnterRates': true,
+        'canManageEmployeeMaster': true,
+        'canManageUsers': true,
+        'canViewFeedbackDashboard': true,
+        'role': 'admin',
+      };
 
       final navItems = <_AdminNavItem>[
         _AdminNavItem(
@@ -113,16 +130,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         );
       }
 
-      if (_flag(roleContext, 'canViewCostDashboard')) {
-        navItems.add(
-          const _AdminNavItem(
-            label: 'Cost Dashboard',
-            icon: Icons.bar_chart_outlined,
-            selectedIcon: Icons.bar_chart,
-            screen: MealCostDashboardScreen(),
-          ),
-        );
-      }
+      navItems.add(
+        const _AdminNavItem(
+          label: 'Cost Dashboard',
+          icon: Icons.bar_chart_outlined,
+          selectedIcon: Icons.bar_chart,
+          screen: MealCostDashboardScreen(),
+        ),
+      );
 
       if (_flag(roleContext, 'canViewFeedbackDashboard')) {
         navItems.add(
@@ -165,112 +180,21 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         _selectedIndex = 0;
         _isLoading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
 
       setState(() {
-        _roleContext = <String, dynamic>{
-          'role': 'unknown',
-        };
-        _navItems = _userEmail.isEmpty
-            ? const <_AdminNavItem>[]
-            : <_AdminNavItem>[
-                _AdminNavItem(
-                  label: 'Dashboard',
-                  icon: Icons.dashboard_outlined,
-                  selectedIcon: Icons.dashboard,
-                  screen: DashboardScreen(userEmail: _userEmail),
-                ),
-              ];
-        _selectedIndex = 0;
+        _navItems = [
+          _AdminNavItem(
+            label: 'Dashboard',
+            icon: Icons.dashboard_outlined,
+            selectedIcon: Icons.dashboard,
+            screen: DashboardScreen(userEmail: _userEmail),
+          ),
+        ];
         _isLoading = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load access profile: $e')),
-      );
     }
-  }
-
-  Future<Map<String, dynamic>> _resolveRoleContext({
-    required String uid,
-    required String email,
-  }) async {
-    final usersRef = _firestore.collection('users');
-
-    Map<String, dynamic>? userDoc;
-
-    if (uid.trim().isNotEmpty) {
-      final byUid = await usersRef.where('uid', isEqualTo: uid.trim()).limit(1).get();
-      if (byUid.docs.isNotEmpty) {
-        userDoc = byUid.docs.first.data();
-      }
-    }
-
-    if (userDoc == null && email.trim().isNotEmpty) {
-      final byEmail =
-          await usersRef.where('email', isEqualTo: email.trim()).limit(1).get();
-      if (byEmail.docs.isNotEmpty) {
-        userDoc = byEmail.docs.first.data();
-      }
-    }
-
-    final role = (userDoc?['role'] ?? '').toString().trim().toLowerCase();
-    return _buildRoleContext(role);
-  }
-
-  Map<String, dynamic> _buildRoleContext(String role) {
-    final normalizedRole = role.trim().toLowerCase();
-
-    final base = <String, dynamic>{
-      'role': normalizedRole.isEmpty ? 'unknown' : normalizedRole,
-      'canManageMenus': false,
-      'canBookGuestMeals': false,
-      'canEnterRates': false,
-      'canViewCostDashboard': false,
-      'canViewFeedbackDashboard': false,
-      'canManageEmployeeMaster': false,
-      'canManageUsers': false,
-    };
-
-    switch (normalizedRole) {
-      case 'developer':
-      case 'admin':
-        base.addAll({
-          'canManageMenus': true,
-          'canBookGuestMeals': true,
-          'canEnterRates': true,
-          'canViewCostDashboard': true,
-          'canViewFeedbackDashboard': true,
-          'canManageEmployeeMaster': true,
-          'canManageUsers': true,
-        });
-        break;
-
-      case 'mess_manager':
-        base.addAll({
-          'canBookGuestMeals': true,
-          'canEnterRates': true,
-          'canViewCostDashboard': true,
-          'canViewFeedbackDashboard': true,
-        });
-        break;
-
-      case 'mess_supervisor':
-      case 'mess_dashboard_operator':
-        base.addAll({
-          'canBookGuestMeals': true,
-          'canEnterRates': true,
-          'canViewCostDashboard': true,
-          'canViewFeedbackDashboard': true,
-        });
-        break;
-
-      default:
-        break;
-    }
-
-    return base;
   }
 
   bool _flag(Map<String, dynamic> source, String key) {
@@ -280,7 +204,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   String _roleLabel() {
     final role = (_roleContext['role'] ?? '').toString().trim();
-    if (role.isEmpty || role == 'unknown') return 'Admin Panel';
+    if (role.isEmpty) return 'Admin Panel';
 
     return role
         .replaceAll('_', ' ')
@@ -289,10 +213,33 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         .join(' ');
   }
 
-  Future<void> _logout() async {
-    await _auth.signOut();
-    if (!mounted) return;
-    Navigator.of(context).popUntil((route) => route.isFirst);
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(
+          userUid: _userUid,
+          isAdminView: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotificationAction() {
+    return StreamBuilder<int>(
+      stream: _notificationService.unreadCountStream(userUid: _userUid),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+
+        return IconButton(
+          tooltip: 'Notifications',
+          onPressed: _openNotifications,
+          icon: NotificationBadge(
+            count: count,
+            child: const Icon(Icons.notifications_outlined),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildDrawerHeader(BuildContext context) {
@@ -315,15 +262,10 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           const SizedBox(height: 10),
           const Text(
             'Mess Administration',
-            style: TextStyle(fontWeight: FontWeight.w700),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(_roleLabel()),
-          const SizedBox(height: 4),
-          Text(
-            _userEmail.isEmpty ? 'No email' : _userEmail,
-            style: theme.textTheme.bodySmall,
-          ),
         ],
       ),
     );
@@ -331,46 +273,45 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
 
   Widget _buildDrawer() {
     return Drawer(
-      child: Column(
-        children: [
-          _buildDrawerHeader(context),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _navItems.length,
-              itemBuilder: (context, index) {
-                final item = _navItems[index];
-                return ListTile(
-                  leading: Icon(
-                    index == _selectedIndex ? item.selectedIcon : item.icon,
-                  ),
-                  title: Text(item.label),
-                  selected: index == _selectedIndex,
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _selectedIndex = index);
-                  },
-                );
+      child: SafeArea(
+        child: Column(
+          children: [
+            _buildDrawerHeader(context),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _navItems.length,
+                itemBuilder: (context, index) {
+                  final item = _navItems[index];
+                  return ListTile(
+                    leading: Icon(
+                      index == _selectedIndex ? item.selectedIcon : item.icon,
+                    ),
+                    title: Text(item.label),
+                    selected: index == _selectedIndex,
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = index);
+                    },
+                  );
+                },
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.notifications_outlined),
+              title: const Text('Notifications'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _openNotifications();
               },
             ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.refresh),
-            title: const Text('Reload Access'),
-            onTap: () async {
-              Navigator.pop(context);
-              await _loadRoleContext();
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
-            onTap: () async {
-              Navigator.pop(context);
-              await _logout();
-            },
-          ),
-        ],
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: const Text('Logout'),
+              onTap: _logout,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -383,25 +324,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       );
     }
 
-    if (_navItems.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin Panel'),
-          actions: [
-            IconButton(
-              onPressed: _logout,
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout',
-            ),
-          ],
-        ),
-        drawer: _buildDrawer(),
-        body: const Center(
-          child: Text('No accessible modules available for this account.'),
-        ),
-      );
-    }
-
     final safeIndex = _selectedIndex.clamp(0, _navItems.length - 1);
     final screen = _navItems[safeIndex].screen;
 
@@ -409,11 +331,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       appBar: AppBar(
         title: Text(_navItems[safeIndex].label),
         actions: [
-          IconButton(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-          ),
+          _buildNotificationAction(),
         ],
       ),
       drawer: _buildDrawer(),

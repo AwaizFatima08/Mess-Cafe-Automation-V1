@@ -2,8 +2,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../main.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/user_role_service.dart';
+import '../../shared/screens/notifications_screen.dart';
+import '../../shared/widgets/notification_badge.dart';
 import 'employee_dashboard_screen.dart';
 import 'meal_feedback_submission_screen.dart';
 import 'my_meal_history_screen.dart';
@@ -21,6 +24,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
   int selectedIndex = 0;
 
   final UserProfileService _userProfileService = UserProfileService();
+  final NotificationService _notificationService = NotificationService();
 
   Future<void> logout() async {
     await FirebaseAuth.instance.signOut();
@@ -34,6 +38,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
     );
   }
 
+  Future<void> _openNotifications(String userUid) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NotificationsScreen(userUid: userUid),
+      ),
+    );
+  }
+
   List<_EmployeeSection> _sectionsForRole(AppUserRole role) {
     if (role != AppUserRole.employee) {
       return const [];
@@ -43,31 +55,31 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       _EmployeeSection(
         key: 'dashboard',
         title: 'Dashboard',
-        subtitle: 'Employee home and quick access',
+        subtitle: 'Employee home',
         icon: Icons.home_outlined,
       ),
       _EmployeeSection(
         key: 'today_menu',
-        title: 'Today’s Menu',
+        title: 'Today Menu',
         subtitle: 'Book meals',
         icon: Icons.restaurant_menu,
       ),
       _EmployeeSection(
         key: 'meal_history',
-        title: 'My Meal History',
-        subtitle: 'View consumption and cost',
+        title: 'Meal History',
+        subtitle: 'View usage',
         icon: Icons.receipt_long_outlined,
       ),
       _EmployeeSection(
         key: 'feedback',
-        title: 'Meal Feedback',
-        subtitle: 'Rate meals and share feedback',
+        title: 'Feedback',
+        subtitle: 'Rate meals',
         icon: Icons.feedback_outlined,
       ),
     ];
   }
 
-  Widget _buildSelectedScreen({
+  Widget _buildScreen({
     required String userEmail,
     required String employeeNumber,
     required String employeeName,
@@ -76,10 +88,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
   }) {
     switch (section.key) {
       case 'dashboard':
-        return EmployeeDashboardScreen(userEmail: userEmail);
+        return EmployeeDashboardScreen(
+          userEmail: userEmail,
+        );
 
       case 'today_menu':
-        return TodayMenuScreen(userEmail: userEmail);
+        return TodayMenuScreen(
+          userEmail: userEmail,
+        );
 
       case 'meal_history':
         return MyMealHistoryScreen(
@@ -96,14 +112,33 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
         );
 
       default:
-        return EmployeeDashboardScreen(userEmail: userEmail);
+        return EmployeeDashboardScreen(
+          userEmail: userEmail,
+        );
     }
+  }
+
+  Widget _notificationButton(String userUid) {
+    return StreamBuilder<int>(
+      stream: _notificationService.unreadCountStream(userUid: userUid),
+      builder: (context, snapshot) {
+        final count = snapshot.data ?? 0;
+
+        return IconButton(
+          tooltip: 'Notifications',
+          onPressed: () => _openNotifications(userUid),
+          icon: NotificationBadge(
+            count: count,
+            child: const Icon(Icons.notifications_outlined),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
-    final userEmail = authUser?.email ?? 'Unknown user';
 
     if (authUser == null) {
       return Scaffold(
@@ -119,9 +154,12 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       );
     }
 
+    final userEmail = authUser.email ?? 'Unknown';
+    final userUid = authUser.uid;
+
     return FutureBuilder<AppUserProfile?>(
       future: _userProfileService.resolveCurrentUserProfile(
-        authUid: authUser.uid,
+        authUid: userUid,
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -132,93 +170,41 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
           );
         }
 
-        if (snapshot.hasError) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text('Employee Panel'),
-            ),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Unable to load your profile.',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Please contact admin or sign out and try again.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: logout,
-                      child: const Text('Sign Out'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-
         final profile = snapshot.data;
-        final role = profile?.role ?? AppUserRole.unknown;
 
-        if (role != AppUserRole.employee || profile == null) {
+        if (profile == null || profile.role != AppUserRole.employee) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Access Restricted'),
             ),
             body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'You do not have access to the employee panel.',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'This section is only available for employee role users.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: logout,
-                      child: const Text('Sign Out'),
-                    ),
-                  ],
-                ),
+              child: ElevatedButton(
+                onPressed: logout,
+                child: const Text('Sign Out'),
               ),
             ),
           );
         }
 
-        final employeeNumber = profile.employeeNumber.trim();
-        final employeeName = profile.employeeName.trim();
-        final userUid = authUser.uid;
-
-        final sections = _sectionsForRole(role);
+        final employeeNumber = profile.employeeNumber;
+        final employeeName = profile.employeeName;
+        final sections = _sectionsForRole(profile.role);
 
         if (sections.isEmpty) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Employee Panel'),
+              actions: [
+                _notificationButton(userUid),
+                IconButton(
+                  tooltip: 'Logout',
+                  onPressed: logout,
+                  icon: const Icon(Icons.logout),
+                ),
+              ],
             ),
             body: const Center(
-              child: Text('No sections are available for this role.'),
+              child: Text('No sections available'),
             ),
           );
         }
@@ -227,14 +213,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
           selectedIndex = 0;
         }
 
-        final currentSection = sections[selectedIndex];
-        final isWideScreen = MediaQuery.of(context).size.width >= 900;
-        final roleLabel = profile.roleLabel;
+        final current = sections[selectedIndex];
+        final isWide = MediaQuery.of(context).size.width >= 900;
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(currentSection.title),
+            title: Text(current.title),
             actions: [
+              _notificationButton(userUid),
               IconButton(
                 tooltip: 'Logout',
                 onPressed: logout,
@@ -242,7 +228,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
               ),
             ],
           ),
-          drawer: isWideScreen
+          drawer: isWide
               ? null
               : Drawer(
                   child: SafeArea(
@@ -272,7 +258,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Role: $roleLabel',
+                                'Role: ${profile.roleLabel}',
                                 style: const TextStyle(fontSize: 13),
                               ),
                             ],
@@ -283,16 +269,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                           child: ListView.builder(
                             itemCount: sections.length,
                             itemBuilder: (context, index) {
-                              final section = sections[index];
+                              final s = sections[index];
                               return ListTile(
-                                leading: Icon(section.icon),
-                                title: Text(section.title),
-                                subtitle: Text(section.subtitle),
+                                leading: Icon(s.icon),
+                                title: Text(s.title),
+                                subtitle: Text(s.subtitle),
                                 selected: selectedIndex == index,
                                 onTap: () {
-                                  setState(() {
-                                    selectedIndex = index;
-                                  });
+                                  setState(() => selectedIndex = index);
                                   Navigator.pop(context);
                                 },
                               );
@@ -300,6 +284,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                           ),
                         ),
                         const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.notifications_outlined),
+                          title: const Text('Notifications'),
+                          onTap: () async {
+                            Navigator.pop(context);
+                            await _openNotifications(userUid);
+                          },
+                        ),
                         ListTile(
                           leading: const Icon(Icons.logout),
                           title: const Text('Logout'),
@@ -311,46 +303,28 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                 ),
           body: Row(
             children: [
-              if (isWideScreen)
+              if (isWide)
                 NavigationRail(
                   selectedIndex: selectedIndex,
-                  onDestinationSelected: (index) {
-                    setState(() {
-                      selectedIndex = index;
-                    });
-                  },
+                  onDestinationSelected: (i) =>
+                      setState(() => selectedIndex = i),
                   labelType: NavigationRailLabelType.all,
                   destinations: sections
                       .map(
-                        (section) => NavigationRailDestination(
-                          icon: Icon(section.icon),
-                          label: Text(section.title),
+                        (s) => NavigationRailDestination(
+                          icon: Icon(s.icon),
+                          label: Text(s.title),
                         ),
                       )
                       .toList(),
-                  trailing: Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          IconButton(
-                            tooltip: 'Logout',
-                            onPressed: logout,
-                            icon: const Icon(Icons.logout),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
               Expanded(
-                child: _buildSelectedScreen(
+                child: _buildScreen(
                   userEmail: userEmail,
                   employeeNumber: employeeNumber,
                   employeeName: employeeName,
                   userUid: userUid,
-                  section: currentSection,
+                  section: current,
                 ),
               ),
             ],
