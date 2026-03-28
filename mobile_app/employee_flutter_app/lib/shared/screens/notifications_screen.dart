@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../employee/screens/event_invitation_detail_screen.dart';
 import '../../services/notification_service.dart';
 
 class NotificationsScreen extends StatelessWidget {
@@ -71,6 +72,60 @@ class _EmployeeNotificationsScreenState
     try {
       await _notificationService.markDeliveryAsRead(deliveryId: deliveryId);
     } catch (_) {}
+  }
+
+  Future<void> _handleNotificationTap(
+    Map<String, dynamic> data,
+    String deliveryId,
+  ) async {
+    final type = (data['type'] ?? '').toString().trim();
+    final status =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+    final isUnread = status == 'pending' || status == 'visible';
+
+    if (isUnread) {
+      await _markSingleAsRead(deliveryId);
+    }
+
+    if (!mounted) return;
+
+    if (type == 'event_invitation') {
+      final eventId = (data['context_id'] ?? data['reference_id'] ?? '')
+          .toString()
+          .trim();
+      final employeeNumber =
+          (data['employee_number'] ?? '').toString().trim();
+      final employeeName = (data['employee_name'] ?? '').toString().trim();
+
+      if (eventId.isEmpty || employeeNumber.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Event details are incomplete for this notification.'),
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventInvitationDetailScreen(
+            eventId: eventId,
+            userUid: widget.userUid,
+            employeeNumber: employeeNumber,
+            employeeName:
+                employeeName.isEmpty ? employeeNumber : employeeName,
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('This notification does not have a linked screen yet.'),
+      ),
+    );
   }
 
   @override
@@ -168,11 +223,7 @@ class _EmployeeNotificationsScreenState
                 trailing: isUnread
                     ? const Icon(Icons.mark_email_unread_outlined)
                     : const Icon(Icons.done),
-                onTap: () async {
-                  if (isUnread) {
-                    await _markSingleAsRead(doc.id);
-                  }
-                },
+                onTap: () => _handleNotificationTap(data, doc.id),
               );
             },
           );
@@ -210,6 +261,8 @@ class _EmployeeNotificationsScreenState
         return Icons.event_outlined;
       case 'club_announcement':
         return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
       default:
         return Icons.notifications_outlined;
     }
@@ -242,7 +295,9 @@ class _AdminNotificationsScreen extends StatelessWidget {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('Failed to load notification history: ${snapshot.error}'),
+                child: Text(
+                  'Failed to load notification history: ${snapshot.error}',
+                ),
               ),
             );
           }
@@ -269,8 +324,7 @@ class _AdminNotificationsScreen extends StatelessWidget {
               final layer =
                   (data['notification_layer'] ?? '').toString().trim();
               final status = (data['status'] ?? '').toString().trim();
-              final createdAtLabel =
-                  _formatTimestamp(data['created_at']);
+              final createdAtLabel = _formatTimestamp(data['created_at']);
 
               return ListTile(
                 leading: CircleAvatar(
@@ -344,6 +398,8 @@ class _AdminNotificationsScreen extends StatelessWidget {
         return Icons.event_outlined;
       case 'club_announcement':
         return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
       default:
         return Icons.notifications_outlined;
     }

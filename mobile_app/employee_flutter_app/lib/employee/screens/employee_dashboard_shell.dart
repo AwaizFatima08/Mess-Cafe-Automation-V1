@@ -90,6 +90,11 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       case 'dashboard':
         return EmployeeDashboardScreen(
           userEmail: userEmail,
+          userUid: userUid,
+          employeeNumber: employeeNumber,
+          employeeName: employeeName,
+          department: '',
+          designation: '',
         );
 
       case 'today_menu':
@@ -114,6 +119,11 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       default:
         return EmployeeDashboardScreen(
           userEmail: userEmail,
+          userUid: userUid,
+          employeeNumber: employeeNumber,
+          employeeName: employeeName,
+          department: '',
+          designation: '',
         );
     }
   }

@@ -32,9 +32,20 @@ class NotificationService {
         .snapshots();
   }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> eventInvitationPopupStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('type', isEqualTo: 'event_invitation')
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> adminNotificationsStream() {
     return _notificationsRef
-        .where('notification_layer', isEqualTo: 'administrative')
         .orderBy('created_at', descending: true)
         .snapshots();
   }
@@ -87,6 +98,28 @@ class NotificationService {
     }
 
     await batch.commit();
+  }
+
+  Future<void> acknowledgePopup({
+    required String deliveryId,
+  }) async {
+    final docRef = _deliveriesRef.doc(deliveryId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final currentStatus =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+
+    await docRef.update({
+      'popup_acknowledged_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+      if (currentStatus == 'pending') 'in_app_status': 'visible',
+      if (currentStatus == 'pending') 'in_app_visible_at': Timestamp.now(),
+    });
   }
 
   Future<String> createAdministrativeNotification({
@@ -255,6 +288,7 @@ class NotificationService {
       'in_app_visible_at': sendInApp ? now : null,
       'read_at': null,
       'archived_at': null,
+      'popup_acknowledged_at': null,
       'failure_reason_push': '',
       'failure_reason_email': '',
       'title_snapshot': title.trim(),
