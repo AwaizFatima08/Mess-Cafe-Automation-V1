@@ -13,38 +13,19 @@ class FeedbackAnalyticsService {
     AnalyticsFilterModel filter,
   ) async {
     try {
-      Query<Map<String, dynamic>> query = _firestore.collection('meal_feedback');
-
-      query = query
-          .where(
-            'reservation_date',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(
-              filter.normalizedStartDate,
-            ),
-          )
-          .where(
-            'reservation_date',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              filter.normalizedEndDate,
-            ),
-          );
-
-      if (filter.hasMealTypeFilter) {
-        query = query.where('meal_type', whereIn: filter.mealTypes);
-      }
-
-      if (filter.hasEmployeeFilter) {
-        query = query.where(
-          'employee_number',
-          isEqualTo: filter.employeeNumber!.trim(),
-        );
-      }
-
-      final snapshot = await query.get();
+      final snapshot = await _firestore.collection('meal_feedback').get();
 
       if (snapshot.docs.isEmpty) {
         return FeedbackAnalyticsResult.empty();
       }
+
+      final List<String> allowedMealTypes = (filter.mealTypes ?? <String>[])
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final String? employeeNumber =
+          filter.hasEmployeeFilter ? filter.employeeNumber!.trim() : null;
 
       int totalResponses = 0;
       int totalRatingPoints = 0;
@@ -68,21 +49,36 @@ class FeedbackAnalyticsService {
       for (final doc in snapshot.docs) {
         final data = doc.data();
 
-        final int rating = _readRating(data['rating']);
-        if (rating < 1 || rating > 5) {
+        final DateTime? reservationDate =
+            _parseFirestoreDate(data['reservation_date']);
+        if (reservationDate == null) {
+          continue;
+        }
+
+        if (!_isWithinFilterRange(reservationDate, filter)) {
           continue;
         }
 
         final String mealType =
             ((data['meal_type'] as String?) ?? '').trim().toLowerCase();
 
-        final Timestamp? reservationTimestamp =
-            data['reservation_date'] as Timestamp?;
-        if (reservationTimestamp == null) {
+        if (allowedMealTypes.isNotEmpty &&
+            !allowedMealTypes.contains(mealType)) {
           continue;
         }
 
-        final DateTime reservationDate = reservationTimestamp.toDate();
+        final String docEmployeeNumber =
+            ((data['employee_number'] as String?) ?? '').trim();
+
+        if (employeeNumber != null && docEmployeeNumber != employeeNumber) {
+          continue;
+        }
+
+        final int rating = _readRating(data['rating']);
+        if (rating < 1 || rating > 5) {
+          continue;
+        }
+
         final String dateKey = _formatDateKey(reservationDate);
 
         totalResponses += 1;
@@ -111,6 +107,40 @@ class FeedbackAnalyticsService {
     } catch (e) {
       throw Exception('Failed to fetch feedback analytics: $e');
     }
+  }
+
+  DateTime? _parseFirestoreDate(dynamic rawDate) {
+    if (rawDate == null) return null;
+
+    if (rawDate is Timestamp) {
+      return rawDate.toDate();
+    }
+
+    if (rawDate is DateTime) {
+      return rawDate;
+    }
+
+    if (rawDate is String) {
+      return DateTime.tryParse(rawDate);
+    }
+
+    if (rawDate is Map<String, dynamic>) {
+      final seconds = rawDate['_seconds'] ?? rawDate['seconds'];
+      final nanoseconds = rawDate['_nanoseconds'] ?? rawDate['nanoseconds'];
+
+      if (seconds is int) {
+        final int millis = (seconds * 1000) +
+            ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+
+  bool _isWithinFilterRange(DateTime date, AnalyticsFilterModel filter) {
+    return !date.isBefore(filter.normalizedStartDate) &&
+        !date.isAfter(filter.normalizedEndDate);
   }
 
   int _readRating(dynamic value) {

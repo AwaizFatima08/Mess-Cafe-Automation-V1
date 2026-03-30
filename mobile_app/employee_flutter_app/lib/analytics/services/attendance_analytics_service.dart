@@ -13,40 +13,19 @@ class AttendanceAnalyticsService {
     AnalyticsFilterModel filter,
   ) async {
     try {
-      Query<Map<String, dynamic>> query =
-          _firestore.collection('meal_reservations');
-
-      query = query
-          .where(
-            'reservation_date',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(
-              filter.normalizedStartDate,
-            ),
-          )
-          .where(
-            'reservation_date',
-            isLessThanOrEqualTo: Timestamp.fromDate(
-              filter.normalizedEndDate,
-            ),
-          )
-          .where('is_issued', isEqualTo: true);
-
-      if (filter.hasMealTypeFilter) {
-        query = query.where('meal_type', whereIn: filter.mealTypes);
-      }
-
-      if (filter.hasEmployeeFilter) {
-        query = query.where(
-          'employee_number',
-          isEqualTo: filter.employeeNumber!.trim(),
-        );
-      }
-
-      final snapshot = await query.get();
+      final snapshot = await _firestore.collection('meal_reservations').get();
 
       if (snapshot.docs.isEmpty) {
         return AttendanceAnalyticsResult.empty();
       }
+
+      final List<String> allowedMealTypes = (filter.mealTypes ?? <String>[])
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toList();
+
+      final String? employeeNumber =
+          filter.hasEmployeeFilter ? filter.employeeNumber!.trim() : null;
 
       int totalAttendance = 0;
       int totalEmployees = 0;
@@ -63,6 +42,35 @@ class AttendanceAnalyticsService {
       for (final doc in snapshot.docs) {
         final data = doc.data();
 
+        if (data['is_issued'] != true) {
+          continue;
+        }
+
+        final DateTime? reservationDate =
+            _parseFirestoreDate(data['reservation_date']);
+        if (reservationDate == null) {
+          continue;
+        }
+
+        if (!_isWithinFilterRange(reservationDate, filter)) {
+          continue;
+        }
+
+        final String mealType =
+            ((data['meal_type'] as String?) ?? '').trim().toLowerCase();
+
+        if (allowedMealTypes.isNotEmpty &&
+            !allowedMealTypes.contains(mealType)) {
+          continue;
+        }
+
+        final String docEmployeeNumber =
+            ((data['employee_number'] as String?) ?? '').trim();
+
+        if (employeeNumber != null && docEmployeeNumber != employeeNumber) {
+          continue;
+        }
+
         final String reservationCategory =
             ((data['reservation_category'] as String?) ?? '')
                 .trim()
@@ -75,17 +83,6 @@ class AttendanceAnalyticsService {
         }
 
         final int quantity = _readQuantity(data['quantity']);
-        final String mealType =
-            ((data['meal_type'] as String?) ?? '').trim().toLowerCase();
-
-        final Timestamp? reservationTimestamp =
-            data['reservation_date'] as Timestamp?;
-
-        if (reservationTimestamp == null) {
-          continue;
-        }
-
-        final DateTime reservationDate = reservationTimestamp.toDate();
         final String dateKey = _formatDateKey(reservationDate);
 
         totalAttendance += quantity;
@@ -114,6 +111,40 @@ class AttendanceAnalyticsService {
     } catch (e) {
       throw Exception('Failed to fetch attendance analytics: $e');
     }
+  }
+
+  DateTime? _parseFirestoreDate(dynamic rawDate) {
+    if (rawDate == null) return null;
+
+    if (rawDate is Timestamp) {
+      return rawDate.toDate();
+    }
+
+    if (rawDate is DateTime) {
+      return rawDate;
+    }
+
+    if (rawDate is String) {
+      return DateTime.tryParse(rawDate);
+    }
+
+    if (rawDate is Map<String, dynamic>) {
+      final seconds = rawDate['_seconds'] ?? rawDate['seconds'];
+      final nanoseconds = rawDate['_nanoseconds'] ?? rawDate['nanoseconds'];
+
+      if (seconds is int) {
+        final int millis = (seconds * 1000) +
+            ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+
+  bool _isWithinFilterRange(DateTime date, AnalyticsFilterModel filter) {
+    return !date.isBefore(filter.normalizedStartDate) &&
+        !date.isAfter(filter.normalizedEndDate);
   }
 
   int _readQuantity(dynamic value) {
