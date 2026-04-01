@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../../services/meal_reservation_service.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -18,6 +20,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final MealReservationService _mealReservationService =
       MealReservationService();
+  final TextEditingController _searchController = TextEditingController();
 
   late DateTime _selectedDate;
 
@@ -34,11 +37,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   _DashboardMetrics _metrics = _DashboardMetrics.empty();
 
+  String _searchQuery = '';
+  String _mealFilter = 'all';
+  String _reservationCategoryFilter = 'all';
+  String _diningModeFilter = 'all';
+  String _queueTab = 'pending';
+  String _sortMode = 'pending_first';
+
   @override
   void initState() {
     super.initState();
     _selectedDate = _normalizeDate(DateTime.now());
     _loadDashboardData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   DateTime _normalizeDate(DateTime date) {
@@ -467,14 +483,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<bool> _confirmIssue(Map<String, dynamic> data) async {
     final mealType = _mealLabel(_normalizedString(data['meal_type']));
     final qty = _readInt(data['quantity']);
-    final category =
-        _reservationCategoryLabel(_normalizedString(data['reservation_category']));
+    final category = _reservationCategoryLabel(
+      _normalizedString(data['reservation_category']),
+    );
     final name = _subjectDisplayName(data);
 
     final result = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+          ),
           title: const Text('Confirm Meal Issuance'),
           content: Text('Issue $qty × $mealType for $name ($category)?'),
           actions: [
@@ -635,66 +655,225 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '$day-$month-$year $hour:$minute';
   }
 
+  bool _matchesSearch(_ReservationRecord record) {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return true;
+
+    final data = record.data;
+    final haystack = <String>[
+      (data['employee_number'] ?? '').toString(),
+      (data['employee_name'] ?? '').toString(),
+      (data['guest_name'] ?? '').toString(),
+      (data['host_employee_number'] ?? '').toString(),
+      (data['host_employee_name'] ?? '').toString(),
+      (data['option_label'] ?? '').toString(),
+      (data['created_by_employee_number'] ?? '').toString(),
+      (data['created_by_name'] ?? '').toString(),
+    ].join(' | ').toLowerCase();
+
+    return haystack.contains(q);
+  }
+
+  bool _matchesFilters(_ReservationRecord record) {
+    final data = record.data;
+
+    if (_mealFilter != 'all' &&
+        _normalizedString(data['meal_type']) != _mealFilter) {
+      return false;
+    }
+
+    if (_reservationCategoryFilter != 'all' &&
+        _normalizedString(data['reservation_category']) !=
+            _reservationCategoryFilter) {
+      return false;
+    }
+
+    if (_diningModeFilter != 'all' &&
+        _normalizedString(data['dining_mode']) != _diningModeFilter) {
+      return false;
+    }
+
+    return _matchesSearch(record);
+  }
+
+  List<_ReservationRecord> _sortRecords(List<_ReservationRecord> records) {
+    final sorted = List<_ReservationRecord>.from(records);
+
+    switch (_sortMode) {
+      case 'latest_first':
+        sorted.sort((a, b) => _reservationSort(b, a));
+        break;
+      case 'employee_number':
+        sorted.sort((a, b) {
+          final aEmp = (a.data['employee_number'] ?? '').toString();
+          final bEmp = (b.data['employee_number'] ?? '').toString();
+          return aEmp.compareTo(bEmp);
+        });
+        break;
+      case 'name':
+        sorted.sort((a, b) {
+          final aName = _subjectDisplayName(a.data).toLowerCase();
+          final bName = _subjectDisplayName(b.data).toLowerCase();
+          return aName.compareTo(bName);
+        });
+        break;
+      case 'pending_first':
+      default:
+        sorted.sort(_reservationSort);
+        break;
+    }
+
+    return sorted;
+  }
+
+  List<_ReservationRecord> get _filteredPendingReservations {
+    return _sortRecords(
+      _pendingReservations.where(_matchesFilters).toList(),
+    );
+  }
+
+  List<_ReservationRecord> get _filteredIssuedReservations {
+    return _sortRecords(
+      _issuedReservations.where(_matchesFilters).toList(),
+    );
+  }
+
+  List<_ReservationRecord> get _activeQueue {
+    return _queueTab == 'issued'
+        ? _filteredIssuedReservations
+        : _filteredPendingReservations;
+  }
+
+  int get _filteredPendingQuantity {
+    return _filteredPendingReservations.fold<int>(
+      0,
+      (runningTotal, record) => runningTotal + _readInt(record.data['quantity']),
+    );
+  }
+
+  int get _filteredIssuedQuantity {
+    return _filteredIssuedReservations.fold<int>(
+      0,
+      (runningTotal, record) => runningTotal + _readInt(record.data['quantity']),
+    );
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _searchQuery = '';
+      _mealFilter = 'all';
+      _reservationCategoryFilter = 'all';
+      _diningModeFilter = 'all';
+      _sortMode = 'pending_first';
+      _searchController.clear();
+    });
+  }
+
   Widget _buildHeaderCard() {
-    return Card(
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        gradient: const LinearGradient(
+          colors: [
+            AppColors.primary,
+            AppColors.primaryDark,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Wrap(
-          runSpacing: 12,
+          runSpacing: AppSpacing.lg,
+          spacing: AppSpacing.lg,
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Mess Operations Dashboard',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AppConstants.visibleAppName,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Signed in as: ${widget.userEmail}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Date: ${_formatDate(_selectedDate)}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Reservations loaded: ${_allReservations.length}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                if (_isRefreshing) ...[
-                  const SizedBox(height: 8),
-                  const SizedBox(
-                    width: 180,
-                    child: LinearProgressIndicator(),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Mess Operations Dashboard',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Signed in as: ${widget.userEmail}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Date: ${_formatDate(_selectedDate)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Reservations loaded: ${_allReservations.length}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.86),
+                    ),
+                  ),
+                  if (_isRefreshing) ...[
+                    const SizedBox(height: AppSpacing.md),
+                    const SizedBox(
+                      width: 220,
+                      child: LinearProgressIndicator(
+                        color: Colors.white,
+                        backgroundColor: Colors.white24,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
                 OutlinedButton.icon(
                   onPressed:
                       _isRefreshing || _isIssuing ? null : _goToPreviousDate,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   icon: const Icon(Icons.chevron_left),
                   label: const Text('Previous'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _isRefreshing || _isIssuing ? null : _pickDate,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   icon: const Icon(Icons.calendar_month_outlined),
                   label: const Text('Select Date'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _isRefreshing || _isIssuing ? null : _goToNextDate,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   icon: const Icon(Icons.chevron_right),
                   label: const Text('Next'),
                 ),
@@ -702,6 +881,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   onPressed: _isRefreshing || _isIssuing
                       ? null
                       : () => _loadDashboardData(forceRefresh: true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.primary,
+                  ),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Refresh'),
                 ),
@@ -721,11 +904,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Row(
           children: [
-            Icon(icon, size: 30),
-            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(AppRadii.md),
+              ),
+              child: Icon(icon, size: 26, color: AppColors.primary),
+            ),
+            const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,7 +925,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   if (subtitle != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpacing.xs),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -756,10 +946,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildSectionTitle(String title, String subtitle) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -767,7 +957,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 subtitle,
                 style: Theme.of(context).textTheme.bodyMedium,
@@ -792,8 +982,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Row(
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 20),
-          const SizedBox(width: 10),
+          Icon(icon, size: 20, color: AppColors.primary),
+          const SizedBox(width: AppSpacing.sm),
         ],
         Expanded(
           child: Text(label, style: textStyle),
@@ -817,13 +1007,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           children: [
             Row(
               children: [
-                Icon(icon),
-                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
+                  child: Icon(icon, color: AppColors.primary),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     title,
@@ -836,17 +1033,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withValues(alpha: 0.08),
+                    color: AppColors.info.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     'Total $total',
-                    style: Theme.of(context).textTheme.labelLarge,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: AppColors.info,
+                        ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.lg),
             _buildMetricRow(
               label: 'Issued',
               value: issued,
@@ -874,7 +1073,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildSegmentationCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           children: [
             _buildMetricRow(
@@ -916,7 +1115,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildDiningModeCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           children: [
             _buildMetricRow(
@@ -946,7 +1145,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildSourceVisibilityCard() {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           children: [
             _buildMetricRow(
@@ -987,7 +1186,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           children: [
             if (operatorList.isEmpty)
@@ -998,12 +1197,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             else
               ...operatorList.take(8).map(
                 (operator) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.person_outline, size: 20),
-                      const SizedBox(width: 10),
+                      const Icon(
+                        Icons.person_outline,
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1036,81 +1239,271 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildPendingIssuanceCard() {
+  Widget _buildFiltersCard() {
+    final theme = Theme.of(context);
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Pending Issuance Queue',
-              style: Theme.of(context).textTheme.titleLarge,
+              'Queue Filters',
+              style: theme.textTheme.titleLarge,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'Pending lines: ${_metrics.pendingLines} • Pending quantity: ${_metrics.pendingQuantity}',
-              style: Theme.of(context).textTheme.bodyMedium,
+              'Search by employee number, name, guest, host, or option label. Then narrow by meal, category, and dining mode.',
+              style: theme.textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
-            if (_pendingReservations.isEmpty)
-              const Text('No pending reservations.')
-            else
-              ..._pendingReservations.map(
-                (record) => _ReservationTile(
-                  data: record.data,
-                  isBusy: _isIssuing,
-                  actionLabel: 'Issue Meal',
-                  actionIcon: Icons.check_circle_outline,
-                  onAction: () => _issueMeal(record.id),
-                  mealLabelBuilder: _mealLabel,
-                  bookingSourceLabelBuilder: _bookingSourceLabel,
-                  bookingSubjectTypeLabelBuilder: _bookingSubjectTypeLabel,
-                  diningModeLabelBuilder: _diningModeLabel,
-                  reservationCategoryLabelBuilder: _reservationCategoryLabel,
-                  formatDateTime: _formatDateTime,
-                ),
+            const SizedBox(height: AppSpacing.md),
+            TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.trim();
+                });
+              },
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Search by employee no. / name / guest / option',
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: _clearFilters,
+                        icon: const Icon(Icons.clear),
+                      ),
               ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.md,
+              runSpacing: AppSpacing.md,
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _mealFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Meal',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All Meals')),
+                      DropdownMenuItem(
+                          value: 'breakfast', child: Text('Breakfast')),
+                      DropdownMenuItem(value: 'lunch', child: Text('Lunch')),
+                      DropdownMenuItem(value: 'dinner', child: Text('Dinner')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _mealFilter = value;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 210,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _reservationCategoryFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All Categories')),
+                      DropdownMenuItem(
+                          value: 'employee', child: Text('Employee')),
+                      DropdownMenuItem(
+                          value: 'official_guest', child: Text('Official Guest')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _reservationCategoryFilter = value;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 180,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _diningModeFilter,
+                    decoration: const InputDecoration(
+                      labelText: 'Dining Mode',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All Modes')),
+                      DropdownMenuItem(
+                          value: 'dine_in', child: Text('Dine In')),
+                      DropdownMenuItem(
+                          value: 'takeaway', child: Text('Takeaway')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _diningModeFilter = value;
+                      });
+                    },
+                  ),
+                ),
+                SizedBox(
+                  width: 200,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _sortMode,
+                    decoration: const InputDecoration(
+                      labelText: 'Sort',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'pending_first',
+                        child: Text('Meal order'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'latest_first',
+                        child: Text('Latest first'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'employee_number',
+                        child: Text('Employee no.'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'name',
+                        child: Text('Name'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _sortMode = value;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                Chip(
+                  label: Text(
+                    'Pending: ${_filteredPendingReservations.length} line(s) / $_filteredPendingQuantity qty',
+                  ),
+                ),
+                Chip(
+                  label: Text(
+                    'Issued: ${_filteredIssuedReservations.length} line(s) / $_filteredIssuedQuantity qty',
+                  ),
+                ),
+                if (_searchQuery.isNotEmpty ||
+                    _mealFilter != 'all' ||
+                    _reservationCategoryFilter != 'all' ||
+                    _diningModeFilter != 'all' ||
+                    _sortMode != 'pending_first')
+                  ActionChip(
+                    onPressed: _clearFilters,
+                    label: const Text('Clear Filters'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildIssuedSectionCard() {
+  Widget _buildQueueSectionCard() {
+    final queueRecords = _activeQueue;
+    final isPendingTab = _queueTab == 'pending';
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Issued Meals',
+              'Meal Issuance Queue',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'Issued lines: ${_metrics.issuedLines} • Issued quantity: ${_metrics.issuedQuantity}',
+              'Use search and filters to reach a specific employee quickly during rush operations.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 12),
-            if (_issuedReservations.isEmpty)
-              const Text('No issued reservations.')
+            const SizedBox(height: AppSpacing.md),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment<String>(
+                  value: 'pending',
+                  icon: Icon(Icons.pending_actions_outlined),
+                  label: Text('Pending'),
+                ),
+                ButtonSegment<String>(
+                  value: 'issued',
+                  icon: Icon(Icons.verified_outlined),
+                  label: Text('Issued'),
+                ),
+              ],
+              selected: <String>{_queueTab},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _queueTab = selection.first;
+                });
+              },
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceAlt,
+                borderRadius: BorderRadius.circular(AppRadii.md),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                isPendingTab
+                    ? 'Filtered pending lines: ${_filteredPendingReservations.length} • quantity: $_filteredPendingQuantity'
+                    : 'Filtered issued lines: ${_filteredIssuedReservations.length} • quantity: $_filteredIssuedQuantity',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (queueRecords.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: Text(
+                  isPendingTab
+                      ? 'No pending reservations match the current filters.'
+                      : 'No issued reservations match the current filters.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              )
             else
-              ..._issuedReservations.take(20).map(
+              ...queueRecords.map(
                 (record) => _ReservationTile(
                   data: record.data,
-                  isBusy: false,
-                  actionLabel: 'Issued',
-                  actionIcon: Icons.verified_outlined,
-                  onAction: null,
+                  isBusy: _isIssuing,
+                  actionLabel: isPendingTab ? 'Issue Meal' : 'Issued',
+                  actionIcon: isPendingTab
+                      ? Icons.check_circle_outline
+                      : Icons.verified_outlined,
+                  onAction:
+                      isPendingTab ? () => _issueMeal(record.id) : null,
                   mealLabelBuilder: _mealLabel,
                   bookingSourceLabelBuilder: _bookingSourceLabel,
                   bookingSubjectTypeLabelBuilder: _bookingSubjectTypeLabel,
                   diningModeLabelBuilder: _diningModeLabel,
                   reservationCategoryLabelBuilder: _reservationCategoryLabel,
                   formatDateTime: _formatDateTime,
-                  showIssuedMeta: true,
+                  showIssuedMeta: !isPendingTab,
                 ),
               ),
           ],
@@ -1120,21 +1513,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildBody() {
+    final isWide = MediaQuery.of(context).size.width >= 1100;
+
     return RefreshIndicator(
+      color: AppColors.primary,
       onRefresh: () => _loadDashboardData(forceRefresh: true),
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           _buildHeaderCard(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           GridView.count(
-            crossAxisCount: MediaQuery.of(context).size.width >= 1100 ? 4 : 2,
+            crossAxisCount: isWide ? 4 : 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio:
-                MediaQuery.of(context).size.width >= 1100 ? 2.5 : 2.1,
+            crossAxisSpacing: AppSpacing.md,
+            mainAxisSpacing: AppSpacing.md,
+            childAspectRatio: isWide ? 2.5 : 2.0,
             children: [
               _buildKpiCard(
                 title: 'Total Quantity',
@@ -1162,10 +1558,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
+          _buildFiltersCard(),
+          const SizedBox(height: AppSpacing.lg),
           _buildSectionTitle(
             'Meal-wise Summary',
-            'Breakfast, lunch and dinner totals with issuance visibility.',
+            'Breakfast, lunch, and dinner totals with issuance visibility.',
           ),
           _buildMealSection(
             title: 'Breakfast',
@@ -1174,7 +1572,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             issued: _metrics.breakfastIssued,
             pending: _metrics.breakfastPending,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _buildMealSection(
             title: 'Lunch',
             icon: Icons.lunch_dining_outlined,
@@ -1182,7 +1580,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             issued: _metrics.lunchIssued,
             pending: _metrics.lunchPending,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _buildMealSection(
             title: 'Dinner',
             icon: Icons.dinner_dining_outlined,
@@ -1190,27 +1588,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
             issued: _metrics.dinnerIssued,
             pending: _metrics.dinnerPending,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           _buildSectionTitle(
             'Operational Segmentation',
-            'Employee vs guest vs proxy flow, dining mode split, and booking-source visibility.',
+            'Employee vs guest, dining mode split, and booking-source visibility.',
           ),
           _buildSegmentationCard(),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _buildDiningModeCard(),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _buildSourceVisibilityCard(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.lg),
           _buildSectionTitle(
             'Operator Visibility',
             'Who booked how many lines and quantity on the selected date.',
           ),
           _buildOperatorVisibilityCard(),
-          const SizedBox(height: 16),
-          _buildPendingIssuanceCard(),
-          const SizedBox(height: 16),
-          _buildIssuedSectionCard(),
-          const SizedBox(height: 24),
+          const SizedBox(height: AppSpacing.lg),
+          _buildQueueSectionCard(),
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -1218,25 +1614,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildErrorState() {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.xl),
             child: Column(
               children: [
                 const Icon(
                   Icons.error_outline,
                   size: 42,
-                  color: Colors.redAccent,
+                  color: AppColors.error,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpacing.md),
                 Text(
                   _errorMessage ?? 'Unknown error',
                   style: Theme.of(context).textTheme.bodyMedium,
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpacing.lg),
                 ElevatedButton.icon(
                   onPressed: () => _loadDashboardData(forceRefresh: true),
                   icon: const Icon(Icons.refresh),
@@ -1357,51 +1753,76 @@ class _ReservationTile extends StatelessWidget {
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
-      color: showIssuedMeta ? Colors.green.withValues(alpha: 0.04) : null,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               subjectDisplay,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 4),
-            Text(subjectSecondary),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
             Text(
-              'Category: ${reservationCategoryLabelBuilder(reservationCategory)}'
-              ' • Subject: ${bookingSubjectTypeLabelBuilder(bookingSubjectType)}',
+              subjectSecondary,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 4),
-            Text('Meal: ${mealLabelBuilder(mealType)}'),
-            const SizedBox(height: 4),
-            Text('Option: ${optionLabel.isEmpty ? '—' : optionLabel}'),
-            const SizedBox(height: 4),
-            Text('Dining Mode: ${diningModeLabelBuilder(diningMode)}'),
-            const SizedBox(height: 4),
-            Text('Quantity: $quantity'),
-            const SizedBox(height: 4),
-            Text('Booked Via: ${bookingSourceLabelBuilder(bookingSource)}'),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Category: ${reservationCategoryLabelBuilder(reservationCategory)} • Subject: ${bookingSubjectTypeLabelBuilder(bookingSubjectType)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Meal: ${mealLabelBuilder(mealType)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Option: ${optionLabel.isEmpty ? '—' : optionLabel}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Dining Mode: ${diningModeLabelBuilder(diningMode)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Quantity: $quantity',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Booked Via: ${bookingSourceLabelBuilder(bookingSource)}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
             Text(
               'Booked By: ${createdByName.isEmpty ? '—' : createdByName}'
               '${createdByRole.isEmpty ? '' : ' • $createdByRole'}'
               '${createdByEmployeeNumber.isEmpty ? '' : ' • $createdByEmployeeNumber'}',
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 4),
-            Text('Created At: ${formatDateTime(data['created_at'])}'),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Created At: ${formatDateTime(data['created_at'])}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             if (showIssuedMeta) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 'Issued By: ${issuedByUid.isEmpty ? '—' : issuedByUid}'
                 '${issuedByRole.isEmpty ? '' : ' • $issuedByRole'}',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 4),
-              Text('Issued At: ${formatDateTime(issuedAt)}'),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Issued At: ${formatDateTime(issuedAt)}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.md),
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(

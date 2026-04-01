@@ -1,0 +1,1879 @@
+===== meal_rate_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealRateService {
+  MealRateService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _mealRatesRef =>
+      _firestore.collection('meal_rates');
+
+  CollectionReference<Map<String, dynamic>> get _mealReservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  static const String statusActive = 'active';
+  static const String statusCancelled = 'cancelled';
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime nextDate(DateTime value) {
+    final normalized = normalizeDate(value);
+    return normalized.add(const Duration(days: 1));
+  }
+
+  Timestamp normalizeTimestamp(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
+  String buildDateKey(DateTime value) {
+    final normalized = normalizeDate(value);
+    final year = normalized.year.toString().padLeft(4, '0');
+    final month = normalized.month.toString().padLeft(2, '0');
+    final day = normalized.day.toString().padLeft(2, '0');
+    return '$year$month$day';
+  }
+
+  String buildRateDocumentId({
+    required DateTime rateDate,
+    required String menuItemId,
+  }) {
+    final dateKey = buildDateKey(rateDate);
+    final normalizedMenuItemId = _sanitizeDocKeyComponent(menuItemId);
+    return '${dateKey}__$normalizedMenuItemId';
+  }
+
+  Stream<List<MealRateEntry>> watchRatesForDate(DateTime rateDate) {
+    final start = Timestamp.fromDate(normalizeDate(rateDate));
+    final end = Timestamp.fromDate(nextDate(rateDate));
+
+    return _mealRatesRef
+        .where('rate_date', isGreaterThanOrEqualTo: start)
+        .where('rate_date', isLessThan: end)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => MealRateEntry.fromDocument(doc))
+              .toList()
+            ..sort(
+              (a, b) => a.itemName.toLowerCase().compareTo(
+                    b.itemName.toLowerCase(),
+                  ),
+            ),
+        );
+  }
+
+  Future<List<MealRateEntry>> getRatesForDate(DateTime rateDate) async {
+    final start = Timestamp.fromDate(normalizeDate(rateDate));
+    final end = Timestamp.fromDate(nextDate(rateDate));
+
+    final query = await _mealRatesRef
+        .where('rate_date', isGreaterThanOrEqualTo: start)
+        .where('rate_date', isLessThan: end)
+        .get();
+
+    final entries = query.docs
+        .map((doc) => MealRateEntry.fromDocument(doc))
+        .toList();
+
+    entries.sort(
+      (a, b) => a.itemName.toLowerCase().compareTo(
+            b.itemName.toLowerCase(),
+          ),
+    );
+
+    return entries;
+  }
+
+  Future<MealRateEntry?> getRateForDateAndMenuItem({
+    required DateTime rateDate,
+    required String menuItemId,
+  }) async {
+    final normalizedMenuItemId = menuItemId.trim();
+    if (normalizedMenuItemId.isEmpty) {
+      return null;
+    }
+
+    final docId = buildRateDocumentId(
+      rateDate: rateDate,
+      menuItemId: normalizedMenuItemId,
+    );
+
+    final doc = await _mealRatesRef.doc(docId).get();
+    if (!doc.exists || doc.data() == null) {
+      return null;
+    }
+
+    return MealRateEntry.fromDocument(doc);
+  }
+
+  Future<void> upsertRate({
+    required DateTime rateDate,
+    required String menuItemId,
+    required String itemName,
+    required num unitRate,
+    String? category,
+    bool isActive = true,
+    String? enteredByUid,
+    String? enteredByName,
+  }) async {
+    final normalizedMenuItemId = menuItemId.trim();
+    final normalizedItemName = itemName.trim();
+    final normalizedCategory = (category ?? '').trim();
+
+    if (normalizedMenuItemId.isEmpty) {
+      throw ArgumentError('menuItemId is required.');
+    }
+    if (normalizedItemName.isEmpty) {
+      throw ArgumentError('itemName is required.');
+    }
+
+    final parsedRate = unitRate.toDouble();
+    if (parsedRate < 0) {
+      throw ArgumentError('unitRate cannot be negative.');
+    }
+
+    final normalizedRateDate = normalizeDate(rateDate);
+    final docId = buildRateDocumentId(
+      rateDate: normalizedRateDate,
+      menuItemId: normalizedMenuItemId,
+    );
+
+    final docRef = _mealRatesRef.doc(docId);
+    final existing = await docRef.get();
+    final now = Timestamp.now();
+
+    final payload = <String, dynamic>{
+      'menu_item_id': normalizedMenuItemId,
+      'item_name': normalizedItemName,
+      'category': normalizedCategory,
+      'rate_date': Timestamp.fromDate(normalizedRateDate),
+      'unit_rate': parsedRate,
+      'is_active': isActive,
+      'entered_by_uid': (enteredByUid ?? '').trim(),
+      'entered_by_name': (enteredByName ?? '').trim(),
+      'updated_at': now,
+    };
+
+    if (!existing.exists) {
+      payload['created_at'] = now;
+    }
+
+    await docRef.set(payload, SetOptions(merge: true));
+  }
+
+  Future<void> saveRatesBatch({
+    required DateTime rateDate,
+    required List<MealRateDraft> drafts,
+    String? enteredByUid,
+    String? enteredByName,
+    bool skipZeroRates = false,
+  }) async {
+    if (drafts.isEmpty) return;
+
+    final normalizedRateDate = normalizeDate(rateDate);
+    final now = Timestamp.now();
+    final batch = _firestore.batch();
+
+    for (final draft in drafts) {
+      final normalizedMenuItemId = draft.menuItemId.trim();
+      final normalizedItemName = draft.itemName.trim();
+      final normalizedCategory = draft.category.trim();
+
+      if (normalizedMenuItemId.isEmpty || normalizedItemName.isEmpty) {
+        continue;
+      }
+
+      final parsedRate = draft.unitRate;
+      if (parsedRate < 0) {
+        throw ArgumentError(
+          'Negative rate is not allowed for ${draft.itemName}.',
+        );
+      }
+
+      if (skipZeroRates && parsedRate == 0) {
+        continue;
+      }
+
+      final docId = buildRateDocumentId(
+        rateDate: normalizedRateDate,
+        menuItemId: normalizedMenuItemId,
+      );
+
+      final docRef = _mealRatesRef.doc(docId);
+
+      batch.set(
+        docRef,
+        <String, dynamic>{
+          'menu_item_id': normalizedMenuItemId,
+          'item_name': normalizedItemName,
+          'category': normalizedCategory,
+          'rate_date': Timestamp.fromDate(normalizedRateDate),
+          'unit_rate': parsedRate,
+          'is_active': draft.isActive,
+          'entered_by_uid': (enteredByUid ?? '').trim(),
+          'entered_by_name': (enteredByName ?? '').trim(),
+          'updated_at': now,
+          'created_at': now,
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<List<ConsumedItemSummary>> getConsumedItemSummaryForDate(
+    DateTime reservationDate,
+  ) async {
+    final normalizedDate = normalizeDate(reservationDate);
+    final start = Timestamp.fromDate(normalizedDate);
+    final end = Timestamp.fromDate(nextDate(normalizedDate));
+
+    final query = await _mealReservationsRef
+        .where('reservation_date', isGreaterThanOrEqualTo: start)
+        .where('reservation_date', isLessThan: end)
+        .get();
+
+    final summaryByKey = <String, _ConsumedItemAccumulator>{};
+
+    for (final doc in query.docs) {
+      final data = doc.data();
+
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      if (status == statusCancelled) {
+        continue;
+      }
+
+      final quantity = _asInt(data['quantity']);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      final menuSnapshot = _asMap(data['menu_snapshot']);
+      final mealType = _normalizeText(data['meal_type']);
+      final optionKey = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_id']),
+        _normalizeText(data['menu_item_id']),
+        _normalizeText(data['menu_option_key']),
+        _normalizeText(menuSnapshot['option_key']),
+      ]);
+
+      final optionLabel = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_name']),
+        _normalizeText(data['item_name']),
+        _normalizeText(data['option_label']),
+        _normalizeText(menuSnapshot['option_label']),
+      ]);
+
+      final itemCategory = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_category']),
+        _normalizeText(data['category']),
+        mealType,
+      ]);
+
+      if (optionKey.isEmpty) {
+        continue;
+      }
+
+      final items = _asListOfMaps(menuSnapshot['items']);
+      final bool treatAsComboSingleItem =
+          items.isNotEmpty && !_looksLikeDirectManualItem(menuSnapshot);
+
+      final effectiveMenuItemId = optionKey;
+      final effectiveItemName = optionLabel.isNotEmpty ? optionLabel : optionKey;
+      final effectiveCategory =
+          itemCategory.isNotEmpty ? itemCategory : mealType;
+
+      final lookupKey = effectiveMenuItemId.trim().toLowerCase();
+
+      final accumulator = summaryByKey.putIfAbsent(
+        lookupKey,
+        () => _ConsumedItemAccumulator(
+          menuItemId: effectiveMenuItemId,
+          itemName: effectiveItemName,
+          category: effectiveCategory,
+          mealType: mealType,
+          selectionType: treatAsComboSingleItem
+              ? MealRateSelectionType.comboOption
+              : MealRateSelectionType.manualItem,
+        ),
+      );
+
+      accumulator.totalQuantity += quantity;
+      accumulator.reservationLineCount += 1;
+      accumulator.optionLabels.add(effectiveItemName);
+
+      if (doc.id.isNotEmpty) {
+        accumulator.sampleReservationIds.add(doc.id);
+      }
+    }
+
+    final result = summaryByKey.values
+        .map((item) => item.toSummary())
+        .toList()
+      ..sort(
+        (a, b) => a.itemName.toLowerCase().compareTo(
+              b.itemName.toLowerCase(),
+            ),
+      );
+
+    return result;
+  }
+
+  Future<List<MealRateEntryRow>> getRateEntryRowsForDate(DateTime rateDate) async {
+    final summaries = await getConsumedItemSummaryForDate(rateDate);
+    final rates = await getRatesForDate(rateDate);
+
+    final rateMap = <String, MealRateEntry>{
+      for (final rate in rates) rate.menuItemId.trim().toLowerCase(): rate,
+    };
+
+    final rows = summaries
+        .map(
+          (summary) => MealRateEntryRow(
+            summary: summary,
+            existingRate: rateMap[summary.menuItemId.trim().toLowerCase()],
+          ),
+        )
+        .toList();
+
+    return rows;
+  }
+
+  Future<int> applyRatesToReservationsForDate(DateTime reservationDate) async {
+    final normalizedDate = normalizeDate(reservationDate);
+    final start = Timestamp.fromDate(normalizedDate);
+    final end = Timestamp.fromDate(nextDate(normalizedDate));
+
+    final rates = await getRatesForDate(normalizedDate);
+    final rateMap = <String, MealRateEntry>{
+      for (final rate in rates)
+        rate.menuItemId.trim().toLowerCase(): rate,
+    };
+
+    final reservationQuery = await _mealReservationsRef
+        .where('reservation_date', isGreaterThanOrEqualTo: start)
+        .where('reservation_date', isLessThan: end)
+        .get();
+
+    if (reservationQuery.docs.isEmpty || rateMap.isEmpty) {
+      return 0;
+    }
+
+    final batch = _firestore.batch();
+    var updatedCount = 0;
+
+    for (final doc in reservationQuery.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      if (status == statusCancelled) {
+        continue;
+      }
+
+      final quantity = _asInt(data['quantity']);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      final menuItemId = _extractReservationMenuItemId(data);
+      if (menuItemId.isEmpty) {
+        continue;
+      }
+
+      final rate = rateMap[menuItemId.trim().toLowerCase()];
+      if (rate == null || !rate.isActive) {
+        continue;
+      }
+
+      final amount = rate.unitRate * quantity;
+
+      batch.update(doc.reference, <String, dynamic>{
+        'unit_rate': rate.unitRate,
+        'amount': amount,
+        'updated_at': Timestamp.now(),
+      });
+
+      updatedCount += 1;
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+    }
+
+    return updatedCount;
+  }
+
+  String extractReservationMenuItemId(Map<String, dynamic> reservationData) {
+    return _extractReservationMenuItemId(reservationData);
+  }
+
+  String extractReservationItemName(Map<String, dynamic> reservationData) {
+    final menuSnapshot = _asMap(reservationData['menu_snapshot']);
+
+    return _firstNonEmpty([
+      _normalizeText(menuSnapshot['item_name']),
+      _normalizeText(reservationData['item_name']),
+      _normalizeText(reservationData['option_label']),
+      _normalizeText(menuSnapshot['option_label']),
+      _extractReservationMenuItemId(reservationData),
+    ]);
+  }
+
+  String _extractReservationMenuItemId(Map<String, dynamic> reservationData) {
+    final menuSnapshot = _asMap(reservationData['menu_snapshot']);
+
+    return _firstNonEmpty([
+      _normalizeText(menuSnapshot['item_id']),
+      _normalizeText(reservationData['menu_item_id']),
+      _normalizeText(reservationData['menu_option_key']),
+      _normalizeText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  bool _looksLikeDirectManualItem(Map<String, dynamic> menuSnapshot) {
+    final selectionType = _normalizeText(menuSnapshot['selection_type']);
+    return selectionType == 'manual_item';
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '').toString()) ?? 0;
+  }
+
+  String _normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String _sanitizeDocKeyComponent(String input) {
+    final value = input.trim();
+    if (value.isEmpty) return 'unknown_item';
+
+    return value
+        .replaceAll('/', '_')
+        .replaceAll('\\', '_')
+        .replaceAll(' ', '_')
+        .replaceAll(':', '_')
+        .replaceAll('#', '_');
+  }
+}
+
+class MealRateEntry {
+  final String documentId;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final DateTime rateDate;
+  final double unitRate;
+  final bool isActive;
+  final String enteredByUid;
+  final String enteredByName;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const MealRateEntry({
+    required this.documentId,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.rateDate,
+    required this.unitRate,
+    required this.isActive,
+    required this.enteredByUid,
+    required this.enteredByName,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MealRateEntry.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? <String, dynamic>{};
+
+    return MealRateEntry(
+      documentId: doc.id,
+      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      itemName: (data['item_name'] ?? '').toString().trim(),
+      category: (data['category'] ?? '').toString().trim(),
+      rateDate: _toDate(data['rate_date']) ?? DateTime.now(),
+      unitRate: _toDouble(data['unit_rate']),
+      isActive: data['is_active'] != false,
+      enteredByUid: (data['entered_by_uid'] ?? '').toString().trim(),
+      enteredByName: (data['entered_by_name'] ?? '').toString().trim(),
+      createdAt: _toDate(data['created_at']),
+      updatedAt: _toDate(data['updated_at']),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'menu_item_id': menuItemId,
+      'item_name': itemName,
+      'category': category,
+      'rate_date': Timestamp.fromDate(
+        DateTime(rateDate.year, rateDate.month, rateDate.day),
+      ),
+      'unit_rate': unitRate,
+      'is_active': isActive,
+      'entered_by_uid': enteredByUid,
+      'entered_by_name': enteredByName,
+      'created_at': createdAt == null ? null : Timestamp.fromDate(createdAt!),
+      'updated_at': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+    };
+  }
+
+  static DateTime? _toDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '').toString()) ?? 0;
+  }
+}
+
+class MealRateDraft {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final double unitRate;
+  final bool isActive;
+
+  const MealRateDraft({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.unitRate,
+    this.isActive = true,
+  });
+
+  MealRateDraft copyWith({
+    String? menuItemId,
+    String? itemName,
+    String? category,
+    double? unitRate,
+    bool? isActive,
+  }) {
+    return MealRateDraft(
+      menuItemId: menuItemId ?? this.menuItemId,
+      itemName: itemName ?? this.itemName,
+      category: category ?? this.category,
+      unitRate: unitRate ?? this.unitRate,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+}
+
+class MealRateEntryRow {
+  final ConsumedItemSummary summary;
+  final MealRateEntry? existingRate;
+
+  const MealRateEntryRow({
+    required this.summary,
+    this.existingRate,
+  });
+
+  double get initialRate => existingRate?.unitRate ?? 0;
+  bool get hasSavedRate => existingRate != null;
+}
+
+class ConsumedItemSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String mealType;
+  final int totalQuantity;
+  final int reservationLineCount;
+  final MealRateSelectionType selectionType;
+  final List<String> optionLabels;
+  final List<String> sampleReservationIds;
+
+  const ConsumedItemSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.mealType,
+    required this.totalQuantity,
+    required this.reservationLineCount,
+    required this.selectionType,
+    required this.optionLabels,
+    required this.sampleReservationIds,
+  });
+}
+
+enum MealRateSelectionType {
+  comboOption,
+  manualItem,
+}
+
+class _ConsumedItemAccumulator {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String mealType;
+  final MealRateSelectionType selectionType;
+
+  int totalQuantity = 0;
+  int reservationLineCount = 0;
+  final Set<String> optionLabels = <String>{};
+  final Set<String> sampleReservationIds = <String>{};
+
+  _ConsumedItemAccumulator({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.mealType,
+    required this.selectionType,
+  });
+
+  ConsumedItemSummary toSummary() {
+    return ConsumedItemSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      mealType: mealType,
+      totalQuantity: totalQuantity,
+      reservationLineCount: reservationLineCount,
+      selectionType: selectionType,
+      optionLabels: optionLabels.toList()..sort(),
+      sampleReservationIds: sampleReservationIds.toList()..sort(),
+    );
+  }
+}
+
+===== meal_cost_reporting_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealCostReportingService {
+  MealCostReportingService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  Timestamp _startOfDay(DateTime date) {
+    return Timestamp.fromDate(_normalizeDate(date));
+  }
+
+  Timestamp _startOfNextDay(DateTime date) {
+    return Timestamp.fromDate(_normalizeDate(date).add(const Duration(days: 1)));
+  }
+
+  int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double _readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  String _readText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  double _resolveAmount({
+    required dynamic explicitAmount,
+    required dynamic unitRate,
+    required int quantity,
+  }) {
+    final amount = _readDouble(explicitAmount);
+    if (amount > 0) {
+      return amount;
+    }
+
+    final rate = _readDouble(unitRate);
+    if (rate > 0 && quantity > 0) {
+      return rate * quantity;
+    }
+
+    return 0.0;
+  }
+
+  String _extractItemName(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_name']),
+      _readText(data['option_label']),
+      _readText(data['item_name']),
+      _readText(data['menu_option_key']),
+    ]);
+  }
+
+  String _extractMenuItemId(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_id']),
+      _readText(data['menu_item_id']),
+      _readText(data['menu_option_key']),
+      _readText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  String _extractCategory(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_category']),
+      _readText(data['category']),
+      _readText(data['meal_type']),
+    ]);
+  }
+
+  String _extractSubjectType(Map<String, dynamic> data) {
+    final reservationCategory =
+        _readText(data['reservation_category']).toLowerCase();
+    final bookingSubjectType =
+        _readText(data['booking_subject_type']).toLowerCase();
+
+    if (reservationCategory == 'official_guest' ||
+        bookingSubjectType == 'official_guest') {
+      return 'guest';
+    }
+    return 'employee';
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
+  }
+
+  Future<MealCostDashboardData> getDailyDashboard(DateTime date) async {
+    final normalizedDate = _normalizeDate(date);
+
+    final snapshot = await _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: _startOfDay(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: _startOfNextDay(normalizedDate),
+        )
+        .get();
+
+    final mealTypeSummary = <String, MealTypeCostSummaryBuilder>{
+      'breakfast': MealTypeCostSummaryBuilder(mealType: 'breakfast'),
+      'lunch': MealTypeCostSummaryBuilder(mealType: 'lunch'),
+      'dinner': MealTypeCostSummaryBuilder(mealType: 'dinner'),
+    };
+
+    final subjectSummary = <String, SubjectCostSummaryBuilder>{
+      'employee': SubjectCostSummaryBuilder(subjectType: 'employee'),
+      'guest': SubjectCostSummaryBuilder(subjectType: 'guest'),
+    };
+
+    final itemSummaryMap = <String, ItemCostSummaryBuilder>{};
+
+    int totalLines = 0;
+    int activeLines = 0;
+    int cancelledLines = 0;
+    int totalQuantity = 0;
+    double totalAmount = 0;
+    int ratedLines = 0;
+    int unratedLines = 0;
+
+    for (final doc in snapshot.docs) {
+      totalLines += 1;
+
+      final data = doc.data();
+      final status = _readText(data['status']).toLowerCase();
+      final quantity = _readInt(data['quantity']);
+      final unitRate = _readDouble(data['unit_rate']);
+      final amount = _resolveAmount(
+        explicitAmount: data['amount'],
+        unitRate: data['unit_rate'],
+        quantity: quantity,
+      );
+      final mealType = _readText(data['meal_type']).toLowerCase();
+      final itemName = _extractItemName(data);
+      final menuItemId = _extractMenuItemId(data);
+      final category = _extractCategory(data);
+      final subjectType = _extractSubjectType(data);
+
+      if (status == 'cancelled') {
+        cancelledLines += 1;
+        continue;
+      }
+
+      activeLines += 1;
+      totalQuantity += quantity;
+      totalAmount += amount;
+
+      final hasRate = unitRate > 0 || amount > 0;
+      if (hasRate) {
+        ratedLines += 1;
+      } else {
+        unratedLines += 1;
+      }
+
+      final mealBuilder = mealTypeSummary.putIfAbsent(
+        mealType,
+        () => MealTypeCostSummaryBuilder(mealType: mealType),
+      );
+      mealBuilder.lineCount += 1;
+      mealBuilder.totalQuantity += quantity;
+      mealBuilder.totalAmount += amount;
+
+      final subjectBuilder = subjectSummary.putIfAbsent(
+        subjectType,
+        () => SubjectCostSummaryBuilder(subjectType: subjectType),
+      );
+      subjectBuilder.lineCount += 1;
+      subjectBuilder.totalQuantity += quantity;
+      subjectBuilder.totalAmount += amount;
+
+      final itemKey = menuItemId.isNotEmpty
+          ? menuItemId.toLowerCase()
+          : itemName.toLowerCase();
+
+      final itemBuilder = itemSummaryMap.putIfAbsent(
+        itemKey,
+        () => ItemCostSummaryBuilder(
+          menuItemId: menuItemId,
+          itemName: itemName,
+          category: category,
+        ),
+      );
+      itemBuilder.lineCount += 1;
+      itemBuilder.totalQuantity += quantity;
+      itemBuilder.totalAmount += amount;
+      if (unitRate > 0) {
+        itemBuilder.lastUnitRate = unitRate;
+      }
+      if (mealType.isNotEmpty) {
+        itemBuilder.mealTypes.add(mealType);
+      }
+    }
+
+    final mealSummaries = mealTypeSummary.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+
+    final subjectSummaries = subjectSummary.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.subjectType.compareTo(b.subjectType));
+
+    final itemSummaries = itemSummaryMap.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+    final averageCostPerMeal =
+        totalQuantity > 0 ? (totalAmount / totalQuantity) : 0.0;
+
+    return MealCostDashboardData(
+      date: normalizedDate,
+      totalLines: totalLines,
+      activeLines: activeLines,
+      cancelledLines: cancelledLines,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      averageCostPerMeal: averageCostPerMeal,
+      ratedLines: ratedLines,
+      unratedLines: unratedLines,
+      mealTypeSummaries: mealSummaries,
+      subjectSummaries: subjectSummaries,
+      itemSummaries: itemSummaries,
+    );
+  }
+}
+
+class MealCostDashboardData {
+  final DateTime date;
+  final int totalLines;
+  final int activeLines;
+  final int cancelledLines;
+  final int totalQuantity;
+  final double totalAmount;
+  final double averageCostPerMeal;
+  final int ratedLines;
+  final int unratedLines;
+  final List<MealTypeCostSummary> mealTypeSummaries;
+  final List<SubjectCostSummary> subjectSummaries;
+  final List<ItemCostSummary> itemSummaries;
+
+  const MealCostDashboardData({
+    required this.date,
+    required this.totalLines,
+    required this.activeLines,
+    required this.cancelledLines,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.averageCostPerMeal,
+    required this.ratedLines,
+    required this.unratedLines,
+    required this.mealTypeSummaries,
+    required this.subjectSummaries,
+    required this.itemSummaries,
+  });
+}
+
+class MealTypeCostSummary {
+  final String mealType;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+
+  const MealTypeCostSummary({
+    required this.mealType,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+
+  int get displayOrder {
+    switch (mealType) {
+      case 'breakfast':
+        return 1;
+      case 'lunch':
+        return 2;
+      case 'dinner':
+        return 3;
+      default:
+        return 99;
+    }
+  }
+}
+
+class SubjectCostSummary {
+  final String subjectType;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+
+  const SubjectCostSummary({
+    required this.subjectType,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+}
+
+class ItemCostSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+  final double lastUnitRate;
+  final List<String> mealTypes;
+
+  const ItemCostSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.lastUnitRate,
+    required this.mealTypes,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+}
+
+class MealTypeCostSummaryBuilder {
+  final String mealType;
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+
+  MealTypeCostSummaryBuilder({required this.mealType});
+
+  MealTypeCostSummary build() {
+    return MealTypeCostSummary(
+      mealType: mealType,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+    );
+  }
+}
+
+class SubjectCostSummaryBuilder {
+  final String subjectType;
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+
+  SubjectCostSummaryBuilder({required this.subjectType});
+
+  SubjectCostSummary build() {
+    return SubjectCostSummary(
+      subjectType: subjectType,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+    );
+  }
+}
+
+class ItemCostSummaryBuilder {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+  double lastUnitRate = 0;
+  final Set<String> mealTypes = <String>{};
+
+  ItemCostSummaryBuilder({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+  });
+
+  ItemCostSummary build() {
+    final sortedMealTypes = mealTypes.toList()..sort();
+
+    return ItemCostSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      lastUnitRate: lastUnitRate,
+      mealTypes: sortedMealTypes,
+    );
+  }
+}
+
+===== meal_rate_management_screen.dart =====
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../services/meal_rate_service.dart';
+
+class MealRateManagementScreen extends StatefulWidget {
+  const MealRateManagementScreen({super.key});
+
+  @override
+  State<MealRateManagementScreen> createState() =>
+      _MealRateManagementScreenState();
+}
+
+class _MealRateManagementScreenState
+    extends State<MealRateManagementScreen> {
+  final MealRateService _service = MealRateService();
+
+  late DateTime _selectedDate;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  List<MealRateEntryRow> _rows = [];
+
+  final Map<String, TextEditingController> _controllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _resolveOperationalReferenceDate();
+    _loadData();
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return now.subtract(const Duration(days: 1));
+    }
+    return now;
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final rows = await _service.getRateEntryRowsForDate(_selectedDate);
+
+      for (final controller in _controllers.values) {
+        controller.dispose();
+      }
+      _controllers.clear();
+
+      for (final row in rows) {
+        _controllers[row.summary.menuItemId] = TextEditingController(
+          text: row.initialRate > 0 ? row.initialRate.toStringAsFixed(0) : '',
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _rows = rows;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _rows = [];
+        _isLoading = false;
+        _errorMessage = 'Failed to load meal rates: $e';
+      });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      await _loadData();
+    }
+  }
+
+  Future<void> _saveRates() async {
+    setState(() => _isSaving = true);
+
+    try {
+      final drafts = _rows.map((row) {
+        final controller = _controllers[row.summary.menuItemId];
+        final rate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
+
+        return MealRateDraft(
+          menuItemId: row.summary.menuItemId,
+          itemName: row.summary.itemName,
+          category: row.summary.category,
+          unitRate: rate,
+        );
+      }).toList();
+
+      await _service.saveRatesBatch(
+        rateDate: _selectedDate,
+        drafts: drafts,
+      );
+
+      await _service.applyRatesToReservationsForDate(_selectedDate);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rates saved and applied successfully')),
+      );
+
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save/apply rates: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        ElevatedButton.icon(
+          onPressed: _pickDate,
+          icon: const Icon(Icons.calendar_today),
+          label: Text(
+            DateFormat('dd MMM yyyy').format(_selectedDate),
+          ),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            'Enter Actual Rates',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Refresh',
+          onPressed: _loadData,
+          icon: const Icon(Icons.refresh),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: (_isSaving || _rows.isEmpty) ? null : _saveRates,
+          icon: const Icon(Icons.save),
+          label: _isSaving
+              ? const Text('Saving...')
+              : const Text('Save Rates'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTable() {
+    if (_rows.isEmpty) {
+      return Center(
+        child: Text(
+          'No consumption data found for ${DateFormat('dd MMM yyyy').format(_selectedDate)}',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Item')),
+          DataColumn(label: Text('Category')),
+          DataColumn(label: Text('Meal')),
+          DataColumn(label: Text('Qty')),
+          DataColumn(label: Text('Rate')),
+        ],
+        rows: _rows.map((row) {
+          final controller = _controllers[row.summary.menuItemId]!;
+
+          return DataRow(
+            cells: [
+              DataCell(Text(row.summary.itemName.isEmpty ? '—' : row.summary.itemName)),
+              DataCell(Text(row.summary.category.isEmpty ? '—' : row.summary.category)),
+              DataCell(Text(row.summary.mealType.isEmpty ? '—' : row.summary.mealType)),
+              DataCell(Text(row.summary.totalQuantity.toString())),
+              DataCell(
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: controller,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      hintText: '0',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final body = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _errorMessage != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+                  Expanded(child: _buildTable()),
+                ],
+              );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Rate Management'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: body,
+      ),
+    );
+  }
+}
+
+===== meal_cost_dashboard_screen.dart =====
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../services/meal_cost_reporting_service.dart';
+
+class MealCostDashboardScreen extends StatefulWidget {
+  const MealCostDashboardScreen({super.key});
+
+  @override
+  State<MealCostDashboardScreen> createState() =>
+      _MealCostDashboardScreenState();
+}
+
+class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
+  final MealCostReportingService _reportingService =
+      MealCostReportingService();
+
+  late DateTime _selectedDate;
+  bool _isLoading = true;
+  MealCostDashboardData? _dashboardData;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _resolveOperationalReferenceDate();
+    _loadDashboard();
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return now.subtract(const Duration(days: 1));
+    }
+    return now;
+  }
+
+  Future<void> _loadDashboard() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final data = await _reportingService.getDailyDashboard(_selectedDate);
+
+      if (!mounted) return;
+
+      setState(() {
+        _dashboardData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _dashboardData = null;
+        _isLoading = false;
+        _errorMessage = 'Failed to load cost dashboard: $e';
+      });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 90)),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+    });
+
+    await _loadDashboard();
+  }
+
+  String _formatDate(DateTime value) {
+    return DateFormat('dd MMM yyyy').format(value);
+  }
+
+  String _formatCurrency(double value) {
+    return value.toStringAsFixed(2);
+  }
+
+  String _labelize(String value) {
+    if (value.trim().isEmpty) return '—';
+
+    return value
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((part) {
+          if (part.isEmpty) return part;
+          return part[0].toUpperCase() + part.substring(1);
+        })
+        .join(' ');
+  }
+
+  Color _summaryCardColor(BuildContext context, int index) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (index % 4) {
+      case 0:
+        return scheme.primaryContainer;
+      case 1:
+        return scheme.secondaryContainer;
+      case 2:
+        return scheme.tertiaryContainer;
+      default:
+        return scheme.surfaceContainerHighest;
+    }
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        ElevatedButton.icon(
+          onPressed: _pickDate,
+          icon: const Icon(Icons.calendar_today),
+          label: Text(_formatDate(_selectedDate)),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            'Daily Meal Cost Dashboard',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: _loadDashboard,
+          tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryCards(MealCostDashboardData data) {
+    final cards = <_SummaryCardData>[
+      _SummaryCardData(
+        title: 'Total Amount',
+        value: _formatCurrency(data.totalAmount),
+        subtitle: 'PKR',
+        icon: Icons.payments_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Total Quantity',
+        value: '${data.totalQuantity}',
+        subtitle: 'meal units',
+        icon: Icons.restaurant_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Avg Cost / Unit',
+        value: _formatCurrency(data.averageCostPerMeal),
+        subtitle: 'PKR',
+        icon: Icons.calculate_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Active Lines',
+        value: '${data.activeLines}',
+        subtitle: 'reservations',
+        icon: Icons.receipt_long_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Rated Lines',
+        value: '${data.ratedLines}',
+        subtitle: 'costed',
+        icon: Icons.check_circle_outline,
+      ),
+      _SummaryCardData(
+        title: 'Unrated Lines',
+        value: '${data.unratedLines}',
+        subtitle: 'pending rate',
+        icon: Icons.pending_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Cancelled Lines',
+        value: '${data.cancelledLines}',
+        subtitle: 'ignored',
+        icon: Icons.cancel_outlined,
+      ),
+      _SummaryCardData(
+        title: 'Total Lines',
+        value: '${data.totalLines}',
+        subtitle: 'all records',
+        icon: Icons.format_list_numbered,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        int crossAxisCount = 1;
+        double childAspectRatio = 2.8;
+
+        if (width >= 1200) {
+          crossAxisCount = 4;
+          childAspectRatio = 2.3;
+        } else if (width >= 800) {
+          crossAxisCount = 3;
+          childAspectRatio = 2.2;
+        } else if (width >= 500) {
+          crossAxisCount = 2;
+          childAspectRatio = 2.0;
+        }
+
+        return GridView.builder(
+          itemCount: cards.length,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: childAspectRatio,
+          ),
+          itemBuilder: (context, index) {
+            final card = cards[index];
+
+            return Card(
+              color: _summaryCardColor(context, index),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(card.icon, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            card.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            card.value,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            card.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMealTypeSection(MealCostDashboardData data) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Meal-wise Costing',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Meal')),
+                  DataColumn(label: Text('Lines')),
+                  DataColumn(label: Text('Qty')),
+                  DataColumn(label: Text('Amount (PKR)')),
+                  DataColumn(label: Text('Avg / Unit')),
+                ],
+                rows: data.mealTypeSummaries.map((entry) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(_labelize(entry.mealType))),
+                      DataCell(Text('${entry.lineCount}')),
+                      DataCell(Text('${entry.totalQuantity}')),
+                      DataCell(Text(_formatCurrency(entry.totalAmount))),
+                      DataCell(Text(_formatCurrency(entry.averageCostPerUnit))),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubjectSection(MealCostDashboardData data) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Employee vs Guest Costing',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Subject')),
+                  DataColumn(label: Text('Lines')),
+                  DataColumn(label: Text('Qty')),
+                  DataColumn(label: Text('Amount (PKR)')),
+                  DataColumn(label: Text('Avg / Unit')),
+                ],
+                rows: data.subjectSummaries.map((entry) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(_labelize(entry.subjectType))),
+                      DataCell(Text('${entry.lineCount}')),
+                      DataCell(Text('${entry.totalQuantity}')),
+                      DataCell(Text(_formatCurrency(entry.totalAmount))),
+                      DataCell(Text(_formatCurrency(entry.averageCostPerUnit))),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemSection(MealCostDashboardData data) {
+    final items = data.itemSummaries;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Item-wise Costing',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Sorted by total amount (highest first)',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).textTheme.bodySmall?.color,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  'No item-wise cost data found for ${_formatDate(_selectedDate)}.',
+                ),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Item')),
+                    DataColumn(label: Text('Category')),
+                    DataColumn(label: Text('Meal Types')),
+                    DataColumn(label: Text('Lines')),
+                    DataColumn(label: Text('Qty')),
+                    DataColumn(label: Text('Last Rate')),
+                    DataColumn(label: Text('Total Amount')),
+                    DataColumn(label: Text('Avg / Unit')),
+                  ],
+                  rows: items.map((entry) {
+                    return DataRow(
+                      cells: [
+                        DataCell(Text(entry.itemName.isEmpty ? '—' : entry.itemName)),
+                        DataCell(Text(entry.category.isEmpty ? '—' : entry.category)),
+                        DataCell(Text(
+                          entry.mealTypes.isEmpty
+                              ? '—'
+                              : entry.mealTypes.map(_labelize).join(', '),
+                        )),
+                        DataCell(Text('${entry.lineCount}')),
+                        DataCell(Text('${entry.totalQuantity}')),
+                        DataCell(Text(_formatCurrency(entry.lastUnitRate))),
+                        DataCell(Text(_formatCurrency(entry.totalAmount))),
+                        DataCell(Text(_formatCurrency(entry.averageCostPerUnit))),
+                      ],
+                    );
+                  }).toList(),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    final data = _dashboardData;
+
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    if (data == null) {
+      return Center(
+        child: Text(
+          'No dashboard data available for ${_formatDate(_selectedDate)}.',
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(),
+          const SizedBox(height: 16),
+          _buildSummaryCards(data),
+          const SizedBox(height: 16),
+          _buildMealTypeSection(data),
+          const SizedBox(height: 16),
+          _buildSubjectSection(data),
+          const SizedBox(height: 16),
+          _buildItemSection(data),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Cost Dashboard'),
+      ),
+      body: _buildBody(),
+    );
+  }
+}
+
+class _SummaryCardData {
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+
+  const _SummaryCardData({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+  });
+}

@@ -6,7 +6,21 @@ import '../../models/resolved_meal_option.dart';
 class MenuResolverService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<Map<String, dynamic>?> getMenuForDate(DateTime date) async {
+  final Map<String, Map<String, dynamic>?> _rawMenuCacheByDate = {};
+  final Map<String, DailyResolvedMenu?> _bookingMenuCacheByDate = {};
+  final Map<String, Map<String, dynamic>?> _templateCacheById = {};
+  final Map<String, Map<String, dynamic>?> _menuItemCacheById = {};
+
+  Future<Map<String, dynamic>?> getMenuForDate(
+    DateTime date, {
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = _dateCacheKey(date);
+
+    if (!forceRefresh && _rawMenuCacheByDate.containsKey(cacheKey)) {
+      return _rawMenuCacheByDate[cacheKey];
+    }
+
     final cycleQuery = await _firestore
         .collection('menu_cycles')
         .where('is_active', isEqualTo: true)
@@ -14,6 +28,7 @@ class MenuResolverService {
         .get();
 
     if (cycleQuery.docs.isEmpty) {
+      _rawMenuCacheByDate[cacheKey] = null;
       return null;
     }
 
@@ -40,6 +55,7 @@ class MenuResolverService {
     }
 
     if (matchedCycle == null) {
+      _rawMenuCacheByDate[cacheKey] = null;
       return null;
     }
 
@@ -61,29 +77,67 @@ class MenuResolverService {
     final dinnerTemplate2Id =
         (cycleData['dinner_template_2_id'] ?? '').toString().trim();
 
-    final breakfast = await _resolveTemplateItems(breakfastTemplateId, weekday);
-    final lunch1 = await _resolveTemplateItems(lunchTemplate1Id, weekday);
-    final lunch2 = await _resolveTemplateItems(lunchTemplate2Id, weekday);
-    final dinner1 = await _resolveTemplateItems(dinnerTemplate1Id, weekday);
-    final dinner2 = await _resolveTemplateItems(dinnerTemplate2Id, weekday);
+    final futures = await Future.wait<List<Map<String, dynamic>>>([
+      _resolveTemplateItems(
+        breakfastTemplateId,
+        weekday,
+        forceRefresh: forceRefresh,
+      ),
+      _resolveTemplateItems(
+        lunchTemplate1Id,
+        weekday,
+        forceRefresh: forceRefresh,
+      ),
+      _resolveTemplateItems(
+        lunchTemplate2Id,
+        weekday,
+        forceRefresh: forceRefresh,
+      ),
+      _resolveTemplateItems(
+        dinnerTemplate1Id,
+        weekday,
+        forceRefresh: forceRefresh,
+      ),
+      _resolveTemplateItems(
+        dinnerTemplate2Id,
+        weekday,
+        forceRefresh: forceRefresh,
+      ),
+    ]);
 
-    return {
+    final rawMenu = <String, dynamic>{
       'date': date.toIso8601String(),
       'weekday': weekday,
       'cycle_id': matchedCycle.id,
       'cycle_name': (cycleData['cycle_name'] ?? '').toString(),
-      'breakfast': breakfast,
-      'lunch_template_1': lunch1,
-      'lunch_template_2': lunch2,
-      'dinner_template_1': dinner1,
-      'dinner_template_2': dinner2,
+      'breakfast': futures[0],
+      'lunch_template_1': futures[1],
+      'lunch_template_2': futures[2],
+      'dinner_template_1': futures[3],
+      'dinner_template_2': futures[4],
     };
+
+    _rawMenuCacheByDate[cacheKey] = rawMenu;
+    return rawMenu;
   }
 
-  Future<DailyResolvedMenu?> getBookingMenuForDate(DateTime date) async {
-    final rawMenu = await getMenuForDate(date);
+  Future<DailyResolvedMenu?> getBookingMenuForDate(
+    DateTime date, {
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = _dateCacheKey(date);
+
+    if (!forceRefresh && _bookingMenuCacheByDate.containsKey(cacheKey)) {
+      return _bookingMenuCacheByDate[cacheKey];
+    }
+
+    final rawMenu = await getMenuForDate(
+      date,
+      forceRefresh: forceRefresh,
+    );
 
     if (rawMenu == null) {
+      _bookingMenuCacheByDate[cacheKey] = null;
       return null;
     }
 
@@ -147,13 +201,29 @@ class MenuResolverService {
       );
     }
 
-    return DailyResolvedMenu(
+    final resolvedMenu = DailyResolvedMenu(
       weekday: weekday,
       cycleName: cycleName,
       breakfastOptions: breakfastOptions,
       lunchOptions: lunchOptions,
       dinnerOptions: dinnerOptions,
     );
+
+    _bookingMenuCacheByDate[cacheKey] = resolvedMenu;
+    return resolvedMenu;
+  }
+
+  void clearAllCaches() {
+    _rawMenuCacheByDate.clear();
+    _bookingMenuCacheByDate.clear();
+    _templateCacheById.clear();
+    _menuItemCacheById.clear();
+  }
+
+  void clearDateCache(DateTime date) {
+    final key = _dateCacheKey(date);
+    _rawMenuCacheByDate.remove(key);
+    _bookingMenuCacheByDate.remove(key);
   }
 
   ResolvedMealOption _buildOption({
@@ -177,22 +247,37 @@ class MenuResolverService {
 
   Future<List<Map<String, dynamic>>> _resolveTemplateItems(
     String? templateId,
-    String weekday,
-  ) async {
+    String weekday, {
+    bool forceRefresh = false,
+  }) async {
     if (templateId == null || templateId.trim().isEmpty) {
       return <Map<String, dynamic>>[];
     }
 
-    final templateDoc = await _firestore
-        .collection('weekly_menu_templates')
-        .doc(templateId.trim())
-        .get();
+    final trimmedTemplateId = templateId.trim();
 
-    if (!templateDoc.exists || templateDoc.data() == null) {
+    Map<String, dynamic>? templateData;
+    if (!forceRefresh && _templateCacheById.containsKey(trimmedTemplateId)) {
+      templateData = _templateCacheById[trimmedTemplateId];
+    } else {
+      final templateDoc = await _firestore
+          .collection('weekly_menu_templates')
+          .doc(trimmedTemplateId)
+          .get();
+
+      if (!templateDoc.exists || templateDoc.data() == null) {
+        _templateCacheById[trimmedTemplateId] = null;
+        return <Map<String, dynamic>>[];
+      }
+
+      templateData = Map<String, dynamic>.from(templateDoc.data()!);
+      _templateCacheById[trimmedTemplateId] = templateData;
+    }
+
+    if (templateData == null) {
       return <Map<String, dynamic>>[];
     }
 
-    final templateData = templateDoc.data()!;
     final rawItemIds = templateData[weekday];
 
     if (rawItemIds is! List || rawItemIds.isEmpty) {
@@ -207,14 +292,26 @@ class MenuResolverService {
     final resolvedItems = <Map<String, dynamic>>[];
 
     for (final itemId in itemIds) {
-      final itemDoc =
-          await _firestore.collection('menu_items').doc(itemId).get();
+      Map<String, dynamic>? itemData;
 
-      if (!itemDoc.exists || itemDoc.data() == null) {
+      if (!forceRefresh && _menuItemCacheById.containsKey(itemId)) {
+        itemData = _menuItemCacheById[itemId];
+      } else {
+        final itemDoc = await _firestore.collection('menu_items').doc(itemId).get();
+
+        if (!itemDoc.exists || itemDoc.data() == null) {
+          _menuItemCacheById[itemId] = null;
+          continue;
+        }
+
+        itemData = Map<String, dynamic>.from(itemDoc.data()!);
+        _menuItemCacheById[itemId] = itemData;
+      }
+
+      if (itemData == null) {
         continue;
       }
 
-      final itemData = itemDoc.data()!;
       final isActive = itemData['is_active'] == true ||
           (itemData['status'] ?? '').toString().trim().toLowerCase() == 'active';
 
@@ -223,8 +320,8 @@ class MenuResolverService {
       }
 
       resolvedItems.add({
-        'item_id': itemDoc.id,
-        'item_name': (itemData['item_name'] ?? itemDoc.id).toString(),
+        'item_id': itemId,
+        'item_name': (itemData['item_name'] ?? itemId).toString(),
         'category': (itemData['category'] ?? 'other').toString(),
         'estimated_price': itemData['estimated_price'] ?? 0,
       });
@@ -267,5 +364,12 @@ class MenuResolverService {
       default:
         return 'monday';
     }
+  }
+
+  String _dateCacheKey(DateTime date) {
+    final normalized = _startOfDay(date);
+    return '${normalized.year.toString().padLeft(4, '0')}-'
+        '${normalized.month.toString().padLeft(2, '0')}-'
+        '${normalized.day.toString().padLeft(2, '0')}';
   }
 }

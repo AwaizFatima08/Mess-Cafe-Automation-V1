@@ -3,6 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'admin/screens/admin_dashboard_shell.dart';
+import 'core/constants/app_constants.dart';
+import 'core/theme/app_theme.dart';
 import 'employee/screens/employee_dashboard_shell.dart';
 import 'employee/screens/employee_signup_screen.dart';
 import 'services/user_profile_service.dart';
@@ -11,21 +13,18 @@ import 'services/user_role_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  runApp(const MessCafeAutomationApp());
+  runApp(const ClubManagerApp());
 }
 
-class MessCafeAutomationApp extends StatelessWidget {
-  const MessCafeAutomationApp({super.key});
+class ClubManagerApp extends StatelessWidget {
+  const ClubManagerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Mess & Café Automation',
+      title: AppConstants.visibleAppName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: Colors.green,
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme,
       home: const AuthGate(),
     );
   }
@@ -133,6 +132,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isResetLoading = false;
   String? _errorText;
 
   @override
@@ -189,6 +189,53 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim().toLowerCase();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your registered email first.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isResetLoading = true;
+      _errorText = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password reset email sent. Please check your inbox.'),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message ?? 'Failed to send password reset email.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unexpected error while sending reset email.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResetLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> _goToSignup() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -199,27 +246,64 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mess & Café Automation'),
-      ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+          constraints: const BoxConstraints(maxWidth: 440),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      'Sign In',
-                      style: TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/images/fg_logo.png',
+                          height: 34,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const SizedBox(
+                              height: 40,
+                              width: 40,
+                            );
+                          },
+                        ),
+                        Image.asset(
+                          'assets/images/ffl_logo.png',
+                          height: 40,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const SizedBox(
+                              height: 40,
+                              width: 40,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      AppConstants.visibleAppName,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      AppConstants.loginSubtitle,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      AppConstants.signInTitle,
+                      style: theme.textTheme.titleLarge,
+                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 20),
                     TextField(
@@ -228,7 +312,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Email',
-                        border: OutlineInputBorder(),
+                        hintText: 'Enter your registered email',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -243,18 +327,37 @@ class _LoginScreenState extends State<LoginScreen> {
                       },
                       decoration: const InputDecoration(
                         labelText: 'Password',
-                        border: OutlineInputBorder(),
+                        hintText: 'Enter your password',
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: (_isLoading || _isResetLoading)
+                            ? null
+                            : _handleForgotPassword,
+                        child: _isResetLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Forgot Password?'),
                       ),
                     ),
                     if (_errorText != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         _errorText!,
-                        style: const TextStyle(color: Colors.red),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w600,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ],
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -276,6 +379,39 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text('Sign Up'),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    Column(
+                      children: [
+                        Text(
+                          'Creative Team:',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Awaiz Fatima',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Dr. Humayun Shahzad',
+                          style: theme.textTheme.bodySmall?.copyWith(                                   
+                            color: AppColors.textSecondary,
+                          ),
+                        ),  
+                        const SizedBox(height: 2),
+                        Text(
+                          'Raja Ghazanfar Ansari',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -296,6 +432,8 @@ class _LoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: Center(
         child: Card(
@@ -306,7 +444,11 @@ class _LoadingScreen extends StatelessWidget {
               children: [
                 const CircularProgressIndicator(),
                 const SizedBox(height: 16),
-                Text(message),
+                Text(
+                  message,
+                  style: theme.textTheme.bodyLarge,
+                  textAlign: TextAlign.center,
+                ),
               ],
             ),
           ),
@@ -331,6 +473,8 @@ class _AccessBlockedScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -345,15 +489,13 @@ class _AccessBlockedScreen extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: theme.textTheme.headlineMedium,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 12),
                     Text(
                       message,
+                      style: theme.textTheme.bodyMedium,
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 18),

@@ -1,0 +1,861 @@
+===== notification_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class NotificationService {
+  NotificationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _notificationsRef =>
+      _firestore.collection('notifications');
+
+  CollectionReference<Map<String, dynamic>> get _deliveriesRef =>
+      _firestore.collection('notification_deliveries');
+
+  Stream<int> unreadCountStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> userDeliveriesStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> eventInvitationPopupStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('type', isEqualTo: 'event_invitation')
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> adminNotificationsStream() {
+    return _notificationsRef
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Future<void> markDeliveryAsRead({
+    required String deliveryId,
+  }) async {
+    final docRef = _deliveriesRef.doc(deliveryId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final currentStatus =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+
+    if (currentStatus == 'read' || currentStatus == 'archived') {
+      return;
+    }
+
+    await docRef.update({
+      'in_app_status': 'read',
+      'read_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+    });
+  }
+
+  Future<void> markAllVisibleAsRead({
+    required String userUid,
+  }) async {
+    final snapshot = await _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .get();
+
+    if (snapshot.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    final now = Timestamp.now();
+
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'in_app_status': 'read',
+        'read_at': now,
+        'updated_at': now,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> acknowledgePopup({
+    required String deliveryId,
+  }) async {
+    final docRef = _deliveriesRef.doc(deliveryId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final currentStatus =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+
+    await docRef.update({
+      'popup_acknowledged_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+      if (currentStatus == 'pending') 'in_app_status': 'visible',
+      if (currentStatus == 'pending') 'in_app_visible_at': Timestamp.now(),
+    });
+  }
+
+  Future<String> createAdministrativeNotification({
+    required String type,
+    required String title,
+    required String body,
+    required String createdByUid,
+    String? createdByName,
+    String targetType = 'all_employees',
+    List<String>? targetUserUids,
+    bool sendInApp = true,
+    bool sendPush = true,
+    bool sendEmail = true,
+    bool requiresReview = true,
+    String reviewStatus = 'approved',
+    String? reviewedByUid,
+    String? contextType,
+    String? contextId,
+    String priority = 'normal',
+    String status = 'published',
+    String triggerSource = 'admin_manual',
+    Timestamp? publishAt,
+    Timestamp? expiresAt,
+  }) async {
+    final docRef = _notificationsRef.doc();
+    final now = Timestamp.now();
+
+    final normalizedTargets = (targetUserUids ?? <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    final payload = <String, dynamic>{
+      'notification_id': docRef.id,
+      'notification_layer': 'administrative',
+      'type': type.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+      'short_message': title.trim(),
+      'status': status.trim().isEmpty ? 'published' : status.trim(),
+      'priority': priority.trim().isEmpty ? 'normal' : priority.trim(),
+      'target_type': targetType.trim().isEmpty ? 'all_employees' : targetType,
+      'target_user_uid': null,
+      'target_user_uids': normalizedTargets,
+      'send_in_app': sendInApp,
+      'send_push': sendPush,
+      'send_email': sendEmail,
+      'created_by_uid': createdByUid.trim(),
+      'created_by_name': createdByName?.trim() ?? '',
+      'trigger_source': triggerSource.trim().isEmpty
+          ? 'admin_manual'
+          : triggerSource.trim(),
+      'requires_review': requiresReview,
+      'review_status':
+          reviewStatus.trim().isEmpty ? 'approved' : reviewStatus.trim(),
+      'reviewed_by_uid': reviewedByUid?.trim() ?? '',
+      'reviewed_at':
+          requiresReview && reviewStatus.trim().toLowerCase() == 'approved'
+              ? now
+              : null,
+      'context_type': contextType?.trim() ?? '',
+      'context_id': contextId?.trim() ?? '',
+      'email_subject': title.trim(),
+      'email_body': body.trim(),
+      'push_title': title.trim(),
+      'push_body': body.trim(),
+      'publish_at': publishAt,
+      'published_at': status.trim().toLowerCase() == 'draft' ? null : now,
+      'expires_at': expiresAt,
+      'delivery_count_total': 0,
+      'delivery_count_in_app': 0,
+      'delivery_count_push_sent': 0,
+      'delivery_count_push_failed': 0,
+      'delivery_count_email_sent': 0,
+      'delivery_count_email_failed': 0,
+      'created_at': now,
+      'updated_at': now,
+    };
+
+    await docRef.set(payload);
+    return docRef.id;
+  }
+
+  Future<String> createTransactionalNotification({
+    required String type,
+    required String title,
+    required String body,
+    required String userUid,
+    String? employeeNumber,
+    String? employeeName,
+    String? email,
+    required String contextType,
+    required String contextId,
+    String triggerSource = 'reservation_service',
+    bool sendInApp = true,
+    bool sendPush = true,
+    bool sendEmail = true,
+    String priority = 'normal',
+  }) async {
+    final notificationRef = _notificationsRef.doc();
+    final deliveryRef = _deliveriesRef.doc();
+    final now = Timestamp.now();
+
+    final batch = _firestore.batch();
+
+    batch.set(notificationRef, {
+      'notification_id': notificationRef.id,
+      'notification_layer': 'transactional',
+      'type': type.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+      'short_message': title.trim(),
+      'status': 'completed',
+      'priority': priority.trim().isEmpty ? 'normal' : priority.trim(),
+      'target_type': 'single_user',
+      'target_user_uid': userUid.trim(),
+      'target_user_uids': <String>[],
+      'send_in_app': sendInApp,
+      'send_push': sendPush,
+      'send_email': sendEmail,
+      'created_by_uid': '',
+      'created_by_name': '',
+      'trigger_source': triggerSource.trim().isEmpty
+          ? 'reservation_service'
+          : triggerSource.trim(),
+      'requires_review': false,
+      'review_status': 'not_required',
+      'reviewed_by_uid': '',
+      'reviewed_at': null,
+      'context_type': contextType.trim(),
+      'context_id': contextId.trim(),
+      'email_subject': title.trim(),
+      'email_body': body.trim(),
+      'push_title': title.trim(),
+      'push_body': body.trim(),
+      'publish_at': now,
+      'published_at': now,
+      'expires_at': null,
+      'delivery_count_total': 1,
+      'delivery_count_in_app': sendInApp ? 1 : 0,
+      'delivery_count_push_sent': 0,
+      'delivery_count_push_failed': 0,
+      'delivery_count_email_sent': 0,
+      'delivery_count_email_failed': 0,
+      'created_at': now,
+      'updated_at': now,
+    });
+
+    batch.set(deliveryRef, {
+      'delivery_id': deliveryRef.id,
+      'notification_id': notificationRef.id,
+      'user_uid': userUid.trim(),
+      'employee_number': employeeNumber?.trim() ?? '',
+      'employee_name': employeeName?.trim() ?? '',
+      'email': email?.trim() ?? '',
+      'notification_layer': 'transactional',
+      'type': type.trim(),
+      'in_app_enabled': sendInApp,
+      'push_enabled': sendPush,
+      'email_enabled': sendEmail,
+      'in_app_status': sendInApp ? 'visible' : 'skipped',
+      'push_status': sendPush ? 'pending' : 'skipped',
+      'email_status': sendEmail ? 'pending' : 'skipped',
+      'push_sent_at': null,
+      'email_sent_at': null,
+      'in_app_visible_at': sendInApp ? now : null,
+      'read_at': null,
+      'archived_at': null,
+      'popup_acknowledged_at': null,
+      'failure_reason_push': '',
+      'failure_reason_email': '',
+      'title_snapshot': title.trim(),
+      'body_snapshot': body.trim(),
+      'context_type': contextType.trim(),
+      'context_id': contextId.trim(),
+      'created_at': now,
+      'updated_at': now,
+    });
+
+    await batch.commit();
+    return notificationRef.id;
+  }
+
+  Future<void> createBookingConfirmedNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_booking_confirmed',
+      title: 'Meal Booking Confirmed',
+      body: 'Your $mealLabel booking for $dateLabel has been confirmed.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'reservation',
+      contextId: reservationId,
+      triggerSource: 'reservation_service',
+    );
+  }
+
+  Future<void> createBookingCancelledNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_booking_cancelled',
+      title: 'Meal Booking Cancelled',
+      body: 'Your $mealLabel booking for $dateLabel has been cancelled.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'reservation',
+      contextId: reservationId,
+      triggerSource: 'reservation_service',
+    );
+  }
+
+  Future<void> createMealIssuedNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_issued',
+      title: 'Meal Issued',
+      body: 'Your $mealLabel booking for $dateLabel has been issued.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'meal_issuance',
+      contextId: reservationId,
+      triggerSource: 'meal_issuance_service',
+    );
+  }
+
+  String _mealLabel(String mealType) {
+    switch (mealType.trim().toLowerCase()) {
+      case 'breakfast':
+        return 'breakfast';
+      case 'lunch':
+        return 'lunch';
+      case 'dinner':
+        return 'dinner';
+      default:
+        return mealType.trim().toLowerCase();
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$day-$month-$year';
+  }
+}
+
+===== notifications_screen.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../../employee/screens/event_invitation_detail_screen.dart';
+import '../../services/notification_service.dart';
+
+class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({
+    super.key,
+    required this.userUid,
+    this.isAdminView = false,
+  });
+
+  final String userUid;
+  final bool isAdminView;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isAdminView) {
+      return _AdminNotificationsScreen(userUid: userUid);
+    }
+
+    return _EmployeeNotificationsScreen(userUid: userUid);
+  }
+}
+
+class _EmployeeNotificationsScreen extends StatefulWidget {
+  const _EmployeeNotificationsScreen({
+    required this.userUid,
+  });
+
+  final String userUid;
+
+  @override
+  State<_EmployeeNotificationsScreen> createState() =>
+      _EmployeeNotificationsScreenState();
+}
+
+class _EmployeeNotificationsScreenState
+    extends State<_EmployeeNotificationsScreen> {
+  final NotificationService _notificationService = NotificationService();
+  bool _markingAll = false;
+
+  Future<void> _markAllAsRead() async {
+    setState(() {
+      _markingAll = true;
+    });
+
+    try {
+      await _notificationService.markAllVisibleAsRead(
+        userUid: widget.userUid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All visible notifications marked as read.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to mark all as read: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _markingAll = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _markSingleAsRead(String deliveryId) async {
+    try {
+      await _notificationService.markDeliveryAsRead(deliveryId: deliveryId);
+    } catch (_) {}
+  }
+
+  Future<void> _handleNotificationTap(
+    Map<String, dynamic> data,
+    String deliveryId,
+  ) async {
+    final type = (data['type'] ?? '').toString().trim();
+    final status =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+    final isUnread = status == 'pending' || status == 'visible';
+
+    if (isUnread) {
+      await _markSingleAsRead(deliveryId);
+    }
+
+    if (!mounted) return;
+
+    if (type == 'event_invitation') {
+      final eventId = (data['context_id'] ?? data['reference_id'] ?? '')
+          .toString()
+          .trim();
+      final employeeNumber =
+          (data['employee_number'] ?? '').toString().trim();
+      final employeeName = (data['employee_name'] ?? '').toString().trim();
+
+      if (eventId.isEmpty || employeeNumber.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Event details are incomplete for this notification.'),
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventInvitationDetailScreen(
+            eventId: eventId,
+            userUid: widget.userUid,
+            employeeNumber: employeeNumber,
+            employeeName:
+                employeeName.isEmpty ? employeeNumber : employeeName,
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('This notification does not have a linked screen yet.'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        actions: [
+          TextButton.icon(
+            onPressed: _markingAll ? null : _markAllAsRead,
+            icon: _markingAll
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.done_all),
+            label: const Text('Mark all read'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _notificationService.userDeliveriesStream(
+          userUid: widget.userUid,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Failed to load notifications: ${snapshot.error}'),
+              ),
+            );
+          }
+
+          final docs = snapshot.data?.docs ?? const [];
+
+          if (docs.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No notifications available yet.'),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            itemCount: docs.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data();
+
+              final title = (data['title_snapshot'] ?? '').toString().trim();
+              final body = (data['body_snapshot'] ?? '').toString().trim();
+              final type = (data['type'] ?? '').toString().trim();
+              final status =
+                  (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+              final isUnread = status == 'pending' || status == 'visible';
+              final createdAt = data['created_at'];
+              final createdAtLabel = _formatTimestamp(createdAt);
+
+              return ListTile(
+                tileColor: isUnread
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : null,
+                leading: CircleAvatar(
+                  child: Icon(_iconForType(type)),
+                ),
+                title: Text(
+                  title.isEmpty ? 'Notification' : title,
+                  style: TextStyle(
+                    fontWeight: isUnread ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(body),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      createdAtLabel,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                trailing: isUnread
+                    ? const Icon(Icons.mark_email_unread_outlined)
+                    : const Icon(Icons.done),
+                onTap: () => _handleNotificationTap(data, doc.id),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatTimestamp(dynamic value) {
+    if (value is Timestamp) {
+      final dt = value.toDate();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year.toString();
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day-$month-$year $hour:$minute';
+    }
+    return 'Unknown time';
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'meal_booking_confirmed':
+        return Icons.check_circle_outline;
+      case 'meal_booking_cancelled':
+        return Icons.cancel_outlined;
+      case 'meal_issued':
+        return Icons.restaurant_outlined;
+      case 'menu_item_announcement':
+        return Icons.restaurant_menu_outlined;
+      case 'menu_cycle_announcement':
+        return Icons.calendar_month_outlined;
+      case 'special_event_announcement':
+        return Icons.event_outlined;
+      case 'club_announcement':
+        return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+}
+
+class _AdminNotificationsScreen extends StatelessWidget {
+  const _AdminNotificationsScreen({
+    required this.userUid,
+  });
+
+  final String userUid;
+
+  @override
+  Widget build(BuildContext context) {
+    final NotificationService notificationService = NotificationService();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notification History'),
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: notificationService.adminNotificationsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load notification history: ${snapshot.error}',
+                ),
+              ),
+            );
+          }
+
+          final docs = snapshot.data?.docs ?? const [];
+
+          if (docs.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No notifications available yet.'),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            itemCount: docs.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final data = docs[index].data();
+              final title = (data['title'] ?? '').toString().trim();
+              final body = (data['body'] ?? '').toString().trim();
+              final type = (data['type'] ?? '').toString().trim();
+              final layer =
+                  (data['notification_layer'] ?? '').toString().trim();
+              final status = (data['status'] ?? '').toString().trim();
+              final createdAtLabel = _formatTimestamp(data['created_at']);
+
+              return ListTile(
+                leading: CircleAvatar(
+                  child: Icon(_iconForType(type)),
+                ),
+                title: Text(title.isEmpty ? 'Notification' : title),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(body),
+                    ],
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        _pill(context, layer.isEmpty ? 'unknown' : layer),
+                        _pill(context, status.isEmpty ? 'unknown' : status),
+                        _pill(context, createdAtLabel),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatTimestamp(dynamic value) {
+    if (value is Timestamp) {
+      final dt = value.toDate();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year.toString();
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day-$month-$year $hour:$minute';
+    }
+    return 'Unknown time';
+  }
+
+  Widget _pill(BuildContext context, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label),
+    );
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'meal_booking_confirmed':
+        return Icons.check_circle_outline;
+      case 'meal_booking_cancelled':
+        return Icons.cancel_outlined;
+      case 'meal_issued':
+        return Icons.restaurant_outlined;
+      case 'menu_item_announcement':
+        return Icons.restaurant_menu_outlined;
+      case 'menu_cycle_announcement':
+        return Icons.calendar_month_outlined;
+      case 'special_event_announcement':
+        return Icons.event_outlined;
+      case 'club_announcement':
+        return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+}
+
+===== notification_badge.dart =====
+import 'package:flutter/material.dart';
+
+class NotificationBadge extends StatelessWidget {
+  const NotificationBadge({
+    super.key,
+    required this.count,
+    this.child,
+  });
+
+  final int count;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final display = count > 99 ? '99+' : count.toString();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child ?? const Icon(Icons.notifications_outlined),
+        if (count > 0)
+          Positioned(
+            right: -6,
+            top: -6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              constraints: const BoxConstraints(minWidth: 18),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                display,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onError,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}

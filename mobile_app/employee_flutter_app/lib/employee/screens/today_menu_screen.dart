@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../admin/services/menu_resolver_service.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../../models/daily_resolved_menu.dart';
 import '../../models/resolved_meal_option.dart';
 import '../../services/employee_identity_service.dart';
@@ -55,12 +57,6 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     'dinner': <QueryDocumentSnapshot<Map<String, dynamic>>>[],
   };
 
-  final Map<String, bool> _isEditModeByMeal = {
-    'breakfast': false,
-    'lunch': false,
-    'dinner': false,
-  };
-
   @override
   void initState() {
     super.initState();
@@ -90,7 +86,11 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       }
 
       final results = await Future.wait<dynamic>([
-        _menuResolverService.getBookingMenuForDate(normalizedDate),
+        _menuResolverService.getBookingMenuForDate(
+          normalizedDate,
+          forceRefresh: forceRefresh,
+        ),
+
         _userProfileService.resolveCurrentUserProfile(authUid: authUser.uid),
         _employeeIdentityService.resolveByAuthUid(authUser.uid),
       ]);
@@ -410,7 +410,6 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
 
       setState(() {
         _draftsByMeal[mealType]!.clear();
-        _isEditModeByMeal[mealType] = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -514,57 +513,94 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     }
   }
 
-  Widget _buildDateSelectorCard() {
-    return Card(
+  Widget _buildHeroCard() {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        gradient: const LinearGradient(
+          colors: [
+            AppColors.primary,
+            AppColors.primaryDark,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Wrap(
-          runSpacing: 12,
+          runSpacing: AppSpacing.md,
+          spacing: AppSpacing.lg,
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Today Menu Reservation',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Signed in as: ${widget.userEmail}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Reservation Date: ${_formatDate(_selectedDate)}',
-                  style: const TextStyle(fontSize: 14),
-                ),
-                if (_dailyMenu != null) ...[
-                  const SizedBox(height: 4),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    'Cycle: ${_dailyMenu!.cycleName} • ${_dailyMenu!.weekday}',
-                    style: const TextStyle(fontSize: 14),
+                    AppConstants.visibleAppName,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
                   ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Meal Reservation',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Signed in as: ${widget.userEmail}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Reservation Date: ${_formatDate(_selectedDate)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  if (_dailyMenu != null) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Cycle: ${_dailyMenu!.cycleName} • ${_dailyMenu!.weekday}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.86),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
                 OutlinedButton.icon(
                   onPressed: _isSaving ? null : _pickDate,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   icon: const Icon(Icons.calendar_month_outlined),
                   label: const Text('Select Date'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: _isSaving
-                      ? null
-                      : () => _loadScreenData(forceRefresh: true),
+                  onPressed:
+                      _isSaving ? null : () => _loadScreenData(forceRefresh: true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.primary,
+                  ),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Refresh'),
                 ),
@@ -577,43 +613,55 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   }
 
   Widget _buildIdentityCard() {
+    final theme = Theme.of(context);
     final identity = _identityResult;
     final employeeNumber = identity?.employeeNumber?.trim() ?? '';
     final employeeName = (_userProfile?.employeeName ?? '').trim();
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Identity & Booking Status',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: theme.textTheme.titleLarge,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             _SummaryRow(
               label: 'Employee Name',
               value: employeeName.isEmpty ? '—' : employeeName,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             _SummaryRow(
               label: 'Employee Number',
               value: employeeNumber.isEmpty ? '—' : employeeNumber,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             _SummaryRow(
               label: 'Profile Role',
               value: _userProfile?.roleLabel ?? '—',
             ),
             if (_identityWarning != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _identityWarning!,
-                style: const TextStyle(color: Colors.red),
+              const SizedBox(height: AppSpacing.md),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Text(
+                  _identityWarning!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ],
@@ -624,27 +672,36 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
 
   Widget _buildOptionTile(String mealType, ResolvedMealOption option) {
     final draft = _draftFor(mealType, option.optionKey);
+    final isPreferredMode = widget.initialDiningMode == 'takeaway';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppRadii.lg),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               option.optionLabel,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 6),
-            Text(_buildItemsSummary(option)),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              _buildItemsSummary(option),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
                 Expanded(
                   child: _QuantityEditor(
                     label: 'Dine In',
                     value: draft.dineInQuantity,
+                    highlighted: !isPreferredMode,
                     onChanged: (value) {
                       _setDraftQuantity(
                         mealType: mealType,
@@ -655,11 +712,12 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: _QuantityEditor(
                     label: 'Takeaway',
                     value: draft.takeawayQuantity,
+                    highlighted: isPreferredMode,
                     onChanged: (value) {
                       _setDraftQuantity(
                         mealType: mealType,
@@ -695,28 +753,49 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
         final issued = data['is_issued'] == true;
         final createdAt = _formatDateTime(data['created_at']);
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 8),
-          color: issued ? Colors.green.withValues(alpha: 0.06) : null,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  option.isEmpty ? 'Reserved option' : option,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text('Dining Mode: ${_modeLabel(mode)}'),
-                const SizedBox(height: 4),
-                Text('Quantity: $qty'),
-                const SizedBox(height: 4),
-                Text('Status: ${issued ? 'Issued' : status}'),
-                const SizedBox(height: 4),
-                Text('Created At: $createdAt'),
-              ],
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: issued
+                ? AppColors.success.withValues(alpha: 0.08)
+                : AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            border: Border.all(
+              color: issued
+                  ? AppColors.success.withValues(alpha: 0.2)
+                  : AppColors.border,
             ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                option.isEmpty ? 'Reserved option' : option,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Dining Mode: ${_modeLabel(mode)}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Quantity: $qty',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Status: ${issued ? 'Issued' : status}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Created At: $createdAt',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
         );
       }).toList(),
@@ -778,6 +857,7 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   }
 
   Widget _buildMealCard(String mealType) {
+    final theme = Theme.of(context);
     final options = _optionsForMeal(mealType);
     final hasExistingReservation =
         _existingReservationsByMeal[mealType]!.isNotEmpty;
@@ -809,30 +889,41 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       );
     }
 
+    final icon = mealType == 'breakfast'
+        ? Icons.free_breakfast_outlined
+        : mealType == 'lunch'
+            ? Icons.lunch_dining_outlined
+            : Icons.dinner_dining_outlined;
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              runSpacing: AppSpacing.sm,
+              spacing: AppSpacing.sm,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Icon(
-                  mealType == 'breakfast'
-                      ? Icons.free_breakfast_outlined
-                      : mealType == 'lunch'
-                          ? Icons.lunch_dining_outlined
-                          : Icons.dinner_dining_outlined,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _mealLabel(mealType),
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(AppRadii.md),
+                      ),
+                      child: Icon(icon, color: AppColors.primary),
                     ),
-                  ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      _mealLabel(mealType),
+                      style: theme.textTheme.titleLarge,
+                    ),
+                  ],
                 ),
                 if (hasExistingReservation)
                   Container(
@@ -841,42 +932,67 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.08),
+                      color: AppColors.info.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Reserved',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.info,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpacing.md),
             if (!hasExistingReservation && !bookingValidation.isAllowed)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
                 child: Text(
                   bookingValidation.message,
-                  style: const TextStyle(color: Colors.red),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             if (hasExistingReservation &&
                 !cancellationValidation.isAllowed &&
                 cancellationValidation.message.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
                 child: Text(
                   cancellationValidation.message,
-                  style: const TextStyle(color: Colors.orange),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             if (hasExistingReservation)
               _buildExistingReservationsSection(mealType)
             else if (options.isEmpty)
-              const Text('No menu available for this meal.')
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: Text(
+                  'No menu available for this meal.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              )
             else
-              ...options.map((option) => _buildOptionTile(mealType, option)),
-            const SizedBox(height: 16),
+              ...options.map(
+                (option) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _buildOptionTile(mealType, option),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.lg),
             _buildMealActionSection(
               mealType: mealType,
               hasExistingReservation: hasExistingReservation,
@@ -890,40 +1006,63 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+  Widget _buildLoadingView() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Reservation'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        children: [
+          _buildHeroCard(),
+          const SizedBox(height: AppSpacing.md),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xxl),
+              child: Column(
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'Loading reservation screen...',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    if (_errorMessage != null) {
-      return Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
+  Widget _buildErrorView() {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Reservation'),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(AppSpacing.xl),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
+                    Text(
                       'Menu Load Error',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: AppSpacing.md),
                     Text(
                       _errorMessage!,
                       textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     ElevatedButton.icon(
                       onPressed: () => _loadScreenData(forceRefresh: true),
                       icon: const Icon(Icons.refresh),
@@ -935,23 +1074,39 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return _buildLoadingView();
+    }
+
+    if (_errorMessage != null) {
+      return _buildErrorView();
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Reservation'),
+      ),
       body: RefreshIndicator(
+        color: AppColors.primary,
         onRefresh: () => _loadScreenData(forceRefresh: true),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           children: [
-            _buildDateSelectorCard(),
-            const SizedBox(height: 12),
+            _buildHeroCard(),
+            const SizedBox(height: AppSpacing.md),
             _buildIdentityCard(),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             _buildMealCard('breakfast'),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             _buildMealCard('lunch'),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             _buildMealCard('dinner'),
           ],
         ),
@@ -983,27 +1138,44 @@ class _MealSelectionDraft {
 class _QuantityEditor extends StatelessWidget {
   final String label;
   final int value;
+  final bool highlighted;
   final ValueChanged<int> onChanged;
 
   const _QuantityEditor({
     required this.label,
     required this.value,
     required this.onChanged,
+    this.highlighted = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.zero,
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: highlighted
+            ? AppColors.primaryLight
+            : Colors.white,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(
+          color: highlighted ? AppColors.primary : AppColors.border,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.sm,
+        ),
         child: Column(
           children: [
             Text(
               label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: highlighted ? AppColors.primary : AppColors.textPrimary,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Row(
               children: [
                 IconButton(
@@ -1014,9 +1186,8 @@ class _QuantityEditor extends StatelessWidget {
                   child: Center(
                     child: Text(
                       value.toString(),
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
@@ -1045,12 +1216,28 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: Text(label)),
-        Text(
-          value,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        Expanded(
+          child: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ],
     );

@@ -1,313 +1,297 @@
-# MESS & CAFÉ AUTOMATION V1 — MASTER PROJECT SNAPSHOT (POST PHASE 8 LOCK)
+MASTER PROJECT SNAPSHOT — VERSION 1 (POST PHASE 9 + PHASE 10 LOCK)
+🧭 Project Identity
 
-**Project Owner:** Dr. Humayun Shahzad  
-**Organization:** Fatima Fertilizer  
-**System Name:** Mess & Café Automation System  
-**Current Position:** Post Phase 8 complete, preparing for Phase 9  
-**Snapshot Purpose:** Canonical reference baseline for all future continuity, planning, and phase-wise snapshots
+Product Engine (Future): Club Manager
+V1 Deployment Name: FFL Management Club
 
----
+Organization: Fatima Fertilizer
+Owner: Dr. Humayun Shahzad
 
-## 1. Project Identity
+🎯 Version 1 Scope (LOCKED)
 
-Mess & Café Automation System — Fatima Fertilizer
-
-### Version 1 Scope (Locked)
 Mess operations only:
-- Breakfast
-- Lunch
-- Dinner
 
-### Version 1 Operating Principles
-- Employee self-service booking
-- Role-based admin/supervisor control
-- Manual operational governance where required
-- Manual rate entry for costing
-- In-app notification engine
-- Event attendance module independent of meal reservation flow
-- Firebase/Firestore cloud-first architecture
+Breakfast
+Lunch
+Dinner
+🧠 Version 1 Operating Philosophy
+Operational simplicity over automation
+Manual governance where required
+Cloud-first architecture (Firebase)
+Modular expansion path preserved
+Multi-tenant future awareness (non-intrusive in V1)
+📍 CURRENT SYSTEM STATE
+🔷 SYSTEM STATUS
 
-### Future Expansion Path
-- Café
-- Retail / tuck shop
-- Bakery / BBQ workflows
-- Procurement
-- Inventory
-- Finance / billing automation
-- Governance layer
-- Commercial multi-tenant architecture
+STABLE + FIELD-VALIDATED + ANALYTICS ENABLED + READY FOR PRODUCT FINISHING
 
----
+You now have:
 
-## 2. Current System State
+Transaction system ✔
+Operational control system ✔
+Event system ✔
+Analytics system ✔
 
-### System Classification
-**FUNCTIONAL + GOVERNED + FIELD-VALIDATED + EVENT-ENABLED + READY FOR ANALYTICS CONSOLIDATION**
+👉 System has transitioned into a decision-support platform
 
-This system is no longer a raw prototype.  
-It is now a controlled, operational, modular application with stable business flow and validated cross-module linkage.
+🧱 CORE ARCHITECTURE (LOCKED)
+Identity Model
+uid → system identity
+employee_number → business identity
+Critical Rule
 
-### Current Maturity
-- Core identity and access model stabilized
-- Reservation engine mature
-- Rate engine live
-- Cost dashboard live
-- Feedback loop live
-- Notification system live
-- Event attendance system live
-- Event report export live
-- Admin and employee workflows field tested
+employees.employee_number ↔ users.employee_number
+👉 Must never break
 
----
+Data Strategy (VERY IMPORTANT)
+Firestore = transactional source of truth
+Analytics = derived via fetch + in-memory filtering
+No heavy index dependency
+Universal timestamp parser implemented
+📊 FIRESTORE FOOTPRINT
+Core Collections
+employees
+users
+menu_items
+daily_menus
+weekly_menu_templates
+meal_reservations
+meal_rates
+meal_feedback
+notifications
+notification_deliveries
+Event Layer
+events
+event_attendance_responses
+event_attendance_summaries
+event_note_templates
+🧩 PHASE-WISE DEVELOPMENT (UPDATED)
+Phase 1 — Foundation ✅
+Flutter + Firebase setup
+Base navigation
+Phase 2 — Identity & Governance ✅
+Employee master
+Signup validation
+Approval workflow
+Role routing
+Phase 3 — Menu & Reservation Engine ✅
+Menu management
+Weekly templates
+Monthly builder
+Booking system
+Cutoff enforcement
+Quantity / dine-in / takeaway
+Phase 3.7 — Guest / Proxy ✅
+Guest booking
+Proxy booking
+Role overrides
+Phase 3.8 — Operational Dashboard ✅
+Reservation visibility
+Issuance tracking
+Segmentation
+Phase 4 — Stabilization ✅
+Query optimization
+Index alignment
+Issuance hardening
+Phase 5 — Rate Engine ✅
+Manual rate entry
+Backfill into reservations
+Phase 5.5 — Cost Reporting ✅
+Daily cost dashboard
+Cost breakdowns
+Phase 6 — Feedback System ✅
+Rating system
+Feedback dashboard
+Employee feedback loop
+Phase 7 — Notification System ✅
+In-app notifications
+Badge + history
+Admin visibility
+Phase 8 — Event Module ✅
+Event lifecycle
+Attendance tracking
+Notifications integration
+XLSX export
+Phase 9 — Analytics Engine ✅ (NEWLY COMPLETED)
+Implemented
+1. Attendance Analytics
+total attendance
+employee vs guest
+meal-wise
+trends
+2. Cost Analytics
+total cost
+per head
+guest vs employee
+trends
+3. Feedback Analytics
+rating distribution
+average rating
+KPI cards
+Phase 9 Key Architectural Decisions
+❌ Avoid complex Firestore queries
+✅ Fetch-all + filter in Dart
+✅ Universal timestamp parser
+✅ Only issued meals considered
+📁 UPDATED DART FILE INVENTORY (POST PHASE 9)
+Analytics Layer (NEW)
+Services
+lib/analytics/services/
+- attendance_analytics_service.dart
+- cost_analytics_service.dart
+- feedback_analytics_service.dart
+Models
+lib/analytics/models/
+- analytics_filter_model.dart
+- attendance_analytics_result.dart
+- cost_analytics_result.dart
+- feedback_analytics_result.dart
+UI
+lib/analytics/screens/
+- analytics_dashboard_screen.dart
+Total System (Updated)
+~60+ Dart files (expanded from 54)
+Modular architecture maintained
+🔗 INTERLINKAGE (UPDATED WITH ANALYTICS)
+analytics_dashboard_screen
+   ↓
+analytics_filter_model
+   ↓
+[attendance | cost | feedback]_analytics_service
+   ↓
+Firestore collections
+   ↓
+In-memory aggregation
+   ↓
+KPI + charts
+⚠️ LOCKED BUSINESS RULE
+if (data['is_issued'] != true) skip;
 
-## 3. Locked Architecture
+👉 Ensures:
 
-### Identity Model
-- `uid` = system identity
-- `employee_number` = business identity
+real consumption
+no over-reporting
+🚧 KNOWN LIMITATIONS (ACCEPTED)
+fetch-all strategy not scalable at large scale
+no caching layer
+no pagination
+no export (to be handled in Phase 10)
+no real-time streaming
+🎯 PHASE 10 — FINALIZED DEVELOPMENT PLAN
+Objective
 
-### Critical Linkage Rule
-- `employees.employee_number ↔ users.employee_number`
+Convert system into polished, deployable product
 
-This linkage is critical and must never be broken.
+🔹 Phase 10A — Theme & Branding
+App name → FFL Management Club
+Bright green theme
+Central theme file
+Logo integration
+Files
+lib/core/theme/app_theme.dart
+lib/core/constants/app_constants.dart
+🔹 Phase 10B — Authentication UX
+Forgot password
+Admin password reset
+Persistent login
+Files
+lib/auth/screens/login_screen.dart
+lib/services/auth_service.dart
+lib/admin/screens/user_management_screen.dart
+🔹 Phase 10C — Employee UX + Performance
+Fix slow transitions
+Smooth navigation
+Light animations
+Loading states
+Files
+lib/employee/screens/employee_dashboard_screen.dart
+lib/employee/screens/today_menu_screen.dart
+🔹 Phase 10D — Reservation Optimization (CRITICAL)
+Employee number search
+Hybrid filtering
+Sorting
+KPI header
+Files
+lib/admin/screens/dashboard_screen.dart
+lib/services/meal_reservation_service.dart
 
-### System Backbone
-Menu  
-→ Reservation  
-→ Issuance / consumption  
-→ Rate application  
-→ Cost reporting  
-→ Feedback  
-→ Notifications  
-→ Event attendance (parallel independent module)  
-→ Reporting / analytics layer
+Optional:
 
-### Design Rule
-Transactional truth must remain separate from analytical views.
+lib/widgets/reservation_filter_bar.dart
+🔹 Phase 10E — Admin Dashboard Refinement
+Scroll-friendly UI
+Dense but readable
+Clear grouping
+Files
+lib/admin/screens/admin_dashboard_shell.dart
+lib/admin/screens/dashboard_screen.dart
+🔹 Phase 10F — Performance Optimization
+parallel data fetch
+remove redundant calls
+reduce rebuilds
+preload predictable data
+🔹 Phase 10G — Export Layer
+Deliverables
+CSV export (priority)
+PDF export (secondary)
+Files
+lib/services/export_service.dart
+lib/utils/csv_generator.dart
+lib/utils/pdf_generator.dart
+⚡ PERFORMANCE PRINCIPLE
 
----
+👉 Never block UI on data fetch
 
-## 4. Current Firestore Footprint
+🔍 RESERVATION UX (FINAL MODEL)
 
-### Core Collections
-- `employees`
-- `users`
-- `menu_items`
-- `daily_menus`
-- `weekly_menu_templates`
-- `meal_reservations`
-- `meal_rates`
-- `meal_feedback`
-- `notifications`
-- `notification_deliveries`
+Top:
 
-### Event Collections
-- `events`
-- `event_attendance_responses`
-- `event_attendance_summaries`
-- `event_note_templates`
+search (employee no.)
+filters
 
-### Architecture Notes
-- Event attendance is intentionally independent from meal reservation logic
-- Notification engine is reused by event module
-- Event summary supports incremental update with fallback rebuild path
-- Export format for Phase 8 event reporting is XLSX
+Middle:
 
----
+KPI summary
 
-## 5. Phase-Wise Development Status
+Bottom:
 
-## Phase 1 — Foundation ✅
-Completed:
-- Flutter app base
-- Firebase integration
-- Firebase Authentication
-- Base admin/employee navigation
-- Firestore connectivity
+optimized list
+🔐 AUTH MODEL (FINAL)
+email-based identity (hidden)
+forgot password
+admin reset
+persistent login
+🚀 DEVELOPMENT ROADMAP (UPDATED)
+Remaining V1 Phases
+Phase 10 — UI + UX + Performance (CURRENT)
+Phase 11 — Security Hardening
+Phase 12 — Controlled Testing
+Phase 13 — Production Launch
+🔮 POST V1 ROADMAP
+Version 2
+Café
+BBQ
+Tuck shop
+Version 3
+Inventory
+Procurement
+Version 4
+Recipe costing
+Version 5
+Billing automation
+Version 6
+Full hospitality platform
+🧱 STRATEGIC POSITION
 
-## Phase 2 — Identity & Governance Alignment ✅
-Completed:
-- Employee master concept established
-- Signup validation against employee records
-- Approval workflow
-- Role assignment and role enforcement
-- User identity alignment with business identity
+You now have:
 
-## Phase 3 — Menu & Reservation Core ✅
-Completed:
-- Menu item management
-- Weekly template engine
-- Monthly menu builder
-- Menu cycle handling
-- Daily/active menu resolution
-- Employee meal booking
-- Future booking
-- Dine-in / takeaway
-- Quantity handling
-- Cutoff enforcement
+👉 Operational System → Analytical System → Product Layer (in progress)
 
-### Phase 3.7 — Guest / Proxy Workflow ✅
-Completed:
-- Guest booking by controlled roles
-- Proxy booking support
-- Reservation traceability
-- Role-controlled overrides
+Next step:
 
-### Phase 3.8 — Operational Dashboard ✅
-Completed:
-- Admin dashboard operational visibility
-- Meal-wise summary
-- Issued / pending / cancelled tracking
-- Employee vs guest segmentation
-- Dine-in vs takeaway visibility
-- Operator / source visibility
+👉 Product → Deployment → Scale
 
-## Phase 4 — Stabilization & Performance ✅
-Completed:
-- Query optimization
-- Date-scoped Firestore reads
-- Caching improvements
-- Issuance workflow hardening
-- Duplicate issuance prevention
-- Issued state validation
-- Composite index alignment
-- Runtime bottlenecks resolved
-
-## Phase 5 — Rate Engine ✅
-Completed:
-- Manual rate entry
-- Previous-day actual costing model
-- Item-level rate application
-- Combo treated as item
-- Reservation backfill:
-  - `unit_rate`
-  - `amount`
-
-## Phase 5.5 — Cost Reporting ✅
-Completed:
-- Daily cost dashboard
-- Meal-wise costing
-- Item-wise costing
-- Employee vs guest split
-- Average cost per unit
-- Rated vs unrated visibility
-
-## Phase 6 — Feedback System ✅
-Completed:
-- Meal feedback submission
-- Rating capture
-- Issue tagging
-- Anonymous option
-- Open / close workflow
-- Feedback dashboard
-- Item-level analysis
-- Duplicate prevention
-- Employee-side feedback from meal history
-
-## Phase 6 Extension — Employee Experience Layer ✅
-Completed:
-- My meal history screen
-- Monthly consumption visibility
-- Cost visibility
-- Line-level details
-- Inline feedback trigger
-
-## Phase 7 — Notification System ✅
-Completed:
-- Event-driven in-app notification engine
-- Two-layer model:
-  - transactional
-  - administrative
-- Booking confirmation notification
-- Booking cancellation notification
-- Meal issuance notification
-- Administrative announcement pipeline
-- Notification badge
-- Notification history screen
-- Read/unread tracking
-- Admin notification history filtering
-
-### Phase 7 Deferred Items
-Deferred intentionally:
-- Email delivery
-- Push notification delivery
-- Retry logic
-- Expiry / archival logic
-
-## Phase 8 — Event Attendance Module ✅
-Completed:
-- Event Firestore schema
-- Event models
-- Attendance response model
-- Summary model
-- Note template model
-- Event attendance service
-- Admin event management screen
-- Employee event invitation detail screen
-- Employee event dashboard widget
-- Notification routing to event detail
-- Cutoff enforcement
-- Edit/update until cutoff
-- Pending and report views
-- Incremental summary updates
-- Rebuild fallback retained
-- XLSX export
-- Field testing completed
-
----
-
-## 6. Current Functional Footprint
-
-### Identity & Governance
-- Employee master management
-- User registration validation
-- Approval and role assignment
-- Role-based navigation
-
-### Menu & Scheduling
-- Menu item creation
-- Weekly template design
-- Monthly menu building
-- Active menu preview
-- Menu resolution engine
-
-### Reservation Operations
-- Employee booking
-- Guest booking
-- Proxy booking
-- Future booking
-- Dine-in / takeaway
-- Quantity
-- Cutoff enforcement
-- Reservation status lifecycle
-- Issuance workflow
-
-### Financial Layer
-- Manual rate entry
-- Rate backfill to reservations
-- Amount calculation
-- Daily cost dashboard
-
-### Feedback Layer
-- Meal feedback capture
-- Dashboard analytics
-- Inline employee feedback from history
-
-### Notification Layer
-- In-app notifications
-- Badge count
-- Transactional and administrative routing
-
-### Event Layer
-- Event creation
-- Publish / close / cancel
-- Employee event response
-- Category-wise attendance counts
-- Event reporting and export
-
----
-
-## 7. Canonical Dart File Inventory (Live)
+##### Canonical Dart File Inventory (Pre phase 9)
 
 ### Entry Point
 - `lib/main.dart`
@@ -495,234 +479,4 @@ Domain-specific reporting currently exists in:
 - `reports_screen.dart` remains the logical consolidation point for Phase 9
 
 ---
-
-## 9. Current Known Design Decisions (Locked)
-
-- Event attendance remains independent from meal reservation logic
-- `userUid` in employee flow comes from FirebaseAuth current user
-- Manual rate entry remains the costing method in V1
-- Notifications in V1 are in-app only
-- Email and push remain deferred
-- Transactional truth stays in transactional collections
-- Event summary remains incremental with rebuild fallback retained
-- Export format currently prioritized as XLSX
-- Role routing and governance must remain controlled and explicit
-- No procurement automation in V1
-- No billing automation in V1
-- Multi-tenant thinking should guide future architecture, but not complicate V1 unnecessarily
-
----
-
-## 10. Current Risks / Controlled Limitations
-
-### Accepted / Intentional
-- In-app only notifications
-- No push/email dispatch engine yet
-- No automated archival/expiry of notifications
-- No deep analytics orchestration layer yet
-- Reporting remains domain-fragmented
-- `reports_screen.dart` has not yet been fully elevated to unified analytics dashboard
-- No pre-aggregated analytics collections except event summaries
-- Cost analytics currently daily-focused rather than full range/trend capable
-
-### Operational Notes
-- Phase 8 is stable enough to serve as reporting/analytics design baseline
-- Existing domain modules should be reused, not rewritten
-
----
-
-## 11. Phase 9 — Planned Development (Detailed)
-
-# Phase 9 Objective
-Convert separate reporting modules into a unified management reporting and analytics layer.
-
-## Phase 9 Positioning
-Phase 9 is **not** the first reporting feature.  
-Phase 9 is the **consolidation and orchestration phase**.
-
-## Phase 9A — Analytics Foundation
-Planned:
-- analytics filter model
-- dashboard KPI model
-- trend point models
-- unified analytics orchestration service
-- attendance analytics service
-- cost analytics service
-- feedback analytics service
-- event analytics service
-- analytics export service
-
-### Proposed New Models
-- `analytics_filter_model.dart`
-- `dashboard_kpi_model.dart`
-- `attendance_trend_point.dart`
-- `cost_trend_point.dart`
-- `feedback_trend_point.dart`
-- `event_trend_point.dart`
-
-### Proposed New Services
-- `analytics_service.dart`
-- `attendance_analytics_service.dart`
-- `cost_analytics_service.dart`
-- `feedback_analytics_service.dart`
-- `event_analytics_service.dart`
-- `analytics_export_service.dart`
-
-## Phase 9B — Unified Reporting Dashboard
-Primary target:
-- upgrade `reports_screen.dart` into unified management dashboard
-
-Planned sections:
-- date range filter
-- grouping selector (day / week / month)
-- KPI cards
-- attendance summary
-- cost summary
-- feedback insight summary
-- event participation summary
-- drill-down entry cards to detailed screens
-
-## Phase 9C — Trend & Comparison Layer
-Planned:
-- daily / weekly / monthly trend data
-- guest vs employee comparisons
-- dine-in vs takeaway comparisons
-- booking vs issuance conversion
-- cost per head
-- low-rating frequency
-- event response trend
-
-## Phase 9D — Export Standardization
-Planned:
-- consolidated management workbook
-- attendance export
-- cost export
-- feedback export
-- event export integration
-- standardized XLSX export structure
-
-## Phase 9E — Performance Review
-Planned only if required:
-- identify slow queries
-- session caching where useful
-- daily summary collections only if performance demands them
-
----
-
-## 12. Planned Development to End of Version 1
-
-## Phase 9 — Reporting & Analytics Consolidation
-See full Phase 9 plan above.
-
-## Phase 10 — UI Refinement & Branding
-Planned:
-- logo integration
-- splash / launch visuals
-- visual consistency pass
-- spacing / card polish
-- typography cleanup
-- final cosmetic harmonization
-
-## Phase 11 — Security & Stability Hardening
-Planned:
-- tighten Firestore rules
-- role enforcement review
-- validation review
-- error handling standardization
-- final production hardening
-
-## Phase 12 — Controlled Test Version
-Planned:
-- limited rollout
-- monitored usage
-- defect logging
-- issue correction
-- user acceptance validation
-
-## Phase 13 — Production Launch (V1 Complete)
-Planned:
-- stable deployment
-- controlled live use
-- closeout of V1 scope
-- handoff to operational governance
-
----
-
-## 13. Post V1 Roadmap
-
-## Version 2
-Operational expansion:
-- Weekly BBQ
-- Café
-- Tuck shop
-- Bakery
-
-Reuse expected from V1:
-- identity
-- menu items
-- menu templates
-- cycle engine
-- notifications
-- rates where applicable
-
-## Version 3
-Operational backend:
-- Procurement
-- Purchase tracking
-- Stock movement
-- Inventory controls
-
-## Version 4
-Costing intelligence:
-- Recipe-based costing
-- ingredient linkage
-- operational costing refinement
-
-## Version 5
-Financial automation:
-- Finance integration
-- automated monthly billing
-- ledger logic
-- payroll/accounting linkage if later approved
-
-## Version 6
-Broader hospitality/event layer:
-- Event management expansion
-- event booking
-- catering workflows
-- event billing
-- operational hospitality controls
-
-## Commercialization Direction
-The project should remain aligned toward:
-- organization-level isolation
-- future multi-tenant architecture
-- SaaS-ready separation of data domains
-- no data mixing between organizations in later versions
-
----
-
-## 14. Current Strategic Position
-
-This system is now:
-- architecture-driven
-- governance-controlled
-- modular
-- cloud-first
-- expandable
-- commercialization-aware
-
-Current reality:
-- strong operational base exists
-- business logic chain is functioning
-- analytics consolidation is the next major milestone
-- project is approaching V1 tail, but still requires disciplined finish
-
----
-
-
-## 16. Snapshot Lock Statement
-
-This document is the new canonical project baseline.  
-Older snapshots remain useful as historical references, but future planning should now anchor to this document unless replaced by a later master snapshot.
 

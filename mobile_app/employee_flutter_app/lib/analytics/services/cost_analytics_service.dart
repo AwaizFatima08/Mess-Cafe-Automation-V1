@@ -43,8 +43,10 @@ class CostAnalyticsService {
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
+        final status = ((data['status'] as String?) ?? '').trim().toLowerCase();
+        final isIssued = data['is_issued'] == true || status == 'issued';
 
-        if (data['is_issued'] != true) {
+        if (!isIssued || status == 'cancelled') {
           continue;
         }
 

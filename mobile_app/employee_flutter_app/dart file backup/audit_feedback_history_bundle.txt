@@ -1,0 +1,1848 @@
+===== meal_feedback_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealFeedbackService {
+  MealFeedbackService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _feedbackRef =>
+      _firestore.collection('meal_feedback');
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  Timestamp startOfDay(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
+  Timestamp startOfNextDay(DateTime value) {
+    return Timestamp.fromDate(
+      normalizeDate(value).add(const Duration(days: 1)),
+    );
+  }
+
+  String normalizeMealType(dynamic mealType) {
+    return (mealType ?? '').toString().trim().toLowerCase();
+  }
+
+  String normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  int readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
+  }
+
+  Map<String, dynamic> asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String extractMenuItemId(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    final extracted = firstNonEmpty([
+      normalizeText(menuSnapshot['item_id']),
+      normalizeText(reservationData['menu_item_id']),
+      normalizeText(reservationData['menu_option_key']),
+      normalizeText(menuSnapshot['option_key']),
+    ]);
+
+    if (extracted.isNotEmpty) {
+      return extracted;
+    }
+
+    return normalizeText(reservationData['reservation_id']);
+  }
+
+  String extractItemName(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_name']),
+      normalizeText(reservationData['item_name']),
+      normalizeText(reservationData['option_label']),
+      normalizeText(menuSnapshot['option_label']),
+      extractMenuItemId(reservationData),
+    ]);
+  }
+
+  String extractCategory(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_category']),
+      normalizeText(reservationData['category']),
+      normalizeText(reservationData['meal_type']),
+    ]);
+  }
+
+  String buildFeedbackDocumentId({
+    required String reservationId,
+    required String submittedByUid,
+  }) {
+    final safeReservationId = reservationId.trim().replaceAll('/', '_');
+    final safeUid = submittedByUid.trim().replaceAll('/', '_');
+    return '${safeReservationId}__$safeUid';
+  }
+
+  Future<bool> hasFeedbackForReservation({
+    required String reservationId,
+    required String submittedByUid,
+  }) async {
+    final normalizedReservationId = reservationId.trim();
+    final normalizedUid = submittedByUid.trim();
+
+    if (normalizedReservationId.isEmpty || normalizedUid.isEmpty) {
+      return false;
+    }
+
+    final docId = buildFeedbackDocumentId(
+      reservationId: normalizedReservationId,
+      submittedByUid: normalizedUid,
+    );
+
+    final doc = await _feedbackRef.doc(docId).get();
+    return doc.exists;
+  }
+
+  Future<void> submitFeedback({
+    required String reservationId,
+    required String submittedByUid,
+    required String submittedByName,
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required String menuItemId,
+    required String itemName,
+    required String category,
+    required int rating,
+    required String feedbackText,
+    String issueType = '',
+    bool isAnonymous = false,
+    Map<String, dynamic>? extraFields,
+  }) async {
+    final normalizedReservationId = reservationId.trim();
+    final normalizedSubmittedByUid = submittedByUid.trim();
+    final normalizedSubmittedByName = submittedByName.trim();
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedEmployeeName = employeeName.trim();
+    final normalizedMealType = normalizeMealType(mealType);
+    final normalizedMenuItemId = menuItemId.trim().isEmpty
+        ? normalizedReservationId
+        : menuItemId.trim();
+    final normalizedItemName = itemName.trim().isEmpty ? 'Meal' : itemName.trim();
+    final normalizedCategory = category.trim();
+    final normalizedFeedbackText = feedbackText.trim();
+    final normalizedIssueType = issueType.trim().toLowerCase();
+    final normalizedDate = normalizeDate(reservationDate);
+
+    if (normalizedReservationId.isEmpty) {
+      throw ArgumentError('reservationId is required.');
+    }
+    if (normalizedSubmittedByUid.isEmpty) {
+      throw ArgumentError('submittedByUid is required.');
+    }
+    if (normalizedMealType.isEmpty) {
+      throw ArgumentError('mealType is required.');
+    }
+    if (rating < 1 || rating > 5) {
+      throw ArgumentError('rating must be between 1 and 5.');
+    }
+
+    final docId = buildFeedbackDocumentId(
+      reservationId: normalizedReservationId,
+      submittedByUid: normalizedSubmittedByUid,
+    );
+
+    final existing = await _feedbackRef.doc(docId).get();
+    if (existing.exists) {
+      throw Exception('Feedback already submitted for this meal.');
+    }
+
+    final now = Timestamp.now();
+
+    final payload = <String, dynamic>{
+      'reservation_id': normalizedReservationId,
+      'submitted_by_uid': normalizedSubmittedByUid,
+      'submitted_by_name': isAnonymous ? '' : normalizedSubmittedByName,
+      'employee_number': isAnonymous ? '' : normalizedEmployeeNumber,
+      'employee_name': isAnonymous ? '' : normalizedEmployeeName,
+      'is_anonymous': isAnonymous,
+      'reservation_date': Timestamp.fromDate(normalizedDate),
+      'meal_type': normalizedMealType,
+      'menu_item_id': normalizedMenuItemId,
+      'item_name': normalizedItemName,
+      'category': normalizedCategory,
+      'rating': rating,
+      'feedback_text': normalizedFeedbackText,
+      'issue_type': normalizedIssueType,
+      'status': 'open',
+      'submitted_at': now,
+      'created_at': now,
+      'updated_at': now,
+    };
+
+    if (extraFields != null && extraFields.isNotEmpty) {
+      payload.addAll(extraFields);
+    }
+
+    await _feedbackRef.doc(docId).set(payload, SetOptions(merge: true));
+  }
+
+  Future<void> closeFeedback({
+    required String feedbackId,
+    required String closedByUid,
+    required String closedByName,
+    String resolutionNote = '',
+  }) async {
+    await _feedbackRef.doc(feedbackId).update({
+      'status': 'closed',
+      'closed_by_uid': closedByUid.trim(),
+      'closed_by_name': closedByName.trim(),
+      'resolution_note': resolutionNote.trim(),
+      'closed_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+    });
+  }
+
+  Future<List<MealFeedbackEntry>> getFeedbackForDate(DateTime date) async {
+    final snapshot = await _feedbackRef
+        .where('reservation_date', isGreaterThanOrEqualTo: startOfDay(date))
+        .where('reservation_date', isLessThan: startOfNextDay(date))
+        .get();
+
+    final items = snapshot.docs
+        .map((doc) => MealFeedbackEntry.fromDocument(doc))
+        .toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    return items;
+  }
+
+  Future<List<MealFeedbackEntry>> getOpenFeedback({DateTime? forDate}) async {
+    Query<Map<String, dynamic>> query =
+        _feedbackRef.where('status', isEqualTo: 'open');
+
+    if (forDate != null) {
+      query = query
+          .where(
+            'reservation_date',
+            isGreaterThanOrEqualTo: startOfDay(forDate),
+          )
+          .where(
+            'reservation_date',
+            isLessThan: startOfNextDay(forDate),
+          );
+    }
+
+    final snapshot = await query.get();
+
+    final items = snapshot.docs
+        .map((doc) => MealFeedbackEntry.fromDocument(doc))
+        .toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    return items;
+  }
+
+  Future<List<FeedbackEligibleReservation>> getFeedbackEligibleReservations({
+    required String employeeNumber,
+    required DateTime reservationDate,
+    String? mealType,
+    String? submittedByUid,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedSubmittedByUid = (submittedByUid ?? '').trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    Query<Map<String, dynamic>> query = _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: startOfDay(reservationDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: startOfNextDay(reservationDate),
+        );
+
+    if (mealType != null && mealType.trim().isNotEmpty) {
+      query = query.where('meal_type', isEqualTo: normalizeMealType(mealType));
+    }
+
+    final reservationSnapshot = await query.get();
+
+    if (reservationSnapshot.docs.isEmpty) {
+      return <FeedbackEligibleReservation>[];
+    }
+
+    final result = <FeedbackEligibleReservation>[];
+
+    for (final doc in reservationSnapshot.docs) {
+      final data = doc.data();
+      final status = normalizeText(data['status']).toLowerCase();
+      final isIssued = data['is_issued'] == true || status == 'issued';
+
+      if (status == 'cancelled') {
+        continue;
+      }
+
+      bool alreadySubmitted = false;
+      if (normalizedSubmittedByUid.isNotEmpty) {
+        try {
+          alreadySubmitted = await hasFeedbackForReservation(
+            reservationId: doc.id,
+            submittedByUid: normalizedSubmittedByUid,
+          );
+        } catch (_) {
+          alreadySubmitted = false;
+        }
+      }
+
+      if (!isIssued && !alreadySubmitted) {
+        continue;
+      }
+
+      result.add(
+        FeedbackEligibleReservation(
+          reservationId: doc.id,
+          reservationDate: _toDate(data['reservation_date']) ?? reservationDate,
+          mealType: normalizeMealType(data['meal_type']),
+          menuItemId: extractMenuItemId(data).isEmpty
+              ? doc.id
+              : extractMenuItemId(data),
+          itemName: extractItemName(data),
+          category: extractCategory(data),
+          diningMode: normalizeText(data['dining_mode']).toLowerCase(),
+          quantity: readInt(data['quantity']),
+          status: status,
+          isIssued: isIssued,
+          alreadySubmitted: alreadySubmitted,
+        ),
+      );
+    }
+
+    result.sort((a, b) {
+      final mealCompare = a.mealType.compareTo(b.mealType);
+      if (mealCompare != 0) return mealCompare;
+      return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+    });
+
+    return result;
+  }
+
+  Future<MealFeedbackSummary> getFeedbackSummaryForDate(DateTime date) async {
+    final items = await getFeedbackForDate(date);
+
+    if (items.isEmpty) {
+      return MealFeedbackSummary.empty(date: normalizeDate(date));
+    }
+
+    int totalCount = 0;
+    double ratingSum = 0.0;
+    int openCount = 0;
+    int closedCount = 0;
+
+    final ratingBuckets = <int, int>{1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+    final itemSummaryMap = <String, FeedbackItemSummaryBuilder>{};
+
+    for (final item in items) {
+      totalCount += 1;
+      ratingSum += item.rating;
+
+      if (item.status == 'closed') {
+        closedCount += 1;
+      } else {
+        openCount += 1;
+      }
+
+      ratingBuckets[item.rating] = (ratingBuckets[item.rating] ?? 0) + 1;
+
+      final key = item.menuItemId.isNotEmpty
+          ? item.menuItemId.toLowerCase()
+          : item.itemName.toLowerCase();
+
+      final builder = itemSummaryMap.putIfAbsent(
+        key,
+        () => FeedbackItemSummaryBuilder(
+          menuItemId: item.menuItemId,
+          itemName: item.itemName,
+          category: item.category,
+        ),
+      );
+
+      builder.totalCount += 1;
+      builder.ratingSum += item.rating.toDouble();
+      builder.issueTypes.add(item.issueType);
+    }
+
+    final itemSummaries = itemSummaryMap.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.averageRating.compareTo(b.averageRating));
+
+    return MealFeedbackSummary(
+      date: normalizeDate(date),
+      totalCount: totalCount,
+      averageRating: totalCount > 0 ? ratingSum / totalCount : 0.0,
+      openCount: openCount,
+      closedCount: closedCount,
+      ratingBuckets: ratingBuckets,
+      itemSummaries: itemSummaries,
+    );
+  }
+
+  DateTime? _toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+
+    if (value is Map<String, dynamic>) {
+      final seconds = value['_seconds'] ?? value['seconds'];
+      final nanoseconds = value['_nanoseconds'] ?? value['nanoseconds'];
+
+      if (seconds is int) {
+        final millis =
+            (seconds * 1000) + ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+}
+
+class MealFeedbackEntry {
+  final String id;
+  final String reservationId;
+  final String submittedByUid;
+  final String submittedByName;
+  final String employeeNumber;
+  final String employeeName;
+  final bool isAnonymous;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int rating;
+  final String feedbackText;
+  final String issueType;
+  final String status;
+  final DateTime submittedAt;
+  final DateTime? closedAt;
+  final String closedByUid;
+  final String closedByName;
+  final String resolutionNote;
+
+  const MealFeedbackEntry({
+    required this.id,
+    required this.reservationId,
+    required this.submittedByUid,
+    required this.submittedByName,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.isAnonymous,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.rating,
+    required this.feedbackText,
+    required this.issueType,
+    required this.status,
+    required this.submittedAt,
+    this.closedAt,
+    required this.closedByUid,
+    required this.closedByName,
+    required this.resolutionNote,
+  });
+
+  factory MealFeedbackEntry.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? <String, dynamic>{};
+
+    return MealFeedbackEntry(
+      id: doc.id,
+      reservationId: (data['reservation_id'] ?? '').toString().trim(),
+      submittedByUid: (data['submitted_by_uid'] ?? '').toString().trim(),
+      submittedByName: (data['submitted_by_name'] ?? '').toString().trim(),
+      employeeNumber: (data['employee_number'] ?? '').toString().trim(),
+      employeeName: (data['employee_name'] ?? '').toString().trim(),
+      isAnonymous: data['is_anonymous'] == true,
+      reservationDate: _toDate(data['reservation_date']) ?? DateTime.now(),
+      mealType: (data['meal_type'] ?? '').toString().trim().toLowerCase(),
+      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      itemName: (data['item_name'] ?? '').toString().trim(),
+      category: (data['category'] ?? '').toString().trim(),
+      rating: _toInt(data['rating']),
+      feedbackText: (data['feedback_text'] ?? '').toString().trim(),
+      issueType: (data['issue_type'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'open').toString().trim().toLowerCase(),
+      submittedAt: _toDate(data['submitted_at']) ?? DateTime.now(),
+      closedAt: _toDate(data['closed_at']),
+      closedByUid: (data['closed_by_uid'] ?? '').toString().trim(),
+      closedByName: (data['closed_by_name'] ?? '').toString().trim(),
+      resolutionNote: (data['resolution_note'] ?? '').toString().trim(),
+    );
+  }
+
+  static DateTime? _toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+
+    if (value is Map<String, dynamic>) {
+      final seconds = value['_seconds'] ?? value['seconds'];
+      final nanoseconds = value['_nanoseconds'] ?? value['nanoseconds'];
+
+      if (seconds is int) {
+        final millis =
+            (seconds * 1000) + ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+}
+
+class FeedbackEligibleReservation {
+  final String reservationId;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String diningMode;
+  final int quantity;
+  final String status;
+  final bool isIssued;
+  final bool alreadySubmitted;
+
+  const FeedbackEligibleReservation({
+    required this.reservationId,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.diningMode,
+    required this.quantity,
+    required this.status,
+    required this.isIssued,
+    required this.alreadySubmitted,
+  });
+}
+
+class MealFeedbackSummary {
+  final DateTime date;
+  final int totalCount;
+  final double averageRating;
+  final int openCount;
+  final int closedCount;
+  final Map<int, int> ratingBuckets;
+  final List<FeedbackItemSummary> itemSummaries;
+
+  const MealFeedbackSummary({
+    required this.date,
+    required this.totalCount,
+    required this.averageRating,
+    required this.openCount,
+    required this.closedCount,
+    required this.ratingBuckets,
+    required this.itemSummaries,
+  });
+
+  factory MealFeedbackSummary.empty({required DateTime date}) {
+    return MealFeedbackSummary(
+      date: date,
+      totalCount: 0,
+      averageRating: 0.0,
+      openCount: 0,
+      closedCount: 0,
+      ratingBuckets: const {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+      itemSummaries: const [],
+    );
+  }
+}
+
+class FeedbackItemSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int totalCount;
+  final double averageRating;
+  final List<String> issueTypes;
+
+  const FeedbackItemSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.totalCount,
+    required this.averageRating,
+    required this.issueTypes,
+  });
+}
+
+class FeedbackItemSummaryBuilder {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+
+  int totalCount = 0;
+  double ratingSum = 0.0;
+  final Set<String> issueTypes = <String>{};
+
+  FeedbackItemSummaryBuilder({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+  });
+
+  FeedbackItemSummary build() {
+    final cleanedIssues = issueTypes
+        .where((e) => e.trim().isNotEmpty)
+        .toList()
+      ..sort();
+
+    return FeedbackItemSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      totalCount: totalCount,
+      averageRating: totalCount > 0 ? ratingSum / totalCount : 0.0,
+      issueTypes: cleanedIssues,
+    );
+  }
+}
+
+===== my_meal_history_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MyMealHistoryService {
+  MyMealHistoryService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime startOfMonth(DateTime value) {
+    return DateTime(value.year, value.month, 1);
+  }
+
+  DateTime endOfMonth(DateTime value) {
+    return DateTime(value.year, value.month + 1, 1);
+  }
+
+  String normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  int readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
+  }
+
+  Map<String, dynamic> asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String extractMenuItemId(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_id']),
+      normalizeText(data['menu_item_id']),
+      normalizeText(data['menu_option_key']),
+      normalizeText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  String extractItemName(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_name']),
+      normalizeText(data['item_name']),
+      normalizeText(data['option_label']),
+      normalizeText(menuSnapshot['option_label']),
+      extractMenuItemId(data),
+    ]);
+  }
+
+  String extractCategory(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_category']),
+      normalizeText(data['category']),
+      normalizeText(data['meal_type']),
+    ]);
+  }
+
+  DateTime? toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+
+    if (value is Map<String, dynamic>) {
+      final seconds = value['_seconds'] ?? value['seconds'];
+      final nanoseconds = value['_nanoseconds'] ?? value['nanoseconds'];
+
+      if (seconds is int) {
+        final millis =
+            (seconds * 1000) + ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+
+  double resolveAmount({
+    required dynamic explicitAmount,
+    required dynamic unitRate,
+    required int quantity,
+  }) {
+    final amount = readDouble(explicitAmount);
+    if (amount > 0) {
+      return amount;
+    }
+
+    final rate = readDouble(unitRate);
+    if (rate > 0 && quantity > 0) {
+      return rate * quantity;
+    }
+
+    return 0.0;
+  }
+
+  Future<MyMealHistoryData> getMealHistory({
+    required String employeeNumber,
+    required DateTime fromDate,
+    required DateTime toDateExclusive,
+    bool includeCancelled = false,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    final snapshot = await _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizeDate(fromDate)),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(normalizeDate(toDateExclusive)),
+        )
+        .get();
+
+    final items = <MyMealHistoryEntry>[];
+
+    int totalQuantity = 0;
+    double totalAmount = 0.0;
+    int activeCount = 0;
+    int issuedCount = 0;
+    int cancelledCount = 0;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+
+      final status = normalizeText(data['status']).toLowerCase();
+      final isIssued = data['is_issued'] == true || status == 'issued';
+      final quantity = readInt(data['quantity']);
+      final unitRate = readDouble(data['unit_rate']);
+      final amount = resolveAmount(
+        explicitAmount: data['amount'],
+        unitRate: data['unit_rate'],
+        quantity: quantity,
+      );
+
+      if (!includeCancelled && status == 'cancelled') {
+        cancelledCount += 1;
+        continue;
+      }
+
+      if (status == 'cancelled') {
+        cancelledCount += 1;
+      } else {
+        activeCount += 1;
+      }
+
+      if (isIssued) {
+        issuedCount += 1;
+      }
+
+      if (status != 'cancelled') {
+        totalQuantity += quantity;
+        totalAmount += amount;
+      }
+
+      items.add(
+        MyMealHistoryEntry(
+          id: doc.id,
+          reservationDate: toDate(data['reservation_date']) ?? DateTime.now(),
+          mealType: normalizeText(data['meal_type']).toLowerCase(),
+          menuItemId: extractMenuItemId(data),
+          itemName: extractItemName(data),
+          category: extractCategory(data),
+          diningMode: normalizeText(data['dining_mode']).toLowerCase(),
+          quantity: quantity,
+          unitRate: unitRate,
+          amount: amount,
+          status: status,
+          isIssued: isIssued,
+          notes: normalizeText(data['notes']),
+        ),
+      );
+    }
+
+    items.sort((a, b) {
+      final byDate = b.reservationDate.compareTo(a.reservationDate);
+      if (byDate != 0) return byDate;
+      return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+    });
+
+    return MyMealHistoryData(
+      entries: items,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      activeCount: activeCount,
+      issuedCount: issuedCount,
+      cancelledCount: cancelledCount,
+    );
+  }
+
+  Future<MyMealHistoryData> getCurrentMonthHistory({
+    required String employeeNumber,
+  }) async {
+    final now = DateTime.now();
+    final from = startOfMonth(now);
+    final to = endOfMonth(now);
+
+    return getMealHistory(
+      employeeNumber: employeeNumber,
+      fromDate: from,
+      toDateExclusive: to,
+    );
+  }
+}
+
+class MyMealHistoryData {
+  final List<MyMealHistoryEntry> entries;
+  final int totalQuantity;
+  final double totalAmount;
+  final int activeCount;
+  final int issuedCount;
+  final int cancelledCount;
+
+  const MyMealHistoryData({
+    required this.entries,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.activeCount,
+    required this.issuedCount,
+    required this.cancelledCount,
+  });
+}
+
+class MyMealHistoryEntry {
+  final String id;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String diningMode;
+  final int quantity;
+  final double unitRate;
+  final double amount;
+  final String status;
+  final bool isIssued;
+  final String notes;
+
+  const MyMealHistoryEntry({
+    required this.id,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.diningMode,
+    required this.quantity,
+    required this.unitRate,
+    required this.amount,
+    required this.status,
+    required this.isIssued,
+    required this.notes,
+  });
+}
+
+===== meal_feedback_submission_screen.dart =====
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../services/meal_feedback_service.dart';
+
+class MealFeedbackSubmissionScreen extends StatefulWidget {
+  final String employeeNumber;
+  final String employeeName;
+  final String userUid;
+
+  const MealFeedbackSubmissionScreen({
+    super.key,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.userUid,
+  });
+
+  @override
+  State<MealFeedbackSubmissionScreen> createState() =>
+      _MealFeedbackSubmissionScreenState();
+}
+
+class _MealFeedbackSubmissionScreenState
+    extends State<MealFeedbackSubmissionScreen> {
+  final MealFeedbackService _service = MealFeedbackService();
+
+  late DateTime _selectedDate;
+  bool _isLoading = true;
+  String? _errorMessage;
+
+  List<FeedbackEligibleReservation> _items = [];
+
+  final Map<String, int> _ratings = {};
+  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, bool> _anonymous = {};
+  final Map<String, String> _issueType = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _resolveOperationalReferenceDate();
+    _loadData();
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return now.subtract(const Duration(days: 1));
+    }
+    return now;
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final data = await _service.getFeedbackEligibleReservations(
+        employeeNumber: widget.employeeNumber,
+        reservationDate: _selectedDate,
+        submittedByUid: widget.userUid,
+      );
+
+      for (final c in _controllers.values) {
+        c.dispose();
+      }
+      _ratings.clear();
+      _controllers.clear();
+      _anonymous.clear();
+      _issueType.clear();
+
+      for (final item in data) {
+        _ratings[item.reservationId] = 0;
+        _controllers[item.reservationId] = TextEditingController();
+        _anonymous[item.reservationId] = false;
+        _issueType[item.reservationId] = '';
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _items = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _items = [];
+        _isLoading = false;
+        _errorMessage = 'Failed to load meal feedback screen: $e';
+      });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      await _loadData();
+    }
+  }
+
+  Future<void> _submit(FeedbackEligibleReservation item) async {
+    final rating = _ratings[item.reservationId] ?? 0;
+
+    if (rating == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select rating')),
+      );
+      return;
+    }
+
+    try {
+      await _service.submitFeedback(
+        reservationId: item.reservationId,
+        submittedByUid: widget.userUid,
+        submittedByName: widget.employeeName,
+        employeeNumber: widget.employeeNumber,
+        employeeName: widget.employeeName,
+        reservationDate: item.reservationDate,
+        mealType: item.mealType,
+        menuItemId: item.menuItemId.isEmpty ? item.reservationId : item.menuItemId,
+        itemName: item.itemName,
+        category: item.category,
+        rating: rating,
+        feedbackText: _controllers[item.reservationId]?.text ?? '',
+        issueType: _issueType[item.reservationId] ?? '',
+        isAnonymous: _anonymous[item.reservationId] ?? false,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Feedback submitted')),
+      );
+
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Feedback submit failed: $e')),
+      );
+    }
+  }
+
+  String _formatDate(DateTime value) {
+    return DateFormat('dd MMM yyyy').format(value);
+  }
+
+  String _labelize(String value) {
+    if (value.trim().isEmpty) return '—';
+
+    return value
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((part) {
+          if (part.isEmpty) return part;
+          return part[0].toUpperCase() + part.substring(1);
+        })
+        .join(' ');
+  }
+
+  Widget _buildStars(String id) {
+    final rating = _ratings[id] ?? 0;
+
+    return Row(
+      children: List.generate(5, (i) {
+        return IconButton(
+          icon: Icon(
+            i < rating ? Icons.star : Icons.star_border,
+            color: Colors.orange,
+          ),
+          onPressed: () {
+            setState(() {
+              _ratings[id] = i + 1;
+            });
+          },
+        );
+      }),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          ElevatedButton.icon(
+            onPressed: _pickDate,
+            icon: const Icon(Icons.calendar_today),
+            label: Text(_formatDate(_selectedDate)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Meal Feedback',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+          IconButton(
+            onPressed: _loadData,
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemCard(FeedbackEligibleReservation item) {
+    final already = item.alreadySubmitted;
+    final canSubmit = item.isIssued && !already;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              item.itemName.isEmpty ? 'Meal' : item.itemName,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text('${_labelize(item.mealType)} • ${_labelize(item.diningMode)}'),
+            Text('Qty: ${item.quantity}'),
+            Text('Status: ${_labelize(item.status)}'),
+            if (already)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Feedback already submitted',
+                  style: TextStyle(color: Colors.green),
+                ),
+              )
+            else if (!item.isIssued)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Feedback can be submitted after meal is issued',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              )
+            else ...[
+              _buildStars(item.reservationId),
+              DropdownButton<String>(
+                value: _issueType[item.reservationId],
+                hint: const Text('Issue Type (optional)'),
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: '', child: Text('None')),
+                  DropdownMenuItem(value: 'taste', child: Text('Taste')),
+                  DropdownMenuItem(value: 'quality', child: Text('Quality')),
+                  DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
+                  DropdownMenuItem(value: 'service', child: Text('Service')),
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    _issueType[item.reservationId] = v ?? '';
+                  });
+                },
+              ),
+              TextField(
+                controller: _controllers[item.reservationId],
+                decoration: const InputDecoration(
+                  hintText: 'Write feedback...',
+                ),
+              ),
+              Row(
+                children: [
+                  Checkbox(
+                    value: _anonymous[item.reservationId],
+                    onChanged: (v) {
+                      setState(() {
+                        _anonymous[item.reservationId] = v ?? false;
+                      });
+                    },
+                  ),
+                  const Text('Submit anonymously'),
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: canSubmit ? () => _submit(item) : null,
+                    child: const Text('Submit'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'No eligible meals found for ${_formatDate(_selectedDate)}',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Meal Feedback'),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Meal Feedback'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.calendar_today),
+              onPressed: _pickDate,
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadData,
+            ),
+          ],
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Feedback'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_today),
+            onPressed: _pickDate,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadData,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildHeader(),
+          Expanded(
+            child: _items.isEmpty
+                ? _buildEmptyState()
+                : ListView.builder(
+                    itemCount: _items.length,
+                    itemBuilder: (c, i) => _buildItemCard(_items[i]),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+===== my_meal_history_screen.dart =====
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../../services/meal_feedback_service.dart';
+import '../../services/my_meal_history_service.dart';
+
+class MyMealHistoryScreen extends StatefulWidget {
+  final String employeeNumber;
+  final String employeeName;
+  final String userUid;
+
+  const MyMealHistoryScreen({
+    super.key,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.userUid,
+  });
+
+  @override
+  State<MyMealHistoryScreen> createState() => _MyMealHistoryScreenState();
+}
+
+class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
+  final MyMealHistoryService _service = MyMealHistoryService();
+  final MealFeedbackService _feedbackService = MealFeedbackService();
+
+  late DateTime _selectedMonth;
+  bool _isLoading = true;
+  MyMealHistoryData? _history;
+  final Map<String, bool> _feedbackSubmittedMap = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final defaultDate = _resolveOperationalReferenceDate();
+    _selectedMonth = DateTime(defaultDate.year, defaultDate.month, 1);
+    _loadHistory();
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.day == 1 && now.hour < 6) {
+      return now.subtract(const Duration(days: 1));
+    }
+    return now;
+  }
+
+  Future<void> _loadHistory() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final nextMonth = DateTime(
+        _selectedMonth.year,
+        _selectedMonth.month + 1,
+        1,
+      );
+
+      final data = await _service.getMealHistory(
+        employeeNumber: widget.employeeNumber,
+        fromDate: _selectedMonth,
+        toDateExclusive: nextMonth,
+      );
+
+      final submittedMap = <String, bool>{};
+      for (final entry in data.entries) {
+        try {
+          submittedMap[entry.id] = await _feedbackService.hasFeedbackForReservation(
+            reservationId: entry.id,
+            submittedByUid: widget.userUid,
+          );
+        } catch (_) {
+          submittedMap[entry.id] = false;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _history = data;
+        _feedbackSubmittedMap
+          ..clear()
+          ..addAll(submittedMap);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _history = null;
+        _feedbackSubmittedMap.clear();
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load meal history: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickMonth() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedMonth,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+      helpText: 'Select any date in target month',
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      _selectedMonth = DateTime(picked.year, picked.month, 1);
+    });
+
+    await _loadHistory();
+  }
+
+  Future<void> _openFeedbackDialog(MyMealHistoryEntry entry) async {
+    int selectedRating = 0;
+    String selectedIssueType = '';
+    bool isAnonymous = false;
+    final controller = TextEditingController();
+
+    try {
+      final submitted = await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setLocalState) {
+              return AlertDialog(
+                title: Text(
+                  'Feedback — ${entry.itemName.isEmpty ? 'Meal' : entry.itemName}',
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${_labelize(entry.mealType)} • ${_labelize(entry.diningMode)}',
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: List.generate(5, (i) {
+                          return IconButton(
+                            onPressed: () {
+                              setLocalState(() {
+                                selectedRating = i + 1;
+                              });
+                            },
+                            icon: Icon(
+                              i < selectedRating
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              color: Colors.orange,
+                            ),
+                          );
+                        }),
+                      ),
+                      DropdownButtonFormField<String>(
+                        initialValue: selectedIssueType,
+                        decoration: const InputDecoration(
+                          labelText: 'Issue Type (optional)',
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: '', child: Text('None')),
+                          DropdownMenuItem(value: 'taste', child: Text('Taste')),
+                          DropdownMenuItem(value: 'quality', child: Text('Quality')),
+                          DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
+                          DropdownMenuItem(value: 'service', child: Text('Service')),
+                        ],
+                        onChanged: (value) {
+                          setLocalState(() {
+                            selectedIssueType = value ?? '';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Comments',
+                          hintText: 'Write your feedback...',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      CheckboxListTile(
+                        value: isAnonymous,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Submit anonymously'),
+                        onChanged: (value) {
+                          setLocalState(() {
+                            isAnonymous = value ?? false;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: selectedRating <= 0
+                        ? null
+                        : () => Navigator.pop(context, true),
+                    child: const Text('Submit'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (submitted != true) {
+        return;
+      }
+
+      await _feedbackService.submitFeedback(
+        reservationId: entry.id,
+        submittedByUid: widget.userUid,
+        submittedByName: widget.employeeName,
+        employeeNumber: widget.employeeNumber,
+        employeeName: widget.employeeName,
+        reservationDate: entry.reservationDate,
+        mealType: entry.mealType,
+        menuItemId: entry.menuItemId.isEmpty ? entry.id : entry.menuItemId,
+        itemName: entry.itemName,
+        category: entry.category,
+        rating: selectedRating,
+        feedbackText: controller.text,
+        issueType: selectedIssueType,
+        isAnonymous: isAnonymous,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Feedback submitted successfully')),
+      );
+
+      await _loadHistory();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Feedback submission failed: $e')),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  String _formatMonth(DateTime value) {
+    return DateFormat('MMM yyyy').format(value);
+  }
+
+  String _formatDate(DateTime value) {
+    return DateFormat('dd MMM yyyy').format(value);
+  }
+
+  String _formatCurrency(double value) {
+    return value.toStringAsFixed(2);
+  }
+
+  String _labelize(String value) {
+    if (value.trim().isEmpty) return '—';
+
+    return value
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((part) {
+          if (part.isEmpty) return part;
+          return part[0].toUpperCase() + part.substring(1);
+        })
+        .join(' ');
+  }
+
+  Widget _buildSummaryCard({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(icon, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummary(MyMealHistoryData data) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        int crossAxisCount = 1;
+        double childAspectRatio = 2.5;
+
+        if (width >= 1100) {
+          crossAxisCount = 4;
+          childAspectRatio = 2.4;
+        } else if (width >= 700) {
+          crossAxisCount = 2;
+          childAspectRatio = 2.2;
+        }
+
+        return GridView.count(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          childAspectRatio: childAspectRatio,
+          children: [
+            _buildSummaryCard(
+              title: 'Total Amount',
+              value: _formatCurrency(data.totalAmount),
+              subtitle: 'month billed',
+              icon: Icons.payments_outlined,
+            ),
+            _buildSummaryCard(
+              title: 'Total Quantity',
+              value: '${data.totalQuantity}',
+              subtitle: 'meal units',
+              icon: Icons.restaurant_outlined,
+            ),
+            _buildSummaryCard(
+              title: 'Issued Lines',
+              value: '${data.issuedCount}',
+              subtitle: 'consumed / issued',
+              icon: Icons.check_circle_outline,
+            ),
+            _buildSummaryCard(
+              title: 'Active Lines',
+              value: '${data.activeCount}',
+              subtitle: 'non-cancelled',
+              icon: Icons.receipt_long_outlined,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryTable(MyMealHistoryData data) {
+    if (data.entries.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Text('No meal history found for selected month.'),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            columns: const [
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('Meal')),
+              DataColumn(label: Text('Item')),
+              DataColumn(label: Text('Mode')),
+              DataColumn(label: Text('Qty')),
+              DataColumn(label: Text('Unit Rate')),
+              DataColumn(label: Text('Amount')),
+              DataColumn(label: Text('Status')),
+              DataColumn(label: Text('Feedback')),
+            ],
+            rows: data.entries.map((entry) {
+              final alreadySubmitted = _feedbackSubmittedMap[entry.id] == true;
+              final canGiveFeedback =
+                  entry.status != 'cancelled' && entry.isIssued && !alreadySubmitted;
+
+              return DataRow(
+                cells: [
+                  DataCell(Text(_formatDate(entry.reservationDate))),
+                  DataCell(Text(_labelize(entry.mealType))),
+                  DataCell(Text(entry.itemName.isEmpty ? '—' : entry.itemName)),
+                  DataCell(Text(_labelize(entry.diningMode))),
+                  DataCell(Text('${entry.quantity}')),
+                  DataCell(Text(_formatCurrency(entry.unitRate))),
+                  DataCell(Text(_formatCurrency(entry.amount))),
+                  DataCell(Text(_labelize(entry.status))),
+                  DataCell(
+                    alreadySubmitted
+                        ? const Text(
+                            'Submitted',
+                            style: TextStyle(color: Colors.green),
+                          )
+                        : canGiveFeedback
+                            ? OutlinedButton(
+                                onPressed: () => _openFeedbackDialog(entry),
+                                child: const Text('Give Feedback'),
+                              )
+                            : const Text('—'),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final history = _history;
+    if (history == null) {
+      return const Center(child: Text('Unable to load meal history.'));
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: _pickMonth,
+                icon: const Icon(Icons.calendar_today),
+                label: Text(_formatMonth(_selectedMonth)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'My Meal History — ${widget.employeeName}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _loadHistory,
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildSummary(history),
+          const SizedBox(height: 16),
+          _buildHistoryTable(history),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Meal History'),
+      ),
+      body: _buildBody(),
+    );
+  }
+}

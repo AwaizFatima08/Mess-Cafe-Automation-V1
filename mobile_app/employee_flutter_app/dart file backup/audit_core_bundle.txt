@@ -1,4 +1,5 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+===== meal_reservation_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'meal_rate_service.dart';
 import 'notification_service.dart';
@@ -1309,4 +1310,747 @@ class _NotificationRecipient {
 
   final String userUid;
   final String email;
+}
+
+===== meal_reservation.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'meal_option_selection.dart';
+
+class MealReservation {
+  final String? id;
+  final DateTime reservationDate;
+  final String mealType;
+  final String reservationCategory;
+  final String? forEmployeeNumber;
+  final String? forEmployeeName;
+  final String? hostEmployeeNumber;
+  final String? hostDepartment;
+  final String bookedByUserId;
+  final String? bookedByEmployeeNumber;
+  final String bookingSource;
+  final String serviceMode;
+  final int totalMealCount;
+  final List<MealOptionSelection> selectedOptions;
+  final String status;
+  final bool overrideFlag;
+  final String? overrideReason;
+  final String? notes;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const MealReservation({
+    this.id,
+    required this.reservationDate,
+    required this.mealType,
+    required this.reservationCategory,
+    this.forEmployeeNumber,
+    this.forEmployeeName,
+    this.hostEmployeeNumber,
+    this.hostDepartment,
+    required this.bookedByUserId,
+    this.bookedByEmployeeNumber,
+    required this.bookingSource,
+    required this.serviceMode,
+    required this.totalMealCount,
+    required this.selectedOptions,
+    required this.status,
+    required this.overrideFlag,
+    this.overrideReason,
+    this.notes,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  MealReservation copyWith({
+    String? id,
+    DateTime? reservationDate,
+    String? mealType,
+    String? reservationCategory,
+    String? forEmployeeNumber,
+    String? forEmployeeName,
+    String? hostEmployeeNumber,
+    String? hostDepartment,
+    String? bookedByUserId,
+    String? bookedByEmployeeNumber,
+    String? bookingSource,
+    String? serviceMode,
+    int? totalMealCount,
+    List<MealOptionSelection>? selectedOptions,
+    String? status,
+    bool? overrideFlag,
+    String? overrideReason,
+    String? notes,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return MealReservation(
+      id: id ?? this.id,
+      reservationDate: reservationDate ?? this.reservationDate,
+      mealType: mealType ?? this.mealType,
+      reservationCategory: reservationCategory ?? this.reservationCategory,
+      forEmployeeNumber: forEmployeeNumber ?? this.forEmployeeNumber,
+      forEmployeeName: forEmployeeName ?? this.forEmployeeName,
+      hostEmployeeNumber: hostEmployeeNumber ?? this.hostEmployeeNumber,
+      hostDepartment: hostDepartment ?? this.hostDepartment,
+      bookedByUserId: bookedByUserId ?? this.bookedByUserId,
+      bookedByEmployeeNumber:
+          bookedByEmployeeNumber ?? this.bookedByEmployeeNumber,
+      bookingSource: bookingSource ?? this.bookingSource,
+      serviceMode: serviceMode ?? this.serviceMode,
+      totalMealCount: totalMealCount ?? this.totalMealCount,
+      selectedOptions: selectedOptions ?? this.selectedOptions,
+      status: status ?? this.status,
+      overrideFlag: overrideFlag ?? this.overrideFlag,
+      overrideReason: overrideReason ?? this.overrideReason,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'reservation_date': Timestamp.fromDate(
+        DateTime(
+          reservationDate.year,
+          reservationDate.month,
+          reservationDate.day,
+        ),
+      ),
+      'meal_type': mealType,
+      'reservation_category': reservationCategory,
+      'for_employee_number': forEmployeeNumber,
+      'for_employee_name': forEmployeeName,
+      'host_employee_number': hostEmployeeNumber,
+      'host_department': hostDepartment,
+      'booked_by_user_id': bookedByUserId,
+      'booked_by_employee_number': bookedByEmployeeNumber,
+      'booking_source': bookingSource,
+      'service_mode': serviceMode,
+      'total_meal_count': totalMealCount,
+      'selected_options': selectedOptions.map((e) => e.toMap()).toList(),
+      'status': status,
+      'override_flag': overrideFlag,
+      'override_reason': overrideReason,
+      'notes': notes,
+      'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
+      'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
+    };
+  }
+
+  factory MealReservation.fromMap(Map<String, dynamic> map, {String? id}) {
+    final selectedOptionsRaw =
+        (map['selected_options'] as List<dynamic>?) ?? const [];
+
+    return MealReservation(
+      id: id,
+      reservationDate: _readDate(map['reservation_date']),
+      mealType: (map['meal_type'] ?? '').toString(),
+      reservationCategory: (map['reservation_category'] ?? '').toString(),
+      forEmployeeNumber: map['for_employee_number']?.toString(),
+      forEmployeeName: map['for_employee_name']?.toString(),
+      hostEmployeeNumber: map['host_employee_number']?.toString(),
+      hostDepartment: map['host_department']?.toString(),
+      bookedByUserId: (map['booked_by_user_id'] ?? '').toString(),
+      bookedByEmployeeNumber: map['booked_by_employee_number']?.toString(),
+      bookingSource: (map['booking_source'] ?? '').toString(),
+      serviceMode: (map['service_mode'] ?? '').toString(),
+      totalMealCount: (map['total_meal_count'] as num?)?.toInt() ?? 0,
+      selectedOptions: selectedOptionsRaw
+          .whereType<Map>()
+          .map((e) => MealOptionSelection.fromMap(Map<String, dynamic>.from(e)))
+          .toList(),
+      status: (map['status'] ?? '').toString(),
+      overrideFlag: map['override_flag'] as bool? ?? false,
+      overrideReason: map['override_reason']?.toString(),
+      notes: map['notes']?.toString(),
+      createdAt: _readNullableDate(map['created_at']),
+      updatedAt: _readNullableDate(map['updated_at']),
+    );
+  }
+
+  static DateTime _readDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.now();
+  }
+
+  static DateTime? _readNullableDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  @override
+  String toString() {
+    return 'MealReservation(id: $id, reservationDate: $reservationDate, mealType: $mealType, reservationCategory: $reservationCategory, forEmployeeNumber: $forEmployeeNumber, forEmployeeName: $forEmployeeName, hostEmployeeNumber: $hostEmployeeNumber, hostDepartment: $hostDepartment, bookedByUserId: $bookedByUserId, bookedByEmployeeNumber: $bookedByEmployeeNumber, bookingSource: $bookingSource, serviceMode: $serviceMode, totalMealCount: $totalMealCount, selectedOptions: $selectedOptions, status: $status, overrideFlag: $overrideFlag, overrideReason: $overrideReason, notes: $notes, createdAt: $createdAt, updatedAt: $updatedAt)';
+  }
+}
+
+===== employee_identity_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EmployeeIdentityResult {
+  final bool found;
+  final String reason;
+
+  final String? uid;
+  final String? userDocumentId;
+  final String? employeeNumber;
+  final String? employeeDocumentId;
+
+  final Map<String, dynamic>? userData;
+  final Map<String, dynamic>? employeeData;
+
+  final bool userExists;
+  final bool employeeExists;
+  final bool userIsActive;
+  final bool employeeIsActive;
+  final bool emailMatches;
+  final bool isBookingEligible;
+  final String blockingReason;
+
+  const EmployeeIdentityResult({
+    required this.found,
+    required this.reason,
+    this.uid,
+    this.userDocumentId,
+    this.employeeNumber,
+    this.employeeDocumentId,
+    this.userData,
+    this.employeeData,
+    required this.userExists,
+    required this.employeeExists,
+    required this.userIsActive,
+    required this.employeeIsActive,
+    required this.emailMatches,
+    required this.isBookingEligible,
+    required this.blockingReason,
+  });
+
+  bool get hasUser => userData != null;
+
+  bool get hasEmployeeLink =>
+      employeeNumber != null && employeeNumber!.trim().isNotEmpty;
+
+  bool get hasEmployee => employeeData != null;
+
+  String get linkageStatusLabel {
+    if (isBookingEligible) {
+      return 'Eligible';
+    }
+
+    if (!userExists) {
+      return 'User Missing';
+    }
+
+    if (!hasEmployeeLink) {
+      return 'Employee Number Missing';
+    }
+
+    if (!employeeExists) {
+      return 'Employee Record Missing';
+    }
+
+    if (!userIsActive) {
+      return 'User Inactive';
+    }
+
+    if (!employeeIsActive) {
+      return 'Employee Inactive';
+    }
+
+    if (!emailMatches) {
+      return 'Email Mismatch';
+    }
+
+    return 'Blocked';
+  }
+}
+
+class EmployeeIdentityService {
+  EmployeeIdentityService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  CollectionReference<Map<String, dynamic>> get _employeesRef =>
+      _firestore.collection('employees');
+
+  Future<EmployeeIdentityResult> resolveByAuthUid(String authUid) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return const EmployeeIdentityResult(
+        found: false,
+        reason: 'missing_auth_uid',
+        userExists: false,
+        employeeExists: false,
+        userIsActive: false,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason: 'Authentication UID is missing.',
+      );
+    }
+
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (userQuery.docs.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.uid_not_found',
+        uid: normalizedUid,
+        userExists: false,
+        employeeExists: false,
+        userIsActive: false,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason: 'User profile record was not found.',
+      );
+    }
+
+    final userDoc = userQuery.docs.first;
+    final userData = userDoc.data();
+
+    final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
+    final userIsActive = userData['is_active'] == true;
+
+    if (employeeNumber.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.employee_number_missing',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        userData: userData,
+        userExists: true,
+        employeeExists: false,
+        userIsActive: userIsActive,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason:
+            'User profile exists but employee number is missing.',
+      );
+    }
+
+    final employeeDoc = await _employeesRef.doc(employeeNumber).get();
+
+    if (!employeeDoc.exists || employeeDoc.data() == null) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'employees.doc_not_found',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        employeeNumber: employeeNumber,
+        userData: userData,
+        userExists: true,
+        employeeExists: false,
+        userIsActive: userIsActive,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason:
+            'Employee master record was not found for this employee number.',
+      );
+    }
+
+    final employeeData = employeeDoc.data()!;
+    final employeeIsActive = employeeData['is_active'] == true;
+    final emailMatches = _emailsMatch(
+      userData['email'],
+      employeeData['email'],
+    );
+
+    final blockingReason = _resolveBlockingReason(
+      userIsActive: userIsActive,
+      employeeIsActive: employeeIsActive,
+      emailMatches: emailMatches,
+    );
+
+    final isBookingEligible = blockingReason.isEmpty;
+
+    return EmployeeIdentityResult(
+      found: isBookingEligible,
+      reason: isBookingEligible ? 'resolved' : 'resolved_but_blocked',
+      uid: normalizedUid,
+      userDocumentId: userDoc.id,
+      employeeNumber: employeeNumber,
+      employeeDocumentId: employeeDoc.id,
+      userData: userData,
+      employeeData: employeeData,
+      userExists: true,
+      employeeExists: true,
+      userIsActive: userIsActive,
+      employeeIsActive: employeeIsActive,
+      emailMatches: emailMatches,
+      isBookingEligible: isBookingEligible,
+      blockingReason: blockingReason,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getEmployeeByEmployeeNumber(
+    String employeeNumber,
+  ) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      return null;
+    }
+
+    final employeeDoc = await _employeesRef.doc(normalizedEmployeeNumber).get();
+
+    if (!employeeDoc.exists) {
+      return null;
+    }
+
+    return employeeDoc.data();
+  }
+
+  Future<Map<String, dynamic>?> getUserByUid(String authUid) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return null;
+    }
+
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (userQuery.docs.isEmpty) {
+      return null;
+    }
+
+    return userQuery.docs.first.data();
+  }
+
+  Future<bool> isBookingEligibleForAuthUid(String authUid) async {
+    final result = await resolveByAuthUid(authUid);
+    return result.isBookingEligible;
+  }
+
+  bool _emailsMatch(dynamic userEmailRaw, dynamic employeeEmailRaw) {
+    final userEmail = (userEmailRaw ?? '').toString().trim().toLowerCase();
+    final employeeEmail =
+        (employeeEmailRaw ?? '').toString().trim().toLowerCase();
+
+    if (userEmail.isEmpty || employeeEmail.isEmpty) {
+      return false;
+    }
+
+    return userEmail == employeeEmail;
+  }
+
+  String _resolveBlockingReason({
+    required bool userIsActive,
+    required bool employeeIsActive,
+    required bool emailMatches,
+  }) {
+    if (!userIsActive) {
+      return 'User account is inactive.';
+    }
+
+    if (!employeeIsActive) {
+      return 'Employee master record is inactive.';
+    }
+
+    if (!emailMatches) {
+      return 'User email does not match employee master email.';
+    }
+
+    return '';
+  }
+}
+
+===== user_profile_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'user_role_service.dart';
+
+class AppUserProfile {
+  final String documentId;
+  final String authUid;
+  final String email;
+  final AppUserRole role;
+  final String employeeNumber;
+  final String employeeName;
+  final bool isActive;
+  final String status;
+  final Map<String, dynamic> rawData;
+
+  const AppUserProfile({
+    required this.documentId,
+    required this.authUid,
+    required this.email,
+    required this.role,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.isActive,
+    required this.status,
+    required this.rawData,
+  });
+
+  bool get hasEmployeeLink => employeeNumber.trim().isNotEmpty;
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+}
+
+class UserProfileService {
+  UserProfileService({
+    FirebaseFirestore? firestore,
+    UserRoleService? userRoleService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _userRoleService = userRoleService ?? UserRoleService();
+
+  final FirebaseFirestore _firestore;
+  final UserRoleService _userRoleService;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<AppUserProfile?> resolveCurrentUserProfile({
+    required String authUid,
+  }) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return null;
+    }
+
+    final query =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (query.docs.isEmpty) {
+      return null;
+    }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+
+    final email = (data['email'] ?? '').toString().trim().toLowerCase();
+    final employeeNumber =
+        (data['employee_number'] ?? '').toString().trim();
+    final employeeName =
+        (data['employee_name'] ?? '').toString().trim();
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isActive = data['is_active'] == true;
+
+    return AppUserProfile(
+      documentId: doc.id,
+      authUid: (data['uid'] ?? normalizedUid).toString().trim(),
+      email: email,
+      role: _userRoleService.parseRole(data['role']),
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      isActive: isActive,
+      status: status,
+      rawData: data,
+    );
+  }
+
+  Future<AppUserProfile?> getUserProfileByUid(String authUid) {
+    return resolveCurrentUserProfile(authUid: authUid);
+  }
+}
+
+===== user_role_service.dart =====
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum AppUserRole {
+  developer,
+  admin,
+  messManager,
+  messSupervisor,
+  employee,
+  unknown,
+}
+
+class ResolvedUserRole {
+  final AppUserRole role;
+  final String source;
+  final String? documentId;
+  final Map<String, dynamic>? rawData;
+
+  const ResolvedUserRole({
+    required this.role,
+    required this.source,
+    this.documentId,
+    this.rawData,
+  });
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool get isAdminFamily {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canManageMenus {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canConfirmIssuance {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canEnterRates {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canManageUsers {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
+  }
+}
+
+class UserRoleService {
+  UserRoleService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<ResolvedUserRole> resolveRole({
+    required String authUid,
+  }) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'missing_auth_uid',
+      );
+    }
+
+    final query = await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (query.docs.isEmpty) {
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'users.uid_not_found',
+      );
+    }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+
+    return ResolvedUserRole(
+      role: parseRole(data['role']),
+      source: 'users.uid',
+      documentId: doc.id,
+      rawData: data,
+    );
+  }
+
+  AppUserRole parseRole(dynamic value) {
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+
+    switch (normalized) {
+      case 'developer':
+        return AppUserRole.developer;
+      case 'admin':
+        return AppUserRole.admin;
+      case 'mess_manager':
+        return AppUserRole.messManager;
+      case 'mess_supervisor':
+        return AppUserRole.messSupervisor;
+      case 'employee':
+        return AppUserRole.employee;
+      default:
+        return AppUserRole.unknown;
+    }
+  }
+
+  String roleToFirestoreValue(AppUserRole role) {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool isAdminFamily(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canManageMenus(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canConfirmIssuance(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canEnterRates(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canManageUsers(AppUserRole role) {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
+  }
 }

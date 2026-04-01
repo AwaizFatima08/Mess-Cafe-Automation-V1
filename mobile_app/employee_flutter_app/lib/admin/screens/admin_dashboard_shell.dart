@@ -1,14 +1,12 @@
-import 'package:firebase_auth/firebase_auth.dart';
+﻿import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../../analytics/screens/analytics_dashboard_screen.dart';
 import '../../main.dart';
 import '../../services/notification_service.dart';
 import '../../shared/screens/notifications_screen.dart';
 import '../../shared/widgets/notification_badge.dart';
 import 'dashboard_screen.dart';
 import 'employee_master_management_screen.dart';
-import 'event_management_screen.dart';
 import 'guest_meal_booking_screen.dart';
 import 'meal_cost_dashboard_screen.dart';
 import 'meal_feedback_dashboard_screen.dart';
@@ -44,23 +42,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           ? FirebaseAuth.instance.currentUser!.uid.trim()
           : 'admin_local_uid';
 
-  String get _userDisplayName =>
-      FirebaseAuth.instance.currentUser?.displayName?.trim().isNotEmpty == true
-          ? FirebaseAuth.instance.currentUser!.displayName!.trim()
-          : _userEmail;
-
-  String get _userEmployeeNumber {
-    final fromRoleContext =
-        (_roleContext['employeeNumber'] ?? '').toString().trim();
-    if (fromRoleContext.isNotEmpty) return fromRoleContext;
-
-    final fromAltKey =
-        (_roleContext['employee_number'] ?? '').toString().trim();
-    if (fromAltKey.isNotEmpty) return fromAltKey;
-
-    return _userEmail;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -92,8 +73,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         'canManageEmployeeMaster': true,
         'canManageUsers': true,
         'canViewFeedbackDashboard': true,
-        'canManageEvents': true,
-        'canViewAnalytics': true,
         'role': 'admin',
       };
 
@@ -167,32 +146,6 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
             icon: Icons.feedback_outlined,
             selectedIcon: Icons.feedback,
             screen: MealFeedbackDashboardScreen(),
-          ),
-        );
-      }
-
-      if (_flag(roleContext, 'canViewAnalytics')) {
-        navItems.add(
-          const _AdminNavItem(
-            label: 'Analytics',
-            icon: Icons.analytics_outlined,
-            selectedIcon: Icons.analytics,
-            screen: AnalyticsDashboardScreen(),
-          ),
-        );
-      }
-
-      if (_flag(roleContext, 'canManageEvents')) {
-        navItems.add(
-          _AdminNavItem(
-            label: 'Events',
-            icon: Icons.event_outlined,
-            selectedIcon: Icons.event,
-            screen: EventManagementScreen(
-              currentUserUid: _userUid,
-              currentEmployeeNumber: _userEmployeeNumber,
-              currentUserName: _userDisplayName,
-            ),
           ),
         );
       }

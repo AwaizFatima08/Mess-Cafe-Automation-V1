@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../admin/services/menu_resolver_service.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../../models/daily_resolved_menu.dart';
 import '../../models/resolved_meal_option.dart';
 import '../../services/notification_service.dart';
@@ -178,28 +180,36 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     return names.join(', ');
   }
 
-  void _openDineInReservation() {
-    Navigator.push(
+  Future<void> _openReservation({
+    required String diningMode,
+  }) async {
+    await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => TodayMenuScreen(
-          userEmail: widget.userEmail,
-          initialDiningMode: 'dine_in',
-        ),
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOut,
+            ),
+            child: TodayMenuScreen(
+              userEmail: widget.userEmail,
+              initialDiningMode: diningMode,
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _openTakeawayReservation() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TodayMenuScreen(
-          userEmail: widget.userEmail,
-          initialDiningMode: 'takeaway',
-        ),
-      ),
-    );
+  Future<void> _openDineInReservation() {
+    return _openReservation(diningMode: 'dine_in');
+  }
+
+  Future<void> _openTakeawayReservation() {
+    return _openReservation(diningMode: 'takeaway');
   }
 
   Future<void> _showEventInvitationPopup(
@@ -219,12 +229,32 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+
         return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.lg),
+          ),
           title: Row(
-            children: const [
-              Icon(Icons.campaign_outlined),
-              SizedBox(width: 8),
-              Expanded(child: Text('New Event Invitation')),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: const Icon(
+                  Icons.campaign_outlined,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'New Event Invitation',
+                  style: theme.textTheme.titleLarge,
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -234,18 +264,19 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               children: [
                 Text(
                   title.isEmpty ? 'Event Invitation' : title,
-                  style: Theme.of(dialogContext).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: theme.textTheme.titleMedium,
                 ),
                 if (body.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Text(body),
+                  Text(
+                    body,
+                    style: theme.textTheme.bodyMedium,
+                  ),
                 ],
                 const SizedBox(height: 12),
                 Text(
                   'Received: $createdAtLabel',
-                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                  style: theme.textTheme.bodySmall,
                 ),
               ],
             ),
@@ -257,7 +288,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               },
               child: const Text('Later'),
             ),
-            FilledButton.icon(
+            ElevatedButton.icon(
               onPressed: () {
                 Navigator.of(dialogContext).pop(_EventPopupAction.open);
               },
@@ -297,54 +328,113 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   Widget _buildHeaderCard() {
+    final theme = Theme.of(context);
     final today = _startOfDay(DateTime.now());
 
-    return Card(
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        gradient: const LinearGradient(
+          colors: [
+            AppColors.primary,
+            AppColors.primaryDark,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Wrap(
-          runSpacing: 12,
+          runSpacing: AppSpacing.lg,
+          spacing: AppSpacing.lg,
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Employee Dashboard',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Welcome: ${widget.userEmail}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Today: ${_weekdayLabel(today)}, ${_formatDate(today)}',
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Use this panel to view today’s menu and quickly open the reservation screen.',
-                ),
-              ],
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    AppConstants.visibleAppName,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Welcome, ${widget.employeeName}',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Employee No: ${widget.employeeNumber}',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Today: ${_weekdayLabel(today)}, ${_formatDate(today)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.88),
+                    ),
+                  ),
+                  if (widget.department.trim().isNotEmpty ||
+                      widget.designation.trim().isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      [
+                        widget.designation.trim(),
+                        widget.department.trim(),
+                      ].where((e) => e.isNotEmpty).join(' • '),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    'View today’s menu, check your event invitations, and open reservation in one tap.',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
                 OutlinedButton.icon(
                   onPressed: _refreshDashboard,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Refresh'),
                 ),
                 ElevatedButton.icon(
                   onPressed: _openDineInReservation,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.primary,
+                  ),
                   icon: const Icon(Icons.restaurant),
                   label: const Text('Dine In'),
                 ),
                 ElevatedButton.icon(
                   onPressed: _openTakeawayReservation,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.white,
+                  ),
                   icon: const Icon(Icons.takeout_dining),
                   label: const Text('Takeaway'),
                 ),
@@ -358,25 +448,43 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   Widget _buildQuickAccessCard() {
     return Card(
-      child: Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.restaurant),
-            title: const Text('Dine In Reservation'),
-            subtitle: const Text('Open meal reservation screen in dine in mode'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-            onTap: _openDineInReservation,
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.takeout_dining),
-            title: const Text('Takeaway Reservation'),
-            subtitle:
-                const Text('Open meal reservation screen in takeaway mode'),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-            onTap: _openTakeawayReservation,
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Quick Access',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: _QuickActionTile(
+                    icon: Icons.restaurant,
+                    title: 'Dine In',
+                    subtitle: 'Reserve meals for dine in',
+                    color: AppColors.primaryLight,
+                    iconColor: AppColors.primary,
+                    onTap: _openDineInReservation,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: _QuickActionTile(
+                    icon: Icons.takeout_dining,
+                    title: 'Takeaway',
+                    subtitle: 'Reserve meals for takeaway',
+                    color: AppColors.accentSoft,
+                    iconColor: AppColors.success,
+                    onTap: _openTakeawayReservation,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -386,34 +494,57 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     required IconData icon,
     required List<ResolvedMealOption> options,
   }) {
+    final theme = Theme.of(context);
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon),
-                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight,
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: theme.textTheme.titleLarge,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             if (options.isEmpty)
-              const Text('No menu available for this meal.')
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(AppRadii.md),
+                ),
+                child: Text(
+                  'No menu available for this meal.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              )
             else
               ...options.map(
-                (option) => _DashboardMenuOptionCard(
-                  optionLabel: option.optionLabel,
-                  optionKey: option.optionKey,
-                  itemsSummary: _buildItemsSummary(option),
+                (option) => Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  child: _DashboardMenuOptionCard(
+                    optionLabel: option.optionLabel,
+                    optionKey: option.optionKey,
+                    itemsSummary: _buildItemsSummary(option),
+                  ),
                 ),
               ),
           ],
@@ -423,28 +554,28 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   }
 
   Widget _buildTodayMenuCard(DailyResolvedMenu? menu) {
+    final theme = Theme.of(context);
+
     if (menu == null) {
       return Card(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Today’s Menu Summary',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: theme.textTheme.titleLarge,
               ),
-              const SizedBox(height: 12),
-              const Text(
+              const SizedBox(height: AppSpacing.md),
+              Text(
                 'No active menu could be resolved for today.',
+                style: theme.textTheme.bodyMedium,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: AppSpacing.md),
               Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
                 children: [
                   ElevatedButton.icon(
                     onPressed: _openDineInReservation,
@@ -468,33 +599,35 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
       children: [
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Wrap(
-              runSpacing: 8,
+              runSpacing: AppSpacing.sm,
+              spacing: AppSpacing.lg,
               alignment: WrapAlignment.spaceBetween,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Today’s Menu Summary',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: theme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: AppSpacing.sm),
                     Text(
                       'Cycle: ${menu.cycleName.isEmpty ? 'N/A' : menu.cycleName}',
+                      style: theme.textTheme.bodyMedium,
                     ),
-                    const SizedBox(height: 4),
-                    Text('Weekday Key: ${menu.weekday}'),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Weekday Key: ${menu.weekday}',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ],
                 ),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
                   children: [
                     ElevatedButton.icon(
                       onPressed: _openDineInReservation,
@@ -512,19 +645,19 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         _buildMealSection(
           title: 'Breakfast',
           icon: Icons.free_breakfast_outlined,
           options: menu.breakfastOptions,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         _buildMealSection(
           title: 'Lunch',
           icon: Icons.lunch_dining_outlined,
           options: menu.lunchOptions,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpacing.md),
         _buildMealSection(
           title: 'Dinner',
           icon: Icons.dinner_dining_outlined,
@@ -537,12 +670,14 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: AppColors.primary,
       onRefresh: _refreshDashboard,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
           _buildHeaderCard(),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           EmployeeEventInvitationsSection(
             userUid: widget.userUid,
             employeeNumber: widget.employeeNumber,
@@ -550,18 +685,25 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
             department: widget.department,
             designation: widget.designation,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           _buildQuickAccessCard(),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           FutureBuilder<DailyResolvedMenu?>(
             future: _menuFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Card(
+                return Card(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(
-                      child: CircularProgressIndicator(),
+                    padding: const EdgeInsets.all(AppSpacing.xxl),
+                    child: Column(
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Loading today’s menu...',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -570,25 +712,23 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               if (snapshot.hasError) {
                 return Card(
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(AppSpacing.lg),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Today’s Menu Summary',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: AppSpacing.md),
                         Text(
                           'Failed to load today’s menu: ${snapshot.error}',
+                          style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: AppSpacing.md),
                         Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                          spacing: AppSpacing.sm,
+                          runSpacing: AppSpacing.sm,
                           children: [
                             OutlinedButton.icon(
                               onPressed: _refreshDashboard,
@@ -627,6 +767,87 @@ enum _EventPopupAction {
   open,
 }
 
+class _QuickActionTile extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final Color iconColor;
+  final Future<void> Function() onTap;
+
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.iconColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_QuickActionTile> createState() => _QuickActionTileState();
+}
+
+class _QuickActionTileState extends State<_QuickActionTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 120),
+      scale: _pressed ? 0.98 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _pressed = true),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTapUp: (_) => setState(() => _pressed = false),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: widget.color,
+              borderRadius: BorderRadius.circular(AppRadii.lg),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(AppRadii.md),
+                    ),
+                    child: Icon(
+                      widget.icon,
+                      color: widget.iconColor,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    widget.title,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    widget.subtitle,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DashboardMenuOptionCard extends StatelessWidget {
   final String optionLabel;
   final String optionKey;
@@ -640,22 +861,29 @@ class _DashboardMenuOptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+    final theme = Theme.of(context);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               optionLabel,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
+              style: theme.textTheme.titleSmall,
             ),
-            const SizedBox(height: 6),
-            Text(itemsSummary),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              itemsSummary,
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.sm),
             Chip(
               label: Text(optionKey),
               visualDensity: VisualDensity.compact,
