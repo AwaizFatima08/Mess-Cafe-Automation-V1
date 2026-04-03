@@ -1,278 +1,58 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EmployeeIdentityResult {
-  final bool found;
-  final String reason;
+  final Map<String, dynamic>? employee;
+  final Map<String, dynamic>? user;
+  final bool exists;
 
-  final String? uid;
-  final String? userDocumentId;
-  final String? employeeNumber;
-  final String? employeeDocumentId;
+  EmployeeIdentityResult({this.employee, this.user, required this.exists});
 
-  final Map<String, dynamic>? userData;
-  final Map<String, dynamic>? employeeData;
+  // RESTORE: Validation getters for UserManagementScreen
+  bool get userExists => user != null;
+  bool get employeeExists => employee != null;
+  bool get hasEmployeeLink => user != null && user!['employee_number'] != null;
+  bool get employeeIsActive => employee != null && employee!['is_active'] == true;
+  bool get userIsActive => user != null && user!['is_active'] == true;
+  bool get emailMatches => (user != null && employee != null) && 
+                           (user!['email'].toString().toLowerCase() == employee!['email'].toString().toLowerCase());
+  
+  bool get isBookingEligible => userExists && employeeExists && hasEmployeeLink && employeeIsActive && emailMatches;
 
-  final bool userExists;
-  final bool employeeExists;
-  final bool userIsActive;
-  final bool employeeIsActive;
-  final bool emailMatches;
-  final bool isBookingEligible;
-  final String blockingReason;
-
-  const EmployeeIdentityResult({
-    required this.found,
-    required this.reason,
-    this.uid,
-    this.userDocumentId,
-    this.employeeNumber,
-    this.employeeDocumentId,
-    this.userData,
-    this.employeeData,
-    required this.userExists,
-    required this.employeeExists,
-    required this.userIsActive,
-    required this.employeeIsActive,
-    required this.emailMatches,
-    required this.isBookingEligible,
-    required this.blockingReason,
-  });
-
-  bool get hasUser => userData != null;
-
-  bool get hasEmployeeLink =>
-      employeeNumber != null && employeeNumber!.trim().isNotEmpty;
-
-  bool get hasEmployee => employeeData != null;
-
-  String get linkageStatusLabel {
-    if (isBookingEligible) {
-      return 'Eligible';
-    }
-
-    if (!userExists) {
-      return 'User Missing';
-    }
-
-    if (!hasEmployeeLink) {
-      return 'Employee Number Missing';
-    }
-
-    if (!employeeExists) {
-      return 'Employee Record Missing';
-    }
-
-    if (!userIsActive) {
-      return 'User Inactive';
-    }
-
-    if (!employeeIsActive) {
-      return 'Employee Inactive';
-    }
-
-    if (!emailMatches) {
-      return 'Email Mismatch';
-    }
-
-    return 'Blocked';
+  String get linkageStatusLabel => isBookingEligible ? "Linked & Active" : "Incomplete/Blocked";
+  
+  String get blockingReason {
+    if (!userExists) return "No User Profile Found";
+    if (!hasEmployeeLink) return "Not Linked to Employee Master";
+    if (!employeeExists) return "Employee Number not in Master List";
+    if (!employeeIsActive) return "Employee Account is Inactive";
+    if (!emailMatches) return "Email Mismatch (Auth vs Master)";
+    return "None";
   }
+
+  String? get employeeNumber => user?['employee_number'];
 }
 
 class EmployeeIdentityService {
-  EmployeeIdentityService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  final FirebaseFirestore _firestore;
+  Future<Map<String, dynamic>?> getEmployeeByEmail(String email) async {
+    final snap = await _db.collection('employees').where('email', isEqualTo: email).limit(1).get();
+    return snap.docs.isNotEmpty ? snap.docs.first.data() : null;
+  }
 
-  CollectionReference<Map<String, dynamic>> get _usersRef =>
-      _firestore.collection('users');
+  Future<EmployeeIdentityResult> resolveByAuthUid(String uid) async {
+    final userSnap = await _db.collection('users').where('uid', isEqualTo: uid).limit(1).get();
+    if (userSnap.docs.isEmpty) return EmployeeIdentityResult(exists: false);
 
-  CollectionReference<Map<String, dynamic>> get _employeesRef =>
-      _firestore.collection('employees');
-
-  Future<EmployeeIdentityResult> resolveByAuthUid(String authUid) async {
-    final normalizedUid = authUid.trim();
-
-    if (normalizedUid.isEmpty) {
-      return const EmployeeIdentityResult(
-        found: false,
-        reason: 'missing_auth_uid',
-        userExists: false,
-        employeeExists: false,
-        userIsActive: false,
-        employeeIsActive: false,
-        emailMatches: false,
-        isBookingEligible: false,
-        blockingReason: 'Authentication UID is missing.',
-      );
-    }
-
-    final userQuery =
-        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
-
-    if (userQuery.docs.isEmpty) {
-      return EmployeeIdentityResult(
-        found: false,
-        reason: 'users.uid_not_found',
-        uid: normalizedUid,
-        userExists: false,
-        employeeExists: false,
-        userIsActive: false,
-        employeeIsActive: false,
-        emailMatches: false,
-        isBookingEligible: false,
-        blockingReason: 'User profile record was not found.',
-      );
-    }
-
-    final userDoc = userQuery.docs.first;
-    final userData = userDoc.data();
-
-    final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
-    final userIsActive = userData['is_active'] == true;
-
-    if (employeeNumber.isEmpty) {
-      return EmployeeIdentityResult(
-        found: false,
-        reason: 'users.employee_number_missing',
-        uid: normalizedUid,
-        userDocumentId: userDoc.id,
-        userData: userData,
-        userExists: true,
-        employeeExists: false,
-        userIsActive: userIsActive,
-        employeeIsActive: false,
-        emailMatches: false,
-        isBookingEligible: false,
-        blockingReason:
-            'User profile exists but employee number is missing.',
-      );
-    }
-
-    final employeeDoc = await _employeesRef.doc(employeeNumber).get();
-
-    if (!employeeDoc.exists || employeeDoc.data() == null) {
-      return EmployeeIdentityResult(
-        found: false,
-        reason: 'employees.doc_not_found',
-        uid: normalizedUid,
-        userDocumentId: userDoc.id,
-        employeeNumber: employeeNumber,
-        userData: userData,
-        userExists: true,
-        employeeExists: false,
-        userIsActive: userIsActive,
-        employeeIsActive: false,
-        emailMatches: false,
-        isBookingEligible: false,
-        blockingReason:
-            'Employee master record was not found for this employee number.',
-      );
-    }
-
-    final employeeData = employeeDoc.data()!;
-    final employeeIsActive = employeeData['is_active'] == true;
-    final emailMatches = _emailsMatch(
-      userData['email'],
-      employeeData['email'],
-    );
-
-    final blockingReason = _resolveBlockingReason(
-      userIsActive: userIsActive,
-      employeeIsActive: employeeIsActive,
-      emailMatches: emailMatches,
-    );
-
-    final isBookingEligible = blockingReason.isEmpty;
+    final userData = userSnap.docs.first.data();
+    final empSnap = await _db.collection('employees')
+        .where('employee_number', isEqualTo: userData['employee_number'])
+        .limit(1).get();
 
     return EmployeeIdentityResult(
-      found: isBookingEligible,
-      reason: isBookingEligible ? 'resolved' : 'resolved_but_blocked',
-      uid: normalizedUid,
-      userDocumentId: userDoc.id,
-      employeeNumber: employeeNumber,
-      employeeDocumentId: employeeDoc.id,
-      userData: userData,
-      employeeData: employeeData,
-      userExists: true,
-      employeeExists: true,
-      userIsActive: userIsActive,
-      employeeIsActive: employeeIsActive,
-      emailMatches: emailMatches,
-      isBookingEligible: isBookingEligible,
-      blockingReason: blockingReason,
+      exists: true,
+      user: userData,
+      employee: empSnap.docs.isNotEmpty ? empSnap.docs.first.data() : null,
     );
-  }
-
-  Future<Map<String, dynamic>?> getEmployeeByEmployeeNumber(
-    String employeeNumber,
-  ) async {
-    final normalizedEmployeeNumber = employeeNumber.trim();
-
-    if (normalizedEmployeeNumber.isEmpty) {
-      return null;
-    }
-
-    final employeeDoc = await _employeesRef.doc(normalizedEmployeeNumber).get();
-
-    if (!employeeDoc.exists) {
-      return null;
-    }
-
-    return employeeDoc.data();
-  }
-
-  Future<Map<String, dynamic>?> getUserByUid(String authUid) async {
-    final normalizedUid = authUid.trim();
-
-    if (normalizedUid.isEmpty) {
-      return null;
-    }
-
-    final userQuery =
-        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
-
-    if (userQuery.docs.isEmpty) {
-      return null;
-    }
-
-    return userQuery.docs.first.data();
-  }
-
-  Future<bool> isBookingEligibleForAuthUid(String authUid) async {
-    final result = await resolveByAuthUid(authUid);
-    return result.isBookingEligible;
-  }
-
-  bool _emailsMatch(dynamic userEmailRaw, dynamic employeeEmailRaw) {
-    final userEmail = (userEmailRaw ?? '').toString().trim().toLowerCase();
-    final employeeEmail =
-        (employeeEmailRaw ?? '').toString().trim().toLowerCase();
-
-    if (userEmail.isEmpty || employeeEmail.isEmpty) {
-      return false;
-    }
-
-    return userEmail == employeeEmail;
-  }
-
-  String _resolveBlockingReason({
-    required bool userIsActive,
-    required bool employeeIsActive,
-    required bool emailMatches,
-  }) {
-    if (!userIsActive) {
-      return 'User account is inactive.';
-    }
-
-    if (!employeeIsActive) {
-      return 'Employee master record is inactive.';
-    }
-
-    if (!emailMatches) {
-      return 'User email does not match employee master email.';
-    }
-
-    return '';
   }
 }

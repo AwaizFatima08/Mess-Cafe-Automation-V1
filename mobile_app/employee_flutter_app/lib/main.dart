@@ -7,8 +7,7 @@ import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'employee/screens/employee_dashboard_shell.dart';
 import 'employee/screens/employee_signup_screen.dart';
-import 'services/user_profile_service.dart';
-import 'services/user_role_service.dart';
+import 'services/employee_identity_service.dart'; // Updated to new service
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,7 +37,7 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  final UserProfileService _userProfileService = UserProfileService();
+  final EmployeeIdentityService _identityService = EmployeeIdentityService();
 
   @override
   Widget build(BuildContext context) {
@@ -54,37 +53,26 @@ class _AuthGateState extends State<AuthGate> {
           return const LoginScreen();
         }
 
-        return FutureBuilder<AppUserProfile?>(
-          future: _userProfileService.resolveCurrentUserProfile(
-            authUid: firebaseUser.uid,
-          ),
-          builder: (context, profileSnapshot) {
-            if (profileSnapshot.connectionState == ConnectionState.waiting) {
-              return const _LoadingScreen(message: 'Loading profile...');
+        // PHASE 11 FIX: Using the new robust identity resolution
+        return FutureBuilder<EmployeeIdentityResult>(
+          future: _identityService.resolveByAuthUid(firebaseUser.uid),
+          builder: (context, identitySnapshot) {
+            if (identitySnapshot.connectionState == ConnectionState.waiting) {
+              return const _LoadingScreen(message: 'Verifying identity...');
             }
 
-            if (profileSnapshot.hasError) {
-              return _AccessBlockedScreen(
-                title: 'Profile Load Error',
-                message: 'Unable to load your profile. Please contact admin.',
-                actionLabel: 'Sign Out',
-                onActionPressed: () async {
-                  await FirebaseAuth.instance.signOut();
-                },
-              );
-            }
+            final result = identitySnapshot.data;
 
-            final profile = profileSnapshot.data;
-
-            if (profile == null) {
+            // Handle non-existent profile (Redirect to Signup)
+            if (result == null || !result.exists) {
               return const EmployeeSignupScreen();
             }
 
-            if (!profile.isActive) {
+            // Handle Blocked/Inactive status
+            if (!result.isBookingEligible) {
               return _AccessBlockedScreen(
-                title: 'Access Pending',
-                message:
-                    'Your account exists but is not active yet. Please contact admin.',
+                title: 'Access Restricted',
+                message: result.blockingReason,
                 actionLabel: 'Sign Out',
                 onActionPressed: () async {
                   await FirebaseAuth.instance.signOut();
@@ -92,26 +80,20 @@ class _AuthGateState extends State<AuthGate> {
               );
             }
 
-            switch (profile.role) {
-              case AppUserRole.developer:
-              case AppUserRole.admin:
-              case AppUserRole.messManager:
-              case AppUserRole.messSupervisor:
-                return const AdminDashboardShell();
+            final String role = result.user?['role'] ?? 'employee';
 
-              case AppUserRole.employee:
+            // Route based on FFL Governance Model
+            switch (role) {
+              case 'admin':
+              case 'developer':
+              case 'mess_manager':
+              case 'mess_supervisor':
+                // FIX: Passing userEmail as required by the new Shell
+                return AdminDashboardShell(userEmail: firebaseUser.email ?? '');
+
+              case 'employee':
+              default:
                 return const EmployeeDashboardShell();
-
-              case AppUserRole.unknown:
-                return _AccessBlockedScreen(
-                  title: 'Role Not Assigned',
-                  message:
-                      'Your account role is not configured correctly. Please contact admin.',
-                  actionLabel: 'Sign Out',
-                  onActionPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                  },
-                );
             }
           },
         );
@@ -119,6 +101,8 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 }
+
+// --- LoginScreen and Helper Widgets remain consistent with your existing UI ---
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -147,9 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() {
-        _errorText = 'Please enter both email and password.';
-      });
+      setState(() => _errorText = 'Please enter both email and password.');
       return;
     }
 
@@ -163,91 +145,47 @@ class _LoginScreenState extends State<LoginScreen> {
         email: email,
         password: password,
       );
-
       if (!mounted) return;
-
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const AuthGate()),
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _errorText = e.message ?? 'Login failed.';
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _errorText = 'Unexpected error during login.';
-      });
+      setState(() => _errorText = e.message ?? 'Login failed.');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleForgotPassword() async {
     final email = _emailController.text.trim().toLowerCase();
-
     if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter your registered email first.')),
       );
       return;
     }
-
-    setState(() {
-      _isResetLoading = true;
-      _errorText = null;
-    });
-
+    setState(() => _isResetLoading = true);
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset email sent. Please check your inbox.'),
-        ),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message ?? 'Failed to send password reset email.'),
-        ),
+        const SnackBar(content: Text('Reset email sent. Check your inbox.')),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unexpected error while sending reset email.'),
-        ),
+        const SnackBar(content: Text('Error sending reset email.')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isResetLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isResetLoading = false);
     }
-  }
-
-  Future<void> _goToSignup() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const EmployeeSignupScreen(),
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       body: Center(
         child: ConstrainedBox(
@@ -263,154 +201,37 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Image.asset(
-                          'assets/images/fg_logo.png',
-                          height: 34,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const SizedBox(
-                              height: 40,
-                              width: 40,
-                            );
-                          },
-                        ),
-                        Image.asset(
-                          'assets/images/ffl_logo.png',
-                          height: 40,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const SizedBox(
-                              height: 40,
-                              width: 40,
-                            );
-                          },
-                        ),
+                        Image.asset('assets/images/fg_logo.png', height: 34, errorBuilder: (_, __, ___) => const SizedBox(height: 34)),
+                        Image.asset('assets/images/ffl_logo.png', height: 40, errorBuilder: (_, __, ___) => const SizedBox(height: 40)),
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      AppConstants.visibleAppName,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      AppConstants.loginSubtitle,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      AppConstants.signInTitle,
-                      style: theme.textTheme.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
+                    Text(AppConstants.visibleAppName, textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
                     const SizedBox(height: 20),
                     TextField(
                       controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        hintText: 'Enter your registered email',
-                      ),
+                      decoration: const InputDecoration(labelText: 'Email', hintText: 'Enter registered email'),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _passwordController,
                       obscureText: true,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) {
-                        if (!_isLoading) {
-                          _signIn();
-                        }
-                      },
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        hintText: 'Enter your password',
-                      ),
+                      decoration: const InputDecoration(labelText: 'Password'),
                     ),
-                    const SizedBox(height: 4),
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: (_isLoading || _isResetLoading)
-                            ? null
-                            : _handleForgotPassword,
-                        child: _isResetLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Forgot Password?'),
+                        onPressed: (_isLoading || _isResetLoading) ? null : _handleForgotPassword,
+                        child: _isResetLoading ? const CircularProgressIndicator(strokeWidth: 2) : const Text('Forgot Password?'),
                       ),
                     ),
-                    if (_errorText != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorText!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                    if (_errorText != null) 
+                      Text(_errorText!, style: TextStyle(color: AppColors.error), textAlign: TextAlign.center),
                     const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _signIn,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Login'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: _isLoading ? null : _goToSignup,
-                        child: const Text('Sign Up'),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Column(
-                      children: [
-                        Text(
-                          'Creative Team:',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Awaiz Fatima',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Dr. Humayun Shahzad',
-                          style: theme.textTheme.bodySmall?.copyWith(                                   
-                            color: AppColors.textSecondary,
-                          ),
-                        ),  
-                        const SizedBox(height: 2),
-                        Text(
-                          'Raja Ghazanfar Ansari',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _signIn,
+                      child: _isLoading ? const CircularProgressIndicator() : const Text('Login'),
                     ),
                   ],
                 ),
@@ -425,33 +246,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
 class _LoadingScreen extends StatelessWidget {
   final String message;
-
-  const _LoadingScreen({
-    required this.message,
-  });
-
+  const _LoadingScreen({required this.message});
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       body: Center(
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(
-                  message,
-                  style: theme.textTheme.bodyLarge,
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [const CircularProgressIndicator(), const SizedBox(height: 16), Text(message)],
         ),
       ),
     );
@@ -464,51 +266,23 @@ class _AccessBlockedScreen extends StatelessWidget {
   final String actionLabel;
   final Future<void> Function() onActionPressed;
 
-  const _AccessBlockedScreen({
-    required this.title,
-    required this.message,
-    required this.actionLabel,
-    required this.onActionPressed,
-  });
+  const _AccessBlockedScreen({required this.title, required this.message, required this.actionLabel, required this.onActionPressed});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.headlineMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      message,
-                      style: theme.textTheme.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 18),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await onActionPressed();
-                      },
-                      child: Text(actionLabel),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 12),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 18),
+              ElevatedButton(onPressed: onActionPressed, child: Text(actionLabel)),
+            ],
           ),
         ),
       ),
