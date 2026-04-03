@@ -15,30 +15,19 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
   final MealCostReportingService _reportingService =
       MealCostReportingService();
 
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isLoading = true;
   MealCostDashboardData? _dashboardData;
-  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _selectedDate = _resolveOperationalReferenceDate();
     _loadDashboard();
-  }
-
-  DateTime _resolveOperationalReferenceDate() {
-    final now = DateTime.now();
-    if (now.hour < 6) {
-      return now.subtract(const Duration(days: 1));
-    }
-    return now;
   }
 
   Future<void> _loadDashboard() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -56,8 +45,11 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
       setState(() {
         _dashboardData = null;
         _isLoading = false;
-        _errorMessage = 'Failed to load cost dashboard: $e';
       });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load cost dashboard: $e')),
+      );
     }
   }
 
@@ -390,11 +382,9 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
             ),
             const SizedBox(height: 12),
             if (items.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  'No item-wise cost data found for ${_formatDate(_selectedDate)}.',
-                ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No item-wise cost data found for this date.'),
               )
             else
               SingleChildScrollView(
@@ -445,23 +435,9 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
       );
     }
 
-    if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            _errorMessage!,
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
-
     if (data == null) {
-      return Center(
-        child: Text(
-          'No dashboard data available for ${_formatDate(_selectedDate)}.',
-        ),
+      return const Center(
+        child: Text('No dashboard data available.'),
       );
     }
 

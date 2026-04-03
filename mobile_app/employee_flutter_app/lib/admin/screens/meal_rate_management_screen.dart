@@ -15,10 +15,9 @@ class _MealRateManagementScreenState
     extends State<MealRateManagementScreen> {
   final MealRateService _service = MealRateService();
 
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isLoading = true;
   bool _isSaving = false;
-  String? _errorMessage;
 
   List<MealRateEntryRow> _rows = [];
 
@@ -27,53 +26,27 @@ class _MealRateManagementScreenState
   @override
   void initState() {
     super.initState();
-    _selectedDate = _resolveOperationalReferenceDate();
     _loadData();
   }
 
-  DateTime _resolveOperationalReferenceDate() {
-    final now = DateTime.now();
-    if (now.hour < 6) {
-      return now.subtract(const Duration(days: 1));
-    }
-    return now;
-  }
-
   Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    setState(() => _isLoading = true);
 
-    try {
-      final rows = await _service.getRateEntryRowsForDate(_selectedDate);
+    final rows = await _service.getRateEntryRowsForDate(_selectedDate);
 
-      for (final controller in _controllers.values) {
-        controller.dispose();
-      }
-      _controllers.clear();
-
-      for (final row in rows) {
-        _controllers[row.summary.menuItemId] = TextEditingController(
-          text: row.initialRate > 0 ? row.initialRate.toStringAsFixed(0) : '',
-        );
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _rows = rows;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _rows = [];
-        _isLoading = false;
-        _errorMessage = 'Failed to load meal rates: $e';
-      });
+    _controllers.clear();
+    for (final row in rows) {
+      _controllers[row.summary.menuItemId] = TextEditingController(
+        text: row.initialRate > 0
+            ? row.initialRate.toStringAsFixed(0)
+            : '',
+      );
     }
+
+    setState(() {
+      _rows = rows;
+      _isLoading = false;
+    });
   }
 
   Future<void> _pickDate() async {
@@ -93,44 +66,34 @@ class _MealRateManagementScreenState
   Future<void> _saveRates() async {
     setState(() => _isSaving = true);
 
-    try {
-      final drafts = _rows.map((row) {
-        final controller = _controllers[row.summary.menuItemId];
-        final rate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
+    final drafts = _rows.map((row) {
+      final controller = _controllers[row.summary.menuItemId];
+      final rate = double.tryParse(controller?.text ?? '') ?? 0;
 
-        return MealRateDraft(
-          menuItemId: row.summary.menuItemId,
-          itemName: row.summary.itemName,
-          category: row.summary.category,
-          unitRate: rate,
-        );
-      }).toList();
-
-      await _service.saveRatesBatch(
-        rateDate: _selectedDate,
-        drafts: drafts,
+      return MealRateDraft(
+        menuItemId: row.summary.menuItemId,
+        itemName: row.summary.itemName,
+        category: row.summary.category,
+        unitRate: rate,
       );
+    }).toList();
 
-      await _service.applyRatesToReservationsForDate(_selectedDate);
+    await _service.saveRatesBatch(
+      rateDate: _selectedDate,
+      drafts: drafts,
+    );
 
-      if (!mounted) return;
+    await _service.applyRatesToReservationsForDate(_selectedDate);
 
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Rates saved and applied successfully')),
       );
-
-      await _loadData();
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save/apply rates: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
     }
+
+    setState(() => _isSaving = false);
+
+    await _loadData();
   }
 
   Widget _buildHeader() {
@@ -144,20 +107,13 @@ class _MealRateManagementScreenState
           ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
-          child: Text(
-            'Enter Actual Rates',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+        const Text(
+          'Enter Actual Rates (Previous Day)',
+          style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        IconButton(
-          tooltip: 'Refresh',
-          onPressed: _loadData,
-          icon: const Icon(Icons.refresh),
-        ),
-        const SizedBox(width: 8),
+        const Spacer(),
         ElevatedButton.icon(
-          onPressed: (_isSaving || _rows.isEmpty) ? null : _saveRates,
+          onPressed: _isSaving ? null : _saveRates,
           icon: const Icon(Icons.save),
           label: _isSaving
               ? const Text('Saving...')
@@ -169,11 +125,8 @@ class _MealRateManagementScreenState
 
   Widget _buildTable() {
     if (_rows.isEmpty) {
-      return Center(
-        child: Text(
-          'No consumption data found for ${DateFormat('dd MMM yyyy').format(_selectedDate)}',
-          textAlign: TextAlign.center,
-        ),
+      return const Center(
+        child: Text('No consumption data found for this date'),
       );
     }
 
@@ -183,7 +136,6 @@ class _MealRateManagementScreenState
         columns: const [
           DataColumn(label: Text('Item')),
           DataColumn(label: Text('Category')),
-          DataColumn(label: Text('Meal')),
           DataColumn(label: Text('Qty')),
           DataColumn(label: Text('Rate')),
         ],
@@ -192,16 +144,15 @@ class _MealRateManagementScreenState
 
           return DataRow(
             cells: [
-              DataCell(Text(row.summary.itemName.isEmpty ? '—' : row.summary.itemName)),
-              DataCell(Text(row.summary.category.isEmpty ? '—' : row.summary.category)),
-              DataCell(Text(row.summary.mealType.isEmpty ? '—' : row.summary.mealType)),
+              DataCell(Text(row.summary.itemName)),
+              DataCell(Text(row.summary.category)),
               DataCell(Text(row.summary.totalQuantity.toString())),
               DataCell(
                 SizedBox(
-                  width: 90,
+                  width: 80,
                   child: TextField(
                     controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       hintText: '0',
                     ),
@@ -225,33 +176,21 @@ class _MealRateManagementScreenState
 
   @override
   Widget build(BuildContext context) {
-    final body = _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : _errorMessage != null
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    _errorMessage!,
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            : Column(
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 16),
-                  Expanded(child: _buildTable()),
-                ],
-              );
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Meal Rate Management'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: body,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+                  Expanded(child: _buildTable()),
+                ],
+              ),
       ),
     );
   }

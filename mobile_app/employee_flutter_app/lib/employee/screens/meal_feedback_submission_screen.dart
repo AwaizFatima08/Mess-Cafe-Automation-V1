@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../../services/meal_feedback_service.dart';
 
@@ -24,7 +23,7 @@ class _MealFeedbackSubmissionScreenState
     extends State<MealFeedbackSubmissionScreen> {
   final MealFeedbackService _service = MealFeedbackService();
 
-  late DateTime _selectedDate;
+  DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -38,16 +37,7 @@ class _MealFeedbackSubmissionScreenState
   @override
   void initState() {
     super.initState();
-    _selectedDate = _resolveOperationalReferenceDate();
     _loadData();
-  }
-
-  DateTime _resolveOperationalReferenceDate() {
-    final now = DateTime.now();
-    if (now.hour < 6) {
-      return now.subtract(const Duration(days: 1));
-    }
-    return now;
   }
 
   @override
@@ -136,7 +126,7 @@ class _MealFeedbackSubmissionScreenState
         employeeName: widget.employeeName,
         reservationDate: item.reservationDate,
         mealType: item.mealType,
-        menuItemId: item.menuItemId.isEmpty ? item.reservationId : item.menuItemId,
+        menuItemId: item.menuItemId,
         itemName: item.itemName,
         category: item.category,
         rating: rating,
@@ -161,23 +151,6 @@ class _MealFeedbackSubmissionScreenState
     }
   }
 
-  String _formatDate(DateTime value) {
-    return DateFormat('dd MMM yyyy').format(value);
-  }
-
-  String _labelize(String value) {
-    if (value.trim().isEmpty) return '—';
-
-    return value
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((part) {
-          if (part.isEmpty) return part;
-          return part[0].toUpperCase() + part.substring(1);
-        })
-        .join(' ');
-  }
-
   Widget _buildStars(String id) {
     final rating = _ratings[id] ?? 0;
 
@@ -198,38 +171,8 @@ class _MealFeedbackSubmissionScreenState
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          ElevatedButton.icon(
-            onPressed: _pickDate,
-            icon: const Icon(Icons.calendar_today),
-            label: Text(_formatDate(_selectedDate)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Meal Feedback',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
-          IconButton(
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildItemCard(FeedbackEligibleReservation item) {
     final already = item.alreadySubmitted;
-    final canSubmit = item.isIssued && !already;
 
     return Card(
       child: Padding(
@@ -238,40 +181,33 @@ class _MealFeedbackSubmissionScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              item.itemName.isEmpty ? 'Meal' : item.itemName,
+              item.itemName,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            Text('${_labelize(item.mealType)} • ${_labelize(item.diningMode)}'),
-            Text('Qty: ${item.quantity}'),
-            Text('Status: ${_labelize(item.status)}'),
+            Text("${item.mealType} • ${item.diningMode}"),
+            Text("Qty: ${item.quantity}"),
+            Text("Status: ${item.status}"),
+
             if (already)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
-                  'Feedback already submitted',
+                  "Feedback already submitted",
                   style: TextStyle(color: Colors.green),
-                ),
-              )
-            else if (!item.isIssued)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: Text(
-                  'Feedback can be submitted after meal is issued',
-                  style: TextStyle(color: Colors.orange),
                 ),
               )
             else ...[
               _buildStars(item.reservationId),
               DropdownButton<String>(
                 value: _issueType[item.reservationId],
-                hint: const Text('Issue Type (optional)'),
+                hint: const Text("Issue Type (optional)"),
                 isExpanded: true,
                 items: const [
-                  DropdownMenuItem(value: '', child: Text('None')),
-                  DropdownMenuItem(value: 'taste', child: Text('Taste')),
-                  DropdownMenuItem(value: 'quality', child: Text('Quality')),
-                  DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
-                  DropdownMenuItem(value: 'service', child: Text('Service')),
+                  DropdownMenuItem(value: "", child: Text("None")),
+                  DropdownMenuItem(value: "taste", child: Text("Taste")),
+                  DropdownMenuItem(value: "quality", child: Text("Quality")),
+                  DropdownMenuItem(value: "quantity", child: Text("Quantity")),
+                  DropdownMenuItem(value: "service", child: Text("Service")),
                 ],
                 onChanged: (v) {
                   setState(() {
@@ -282,7 +218,7 @@ class _MealFeedbackSubmissionScreenState
               TextField(
                 controller: _controllers[item.reservationId],
                 decoration: const InputDecoration(
-                  hintText: 'Write feedback...',
+                  hintText: "Write feedback...",
                 ),
               ),
               Row(
@@ -295,11 +231,11 @@ class _MealFeedbackSubmissionScreenState
                       });
                     },
                   ),
-                  const Text('Submit anonymously'),
+                  const Text("Submit anonymously"),
                   const Spacer(),
                   ElevatedButton(
-                    onPressed: canSubmit ? () => _submit(item) : null,
-                    child: const Text('Submit'),
+                    onPressed: () => _submit(item),
+                    child: const Text("Submit"),
                   ),
                 ],
               ),
@@ -310,33 +246,18 @@ class _MealFeedbackSubmissionScreenState
     );
   }
 
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          'No eligible meals found for ${_formatDate(_selectedDate)}',
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Meal Feedback'),
-        ),
-        body: const Center(child: CircularProgressIndicator()),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_errorMessage != null) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Meal Feedback'),
+          title: const Text("Meal Feedback"),
           actions: [
             IconButton(
               icon: const Icon(Icons.calendar_today),
@@ -362,7 +283,7 @@ class _MealFeedbackSubmissionScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Meal Feedback'),
+        title: const Text("Meal Feedback"),
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
@@ -374,19 +295,12 @@ class _MealFeedbackSubmissionScreenState
           ),
         ],
       ),
-      body: Column(
-        children: [
-          _buildHeader(),
-          Expanded(
-            child: _items.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: _items.length,
-                    itemBuilder: (c, i) => _buildItemCard(_items[i]),
-                  ),
-          ),
-        ],
-      ),
+      body: _items.isEmpty
+          ? const Center(child: Text("No eligible meals found"))
+          : ListView.builder(
+              itemCount: _items.length,
+              itemBuilder: (c, i) => _buildItemCard(_items[i]),
+            ),
     );
   }
 }

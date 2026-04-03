@@ -32,17 +32,9 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    final defaultDate = _resolveOperationalReferenceDate();
-    _selectedMonth = DateTime(defaultDate.year, defaultDate.month, 1);
-    _loadHistory();
-  }
-
-  DateTime _resolveOperationalReferenceDate() {
     final now = DateTime.now();
-    if (now.day == 1 && now.hour < 6) {
-      return now.subtract(const Duration(days: 1));
-    }
-    return now;
+    _selectedMonth = DateTime(now.year, now.month, 1);
+    _loadHistory();
   }
 
   Future<void> _loadHistory() async {
@@ -65,14 +57,11 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
 
       final submittedMap = <String, bool>{};
       for (final entry in data.entries) {
-        try {
-          submittedMap[entry.id] = await _feedbackService.hasFeedbackForReservation(
-            reservationId: entry.id,
-            submittedByUid: widget.userUid,
-          );
-        } catch (_) {
-          submittedMap[entry.id] = false;
-        }
+        submittedMap[entry.id] =
+            await _feedbackService.hasFeedbackForReservation(
+          reservationId: entry.id,
+          submittedByUid: widget.userUid,
+        );
       }
 
       if (!mounted) return;
@@ -89,7 +78,6 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
 
       setState(() {
         _history = null;
-        _feedbackSubmittedMap.clear();
         _isLoading = false;
       });
 
@@ -123,106 +111,110 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
     bool isAnonymous = false;
     final controller = TextEditingController();
 
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocalState) {
+            return AlertDialog(
+              title: Text(
+                'Feedback — ${entry.itemName.isEmpty ? 'Meal' : entry.itemName}',
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_labelize(entry.mealType)} • ${_labelize(entry.diningMode)}',
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: List.generate(5, (i) {
+                        return IconButton(
+                          onPressed: () {
+                            setLocalState(() {
+                              selectedRating = i + 1;
+                            });
+                          },
+                          icon: Icon(
+                            i < selectedRating
+                                ? Icons.star
+                                : Icons.star_border,
+                            color: Colors.orange,
+                          ),
+                        );
+                      }),
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedIssueType,
+                      decoration: const InputDecoration(
+                        labelText: 'Issue Type (optional)',
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: '', child: Text('None')),
+                        DropdownMenuItem(value: 'taste', child: Text('Taste')),
+                        DropdownMenuItem(
+                            value: 'quality', child: Text('Quality')),
+                        DropdownMenuItem(
+                            value: 'quantity', child: Text('Quantity')),
+                        DropdownMenuItem(
+                            value: 'service', child: Text('Service')),
+                      ],
+                      onChanged: (value) {
+                        setLocalState(() {
+                          selectedIssueType = value ?? '';
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Comments',
+                        hintText: 'Write your feedback...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    CheckboxListTile(
+                      value: isAnonymous,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Submit anonymously'),
+                      onChanged: (value) {
+                        setLocalState(() {
+                          isAnonymous = value ?? false;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: selectedRating <= 0
+                      ? null
+                      : () => Navigator.pop(context, true),
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (submitted != true) {
+      controller.dispose();
+      return;
+    }
+
     try {
-      final submitted = await showDialog<bool>(
-        context: context,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setLocalState) {
-              return AlertDialog(
-                title: Text(
-                  'Feedback — ${entry.itemName.isEmpty ? 'Meal' : entry.itemName}',
-                ),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${_labelize(entry.mealType)} • ${_labelize(entry.diningMode)}',
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: List.generate(5, (i) {
-                          return IconButton(
-                            onPressed: () {
-                              setLocalState(() {
-                                selectedRating = i + 1;
-                              });
-                            },
-                            icon: Icon(
-                              i < selectedRating
-                                  ? Icons.star
-                                  : Icons.star_border,
-                              color: Colors.orange,
-                            ),
-                          );
-                        }),
-                      ),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedIssueType,
-                        decoration: const InputDecoration(
-                          labelText: 'Issue Type (optional)',
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: '', child: Text('None')),
-                          DropdownMenuItem(value: 'taste', child: Text('Taste')),
-                          DropdownMenuItem(value: 'quality', child: Text('Quality')),
-                          DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
-                          DropdownMenuItem(value: 'service', child: Text('Service')),
-                        ],
-                        onChanged: (value) {
-                          setLocalState(() {
-                            selectedIssueType = value ?? '';
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: controller,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Comments',
-                          hintText: 'Write your feedback...',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      CheckboxListTile(
-                        value: isAnonymous,
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Submit anonymously'),
-                        onChanged: (value) {
-                          setLocalState(() {
-                            isAnonymous = value ?? false;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
-                  ),
-                  ElevatedButton(
-                    onPressed: selectedRating <= 0
-                        ? null
-                        : () => Navigator.pop(context, true),
-                    child: const Text('Submit'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-
-      if (submitted != true) {
-        return;
-      }
-
       await _feedbackService.submitFeedback(
         reservationId: entry.id,
         submittedByUid: widget.userUid,
@@ -231,7 +223,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         employeeName: widget.employeeName,
         reservationDate: entry.reservationDate,
         mealType: entry.mealType,
-        menuItemId: entry.menuItemId.isEmpty ? entry.id : entry.menuItemId,
+        menuItemId: entry.id,
         itemName: entry.itemName,
         category: entry.category,
         rating: selectedRating,
@@ -239,6 +231,8 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         issueType: selectedIssueType,
         isAnonymous: isAnonymous,
       );
+
+      controller.dispose();
 
       if (!mounted) return;
 
@@ -248,13 +242,13 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
 
       await _loadHistory();
     } catch (e) {
+      controller.dispose();
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Feedback submission failed: $e')),
       );
-    } finally {
-      controller.dispose();
     }
   }
 
@@ -414,7 +408,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
             rows: data.entries.map((entry) {
               final alreadySubmitted = _feedbackSubmittedMap[entry.id] == true;
               final canGiveFeedback =
-                  entry.status != 'cancelled' && entry.isIssued && !alreadySubmitted;
+                  entry.status != 'cancelled' && entry.isIssued;
 
               return DataRow(
                 cells: [

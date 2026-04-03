@@ -1,6 +1,4 @@
 docId,menu_item_id,item_name,category,rate_date,unit_rate,is_active,entered_by_uid,entered_by_name,created_at,updated_at
-0,,,,,,,,,,
-20260325__ITEM069,ITEM069,Cardimom Tea (Nescafe),hot bevarage,"{""_seconds"":1774378800,""_nanoseconds"":0}",50,true,,,"{""_seconds"":1774540355,""_nanoseconds"":27957000}","{""_seconds"":1774540355,""_nanoseconds"":27957000}"
 20260325__breakfast_option_1,breakfast_option_1,Breakfast,breakfast,"{""_seconds"":1774378800,""_nanoseconds"":0}",100,true,,,"{""_seconds"":1774540355,""_nanoseconds"":27957000}","{""_seconds"":1774540355,""_nanoseconds"":27957000}"
 20260325__dinner_template_1,dinner_template_1,Dinner Option 1,dinner,"{""_seconds"":1774378800,""_nanoseconds"":0}",200,true,,,"{""_seconds"":1774540355,""_nanoseconds"":27957000}","{""_seconds"":1774540355,""_nanoseconds"":27957000}"
 20260325__lunch_template_1,lunch_template_1,Lunch Option 1,lunch,"{""_seconds"":1774378800,""_nanoseconds"":0}",300,true,,,"{""_seconds"":1774540355,""_nanoseconds"":27957000}","{""_seconds"":1774540355,""_nanoseconds"":27957000}"

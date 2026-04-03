@@ -37,24 +37,6 @@ class MealCostReportingService {
     return (value ?? '').toString().trim();
   }
 
-  double _resolveAmount({
-    required dynamic explicitAmount,
-    required dynamic unitRate,
-    required int quantity,
-  }) {
-    final amount = _readDouble(explicitAmount);
-    if (amount > 0) {
-      return amount;
-    }
-
-    final rate = _readDouble(unitRate);
-    if (rate > 0 && quantity > 0) {
-      return rate * quantity;
-    }
-
-    return 0.0;
-  }
-
   String _extractItemName(Map<String, dynamic> data) {
     final menuSnapshot = _asMap(data['menu_snapshot']);
     return _firstNonEmpty([
@@ -152,11 +134,7 @@ class MealCostReportingService {
       final status = _readText(data['status']).toLowerCase();
       final quantity = _readInt(data['quantity']);
       final unitRate = _readDouble(data['unit_rate']);
-      final amount = _resolveAmount(
-        explicitAmount: data['amount'],
-        unitRate: data['unit_rate'],
-        quantity: quantity,
-      );
+      final amount = _readDouble(data['amount']);
       final mealType = _readText(data['meal_type']).toLowerCase();
       final itemName = _extractItemName(data);
       final menuItemId = _extractMenuItemId(data);
@@ -211,11 +189,9 @@ class MealCostReportingService {
       itemBuilder.totalQuantity += quantity;
       itemBuilder.totalAmount += amount;
       if (unitRate > 0) {
-        itemBuilder.lastUnitRate = unitRate;
+        itemBuilder.lastUnitRate = unitRate.toDouble();
       }
-      if (mealType.isNotEmpty) {
-        itemBuilder.mealTypes.add(mealType);
-      }
+      itemBuilder.mealTypes.add(mealType);
     }
 
     final mealSummaries = mealTypeSummary.values

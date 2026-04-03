@@ -1,7 +1,6 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'meal_rate_service.dart';
-import 'notification_service.dart';
 
 class MealReservationService {
   MealReservationService({FirebaseFirestore? firestore})
@@ -9,7 +8,6 @@ class MealReservationService {
 
   final FirebaseFirestore _firestore;
   final MealRateService _mealRateService = MealRateService();
-  final NotificationService _notificationService = NotificationService();
 
   static const Map<String, _MealCutoffTime> _defaultCutoffTimes = {
     'breakfast': _MealCutoffTime(hour: 4, minute: 0),
@@ -37,9 +35,6 @@ class MealReservationService {
 
   CollectionReference<Map<String, dynamic>> get _reservationsRef =>
       _firestore.collection('meal_reservations');
-
-  CollectionReference<Map<String, dynamic>> get _usersRef =>
-      _firestore.collection('users');
 
   Future<String> createReservationGroup({
     required String employeeNumber,
@@ -163,16 +158,6 @@ class MealReservationService {
     }
 
     await batch.commit();
-
-    await _sendBookingConfirmedNotificationIfPossible(
-      employeeNumber: normalizedEmployeeNumber,
-      employeeName: normalizedEmployeeName,
-      reservationDate: normalizedDate,
-      mealType: normalizedMealType,
-      reservationId: effectiveBookingGroupId,
-      reservationCategory: reservationCategory,
-    );
-
     return effectiveBookingGroupId;
   }
 
@@ -519,11 +504,6 @@ class MealReservationService {
       throw Exception('Issued reservation cannot be cancelled.');
     }
 
-    final employeeNumber = (data['employee_number'] ?? '').toString().trim();
-    final employeeName = (data['employee_name'] ?? '').toString().trim();
-    final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
-    final reservationDate = _readReservationDate(data['reservation_date']);
-
     await docRef.update({
       'status': 'cancelled',
       'cancelled_at': Timestamp.now(),
@@ -531,16 +511,6 @@ class MealReservationService {
       'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
       'override_reason': overrideReason?.trim() ?? '',
     });
-
-    await _sendBookingCancelledNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: reservationId,
-      reservationCategory:
-          (data['reservation_category'] ?? '').toString().trim(),
-    );
   }
 
   Future<void> cancelReservationGroup({
@@ -559,15 +529,6 @@ class MealReservationService {
       throw Exception('No active reservations found in booking group.');
     }
 
-    final firstData = snapshot.docs.first.data();
-    final employeeNumber =
-        (firstData['employee_number'] ?? '').toString().trim();
-    final employeeName = (firstData['employee_name'] ?? '').toString().trim();
-    final mealType = _normalizeMealType((firstData['meal_type'] ?? '').toString());
-    final reservationDate = _readReservationDate(firstData['reservation_date']);
-    final reservationCategory =
-        (firstData['reservation_category'] ?? '').toString().trim();
-
     final batch = _firestore.batch();
     final now = Timestamp.now();
 
@@ -582,15 +543,6 @@ class MealReservationService {
     }
 
     await batch.commit();
-
-    await _sendBookingCancelledNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: bookingGroupId.trim(),
-      reservationCategory: reservationCategory,
-    );
   }
 
   Future<void> markReservationIssued({
@@ -616,13 +568,6 @@ class MealReservationService {
       throw Exception('Reservation already issued.');
     }
 
-    final employeeNumber = (data['employee_number'] ?? '').toString().trim();
-    final employeeName = (data['employee_name'] ?? '').toString().trim();
-    final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
-    final reservationDate = _readReservationDate(data['reservation_date']);
-    final reservationCategory =
-        (data['reservation_category'] ?? '').toString().trim();
-
     await docRef.update({
       'is_issued': true,
       'status': 'issued',
@@ -630,15 +575,6 @@ class MealReservationService {
       'issued_by_uid': issuedByUid.trim(),
       'issued_by_role': issuedByRole.trim().toLowerCase(),
     });
-
-    await _sendMealIssuedNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: reservationId,
-      reservationCategory: reservationCategory,
-    );
   }
 
   Future<Map<String, int>> getMealCountsForDate(DateTime reservationDate) async {
@@ -993,125 +929,6 @@ class MealReservationService {
         normalizedRole == 'mess_supervisor';
   }
 
-  Future<void> _sendBookingConfirmedNotificationIfPossible({
-    required String employeeNumber,
-    required String employeeName,
-    required DateTime reservationDate,
-    required String mealType,
-    required String reservationId,
-    required String reservationCategory,
-  }) async {
-    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
-      return;
-    }
-
-    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
-    if (recipient == null) {
-      return;
-    }
-
-    try {
-      await _notificationService.createBookingConfirmedNotification(
-        userUid: recipient.userUid,
-        employeeNumber: employeeNumber,
-        employeeName: employeeName,
-        email: recipient.email,
-        reservationId: reservationId,
-        reservationDate: reservationDate,
-        mealType: mealType,
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _sendBookingCancelledNotificationIfPossible({
-    required String employeeNumber,
-    required String employeeName,
-    required DateTime reservationDate,
-    required String mealType,
-    required String reservationId,
-    required String reservationCategory,
-  }) async {
-    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
-      return;
-    }
-
-    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
-    if (recipient == null) {
-      return;
-    }
-
-    try {
-      await _notificationService.createBookingCancelledNotification(
-        userUid: recipient.userUid,
-        employeeNumber: employeeNumber,
-        employeeName: employeeName,
-        email: recipient.email,
-        reservationId: reservationId,
-        reservationDate: reservationDate,
-        mealType: mealType,
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _sendMealIssuedNotificationIfPossible({
-    required String employeeNumber,
-    required String employeeName,
-    required DateTime reservationDate,
-    required String mealType,
-    required String reservationId,
-    required String reservationCategory,
-  }) async {
-    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
-      return;
-    }
-
-    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
-    if (recipient == null) {
-      return;
-    }
-
-    try {
-      await _notificationService.createMealIssuedNotification(
-        userUid: recipient.userUid,
-        employeeNumber: employeeNumber,
-        employeeName: employeeName,
-        email: recipient.email,
-        reservationId: reservationId,
-        reservationDate: reservationDate,
-        mealType: mealType,
-      );
-    } catch (_) {}
-  }
-
-  Future<_NotificationRecipient?> _findRecipientByEmployeeNumber(
-    String employeeNumber,
-  ) async {
-    final normalizedEmployeeNumber = employeeNumber.trim();
-    if (normalizedEmployeeNumber.isEmpty) {
-      return null;
-    }
-
-    final query = await _usersRef
-        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
-        .limit(1)
-        .get();
-
-    if (query.docs.isEmpty) {
-      return null;
-    }
-
-    final data = query.docs.first.data();
-    final userUid = (data['uid'] ?? '').toString().trim();
-    if (userUid.isEmpty) {
-      return null;
-    }
-
-    return _NotificationRecipient(
-      userUid: userUid,
-      email: (data['email'] ?? '').toString().trim(),
-    );
-  }
-
   String _resolveOperatorBookingSource({
     required String createdByRole,
   }) {
@@ -1140,17 +957,6 @@ class MealReservationService {
     return DateTime(date.year, date.month, date.day);
   }
 
-  DateTime _readReservationDate(dynamic value) {
-    if (value is Timestamp) {
-      final date = value.toDate();
-      return _normalizeDate(date);
-    }
-    if (value is DateTime) {
-      return _normalizeDate(value);
-    }
-    return _normalizeDate(DateTime.now());
-  }
-
   int _readInt(dynamic value) {
     if (value is int) return value;
     return int.tryParse((value ?? '0').toString()) ?? 0;
@@ -1170,42 +976,53 @@ class MealReservationService {
   }
 }
 
-class _MealCutoffTime {
-  const _MealCutoffTime({
-    required this.hour,
-    required this.minute,
-  });
-
-  final int hour;
-  final int minute;
-}
-
 class ReservationLineInput {
-  ReservationLineInput({
-    String? optionKey,
-    String? menuOptionKey,
-    String? optionLabel,
-    required this.diningMode,
-    this.quantity = 1,
-    Map<String, dynamic>? menuSnapshot,
-  })  : optionKey = (optionKey ?? menuOptionKey ?? '').trim(),
-        optionLabel = (optionLabel ?? '').trim(),
-        menuSnapshot = menuSnapshot == null
-            ? null
-            : Map<String, dynamic>.from(menuSnapshot) {
-    if (this.optionKey.isEmpty) {
-      throw ArgumentError('optionKey or menuOptionKey is required.');
-    }
-    if (this.optionLabel.isEmpty) {
-      throw ArgumentError('optionLabel is required.');
-    }
-  }
-
   final String optionKey;
   final String optionLabel;
   final String diningMode;
   final int quantity;
   final Map<String, dynamic>? menuSnapshot;
+
+  const ReservationLineInput({
+    String? optionKey,
+    String? menuOptionKey,
+    required this.optionLabel,
+    required this.diningMode,
+    required this.quantity,
+    this.menuSnapshot,
+  }) : optionKey = (optionKey ?? menuOptionKey ?? '');
+
+  factory ReservationLineInput.forManualItem({
+    required String itemId,
+    required String itemName,
+    required String diningMode,
+    required int quantity,
+    required String mealType,
+    String? itemCategory,
+    Map<String, dynamic>? extraSnapshot,
+  }) {
+    final snapshot = <String, dynamic>{
+      'selection_type': MealReservationService.selectionModeManualItem,
+      'source_scope': 'full_menu_master',
+      'is_cycle_item': false,
+      'item_id': itemId.trim(),
+      'item_name': itemName.trim(),
+      'item_category': (itemCategory ?? '').trim(),
+      'meal_type': mealType.trim().toLowerCase(),
+    };
+
+    if (extraSnapshot != null && extraSnapshot.isNotEmpty) {
+      snapshot.addAll(extraSnapshot);
+    }
+
+    return ReservationLineInput(
+      optionKey: itemId.trim(),
+      optionLabel: itemName.trim(),
+      diningMode: diningMode,
+      quantity: quantity,
+      menuSnapshot: snapshot,
+    );
+  }
 
   ReservationLineInput normalized() {
     return ReservationLineInput(
@@ -1213,100 +1030,48 @@ class ReservationLineInput {
       optionLabel: optionLabel.trim(),
       diningMode: diningMode.trim().toLowerCase(),
       quantity: quantity,
-      menuSnapshot: menuSnapshot == null
-          ? null
-          : Map<String, dynamic>.from(menuSnapshot!),
-    );
-  }
-
-  factory ReservationLineInput.forCycleOption({
-    String? menuOptionKey,
-    String? optionKey,
-    required String optionLabel,
-    required String diningMode,
-    int quantity = 1,
-    Map<String, dynamic>? menuSnapshot,
-  }) {
-    return ReservationLineInput(
-      optionKey: optionKey,
-      menuOptionKey: menuOptionKey,
-      optionLabel: optionLabel,
-      diningMode: diningMode,
-      quantity: quantity,
-      menuSnapshot: menuSnapshot,
-    );
-  }
-
-  factory ReservationLineInput.forManualItem({
-    String? menuItemId,
-    String? itemId,
-    String? optionLabel,
-    String? itemName,
-    required String diningMode,
-    int quantity = 1,
-    String? mealType,
-    String? itemCategory,
-    Map<String, dynamic>? menuSnapshot,
-    Map<String, dynamic>? extraSnapshot,
-  }) {
-    final resolvedItemId = (menuItemId ?? itemId ?? '').trim();
-    final resolvedLabel = (optionLabel ?? itemName ?? '').trim();
-
-    final snapshot = <String, dynamic>{
-      if (menuSnapshot != null) ...menuSnapshot,
-      if (extraSnapshot != null) ...extraSnapshot,
-      if (mealType != null && mealType.trim().isNotEmpty)
-        'meal_type': mealType.trim().toLowerCase(),
-      if (itemCategory != null && itemCategory.trim().isNotEmpty)
-        'item_category': itemCategory.trim().toLowerCase(),
-    };
-
-    return ReservationLineInput(
-      optionKey: resolvedItemId,
-      optionLabel: resolvedLabel,
-      diningMode: diningMode,
-      quantity: quantity,
-      menuSnapshot: snapshot.isEmpty ? null : snapshot,
+      menuSnapshot:
+          menuSnapshot == null ? null : Map<String, dynamic>.from(menuSnapshot!),
     );
   }
 }
 
 class ReservationValidationResult {
+  final bool isAllowed;
+  final String message;
+
   const ReservationValidationResult({
     required this.isAllowed,
     required this.message,
   });
-
-  final bool isAllowed;
-  final String message;
 }
 
 class BookingValidationResult {
+  final bool isAllowed;
+  final String message;
+
   const BookingValidationResult({
     required this.isAllowed,
     required this.message,
   });
-
-  final bool isAllowed;
-  final String message;
 }
 
 class CancellationValidationResult {
+  final bool isAllowed;
+  final String message;
+
   const CancellationValidationResult({
     required this.isAllowed,
     required this.message,
   });
-
-  final bool isAllowed;
-  final String message;
 }
 
-class _NotificationRecipient {
-  const _NotificationRecipient({
-    required this.userUid,
-    required this.email,
-  });
+class _MealCutoffTime {
+  final int hour;
+  final int minute;
 
-  final String userUid;
-  final String email;
+  const _MealCutoffTime({
+    required this.hour,
+    required this.minute,
+  });
 }

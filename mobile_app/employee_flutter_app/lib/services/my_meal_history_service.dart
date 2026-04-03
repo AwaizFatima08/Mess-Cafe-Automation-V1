@@ -21,6 +21,14 @@ class MyMealHistoryService {
     return DateTime(value.year, value.month + 1, 1);
   }
 
+  Timestamp startTimestamp(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
+  Timestamp endTimestamp(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
   String normalizeText(dynamic value) {
     return (value ?? '').toString().trim();
   }
@@ -52,17 +60,6 @@ class MyMealHistoryService {
     return '';
   }
 
-  String extractMenuItemId(Map<String, dynamic> data) {
-    final menuSnapshot = asMap(data['menu_snapshot']);
-
-    return firstNonEmpty([
-      normalizeText(menuSnapshot['item_id']),
-      normalizeText(data['menu_item_id']),
-      normalizeText(data['menu_option_key']),
-      normalizeText(menuSnapshot['option_key']),
-    ]);
-  }
-
   String extractItemName(Map<String, dynamic> data) {
     final menuSnapshot = asMap(data['menu_snapshot']);
 
@@ -71,7 +68,7 @@ class MyMealHistoryService {
       normalizeText(data['item_name']),
       normalizeText(data['option_label']),
       normalizeText(menuSnapshot['option_label']),
-      extractMenuItemId(data),
+      normalizeText(data['menu_option_key']),
     ]);
   }
 
@@ -88,38 +85,7 @@ class MyMealHistoryService {
   DateTime? toDate(dynamic value) {
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-
-    if (value is Map<String, dynamic>) {
-      final seconds = value['_seconds'] ?? value['seconds'];
-      final nanoseconds = value['_nanoseconds'] ?? value['nanoseconds'];
-
-      if (seconds is int) {
-        final millis =
-            (seconds * 1000) + ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
-        return DateTime.fromMillisecondsSinceEpoch(millis);
-      }
-    }
-
     return null;
-  }
-
-  double resolveAmount({
-    required dynamic explicitAmount,
-    required dynamic unitRate,
-    required int quantity,
-  }) {
-    final amount = readDouble(explicitAmount);
-    if (amount > 0) {
-      return amount;
-    }
-
-    final rate = readDouble(unitRate);
-    if (rate > 0 && quantity > 0) {
-      return rate * quantity;
-    }
-
-    return 0.0;
   }
 
   Future<MyMealHistoryData> getMealHistory({
@@ -160,11 +126,7 @@ class MyMealHistoryService {
       final isIssued = data['is_issued'] == true || status == 'issued';
       final quantity = readInt(data['quantity']);
       final unitRate = readDouble(data['unit_rate']);
-      final amount = resolveAmount(
-        explicitAmount: data['amount'],
-        unitRate: data['unit_rate'],
-        quantity: quantity,
-      );
+      final amount = readDouble(data['amount']);
 
       if (!includeCancelled && status == 'cancelled') {
         cancelledCount += 1;
@@ -191,7 +153,6 @@ class MyMealHistoryService {
           id: doc.id,
           reservationDate: toDate(data['reservation_date']) ?? DateTime.now(),
           mealType: normalizeText(data['meal_type']).toLowerCase(),
-          menuItemId: extractMenuItemId(data),
           itemName: extractItemName(data),
           category: extractCategory(data),
           diningMode: normalizeText(data['dining_mode']).toLowerCase(),
@@ -205,11 +166,7 @@ class MyMealHistoryService {
       );
     }
 
-    items.sort((a, b) {
-      final byDate = b.reservationDate.compareTo(a.reservationDate);
-      if (byDate != 0) return byDate;
-      return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
-    });
+    items.sort((a, b) => b.reservationDate.compareTo(a.reservationDate));
 
     return MyMealHistoryData(
       entries: items,
@@ -258,7 +215,6 @@ class MyMealHistoryEntry {
   final String id;
   final DateTime reservationDate;
   final String mealType;
-  final String menuItemId;
   final String itemName;
   final String category;
   final String diningMode;
@@ -273,7 +229,6 @@ class MyMealHistoryEntry {
     required this.id,
     required this.reservationDate,
     required this.mealType,
-    required this.menuItemId,
     required this.itemName,
     required this.category,
     required this.diningMode,
