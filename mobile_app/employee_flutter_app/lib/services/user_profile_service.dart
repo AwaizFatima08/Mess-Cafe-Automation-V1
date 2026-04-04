@@ -1,63 +1,104 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+
+import 'user_role_service.dart';
+
+class AppUserProfile {
+  final String documentId;
+  final String authUid;
+  final String email;
+  final AppUserRole role;
+  final String employeeNumber;
+  final String employeeName;
+  final bool isActive;
+  final String status;
+  final Map<String, dynamic> rawData;
+
+  const AppUserProfile({
+    required this.documentId,
+    required this.authUid,
+    required this.email,
+    required this.role,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.isActive,
+    required this.status,
+    required this.rawData,
+  });
+
+  bool get hasEmployeeLink => employeeNumber.trim().isNotEmpty;
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+}
 
 class UserProfileService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  UserProfileService({
+    FirebaseFirestore? firestore,
+    UserRoleService? userRoleService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _userRoleService = userRoleService ?? UserRoleService();
 
-  /// Fetches the current logged-in user's profile from the 'users' collection.
-  /// This is the primary bridge between Firebase Auth (uid) and business logic.
-  Future<Map<String, dynamic>?> getCurrentUserProfile() async {
-    final User? user = _auth.currentUser;
-    if (user == null) return null;
+  final FirebaseFirestore _firestore;
+  final UserRoleService _userRoleService;
 
-    try {
-      final doc = await _db.collection('users').doc(user.uid).get();
-      if (doc.exists) {
-        return doc.data();
-      }
-      return null;
-    } catch (e) {
-      print("Error fetching user profile: $e");
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<AppUserProfile?> resolveCurrentUserProfile({
+    required String authUid,
+  }) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
       return null;
     }
-  }
 
-  /// Updates specific fields in the user profile (e.g., display preferences).
-  Future<void> updateUserProfile(Map<String, dynamic> data) async {
-    final User? user = _auth.currentUser;
-    if (user == null) return;
+    final query =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
 
-    await _db.collection('users').doc(user.uid).update(data);
-  }
-
-  /// Streams the user profile for real-time UI updates (e.g., role changes).
-  Stream<Map<String, dynamic>?> get userProfileStream {
-    final User? user = _auth.currentUser;
-    if (user == null) return Stream.value(null);
-
-    return _db.collection('users').doc(user.uid).snapshots().map((snapshot) {
-      return snapshot.data();
-    });
-  }
-
-  /// RESTORE: signOut method for Admin and Employee Shells
-  /// This fixes the undefined_method error in AdminDashboardShell.
-  Future<void> signOut() async {
-    try {
-      await _auth.signOut();
-    } catch (e) {
-      print("Error during sign out: $e");
-      rethrow;
+    if (query.docs.isEmpty) {
+      return null;
     }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+
+    final email = (data['email'] ?? '').toString().trim().toLowerCase();
+    final employeeNumber =
+        (data['employee_number'] ?? '').toString().trim();
+    final employeeName =
+        (data['employee_name'] ?? '').toString().trim();
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isActive = data['is_active'] == true;
+
+    return AppUserProfile(
+      documentId: doc.id,
+      authUid: (data['uid'] ?? normalizedUid).toString().trim(),
+      email: email,
+      role: _userRoleService.parseRole(data['role']),
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      isActive: isActive,
+      status: status,
+      rawData: data,
+    );
   }
 
-  /// Helper to check if the current user has administrative privileges.
-  Future<bool> isAdmin() async {
-    final profile = await getCurrentUserProfile();
-    if (profile == null) return false;
-    
-    final String role = profile['role'] ?? 'employee';
-    return role == 'admin' || role == 'developer' || role == 'mess_manager';
+  Future<AppUserProfile?> getUserProfileByUid(String authUid) {
+    return resolveCurrentUserProfile(authUid: authUid);
   }
 }

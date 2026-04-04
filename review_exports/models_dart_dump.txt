@@ -1,0 +1,1778 @@
+==================================================
+FILE: lib/models/daily_resolved_menu.dart
+==================================================
+import 'resolved_meal_option.dart';
+
+class DailyResolvedMenu {
+  final String weekday;
+  final String cycleName;
+  final List<ResolvedMealOption> breakfastOptions;
+  final List<ResolvedMealOption> lunchOptions;
+  final List<ResolvedMealOption> dinnerOptions;
+
+  const DailyResolvedMenu({
+    required this.weekday,
+    required this.cycleName,
+    required this.breakfastOptions,
+    required this.lunchOptions,
+    required this.dinnerOptions,
+  });
+
+  DailyResolvedMenu copyWith({
+    String? weekday,
+    String? cycleName,
+    List<ResolvedMealOption>? breakfastOptions,
+    List<ResolvedMealOption>? lunchOptions,
+    List<ResolvedMealOption>? dinnerOptions,
+  }) {
+    return DailyResolvedMenu(
+      weekday: weekday ?? this.weekday,
+      cycleName: cycleName ?? this.cycleName,
+      breakfastOptions: breakfastOptions ?? this.breakfastOptions,
+      lunchOptions: lunchOptions ?? this.lunchOptions,
+      dinnerOptions: dinnerOptions ?? this.dinnerOptions,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'weekday': weekday,
+      'cycle_name': cycleName,
+      'breakfast_options': breakfastOptions.map((e) => e.toMap()).toList(),
+      'lunch_options': lunchOptions.map((e) => e.toMap()).toList(),
+      'dinner_options': dinnerOptions.map((e) => e.toMap()).toList(),
+    };
+  }
+
+  factory DailyResolvedMenu.fromMap(Map<String, dynamic> map) {
+    List<ResolvedMealOption> parseOptions(dynamic raw) {
+      final list = (raw as List<dynamic>?) ?? const [];
+      return list
+          .whereType<Map>()
+          .map((e) => ResolvedMealOption.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    }
+
+    return DailyResolvedMenu(
+      weekday: (map['weekday'] ?? '').toString(),
+      cycleName: (map['cycle_name'] ?? '').toString(),
+      breakfastOptions: parseOptions(map['breakfast_options']),
+      lunchOptions: parseOptions(map['lunch_options']),
+      dinnerOptions: parseOptions(map['dinner_options']),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'DailyResolvedMenu(weekday: $weekday, cycleName: $cycleName, breakfastOptions: $breakfastOptions, lunchOptions: $lunchOptions, dinnerOptions: $dinnerOptions)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is DailyResolvedMenu &&
+        other.weekday == weekday &&
+        other.cycleName == cycleName;
+  }
+
+  @override
+  int get hashCode {
+    return weekday.hashCode ^ cycleName.hashCode;
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/event_attendance_response_model.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EventAttendanceResponseModel {
+  static const String collectionName = 'event_attendance_responses';
+
+  static const String statusAttending = 'attending';
+  static const String statusNotAttending = 'not_attending';
+
+  static const List<String> allowedStatuses = [
+    statusAttending,
+    statusNotAttending,
+  ];
+
+  // 🔒 Locked category keys
+  static const List<String> categoryKeys = [
+    'employee',
+    'spouse',
+    'kids_above_12',
+    'kids_below_12',
+    'permanent_resident_guests_adults',
+    'permanent_resident_guests_children_above_12',
+    'permanent_resident_guests_children_below_12',
+    'visiting_guests_adults',
+    'visiting_guests_children_above_12',
+    'visiting_guests_children_below_12',
+  ];
+
+  final String documentId;
+  final String eventId;
+
+  final String userUid;
+  final String employeeNumber;
+  final String employeeName;
+  final String department;
+  final String designation;
+
+  final String attendanceStatus;
+
+  final Timestamp? submittedAt;
+  final Timestamp? updatedAt;
+
+  final bool submissionLocked;
+
+  final Map<String, int> counts;
+  final int totalAttendees;
+
+  final String employeeNote;
+  final int responseVersion;
+  final String source;
+
+  final Map<String, dynamic> rawData;
+
+  const EventAttendanceResponseModel({
+    required this.documentId,
+    required this.eventId,
+    required this.userUid,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.department,
+    required this.designation,
+    required this.attendanceStatus,
+    required this.submittedAt,
+    required this.updatedAt,
+    required this.submissionLocked,
+    required this.counts,
+    required this.totalAttendees,
+    required this.employeeNote,
+    required this.responseVersion,
+    required this.source,
+    required this.rawData,
+  });
+
+  factory EventAttendanceResponseModel.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data() ?? {};
+    return EventAttendanceResponseModel.fromMap(
+      data,
+      documentId: document.id,
+    );
+  }
+
+  factory EventAttendanceResponseModel.fromMap(
+    Map<String, dynamic> map, {
+    required String documentId,
+  }) {
+    final countsMap = _normalizeCounts(map['counts']);
+
+    return EventAttendanceResponseModel(
+      documentId: documentId.trim(),
+      eventId: _readString(map['event_id']),
+      userUid: _readString(map['user_uid']),
+      employeeNumber: _readString(map['employee_number']),
+      employeeName: _readString(map['employee_name']),
+      department: _readString(map['department']),
+      designation: _readString(map['designation']),
+      attendanceStatus: _normalizeStatus(map['attendance_status']),
+      submittedAt: _readTimestamp(map['submitted_at']),
+      updatedAt: _readTimestamp(map['updated_at']),
+      submissionLocked: _readBool(map['submission_locked']),
+      counts: countsMap,
+      totalAttendees: _readInt(map['total_attendees']),
+      employeeNote: _readString(map['employee_note']),
+      responseVersion: _readInt(map['response_version'], fallback: 1),
+      source: _readString(map['source'], fallback: 'mobile_app'),
+      rawData: Map<String, dynamic>.from(map),
+    );
+  }
+
+  Map<String, dynamic> toMap({bool includeNulls = false}) {
+    final map = <String, dynamic>{
+      'event_id': eventId,
+      'user_uid': userUid,
+      'employee_number': employeeNumber,
+      'employee_name': employeeName,
+      'department': department,
+      'designation': designation,
+      'attendance_status': attendanceStatus,
+      'submission_locked': submissionLocked,
+      'counts': counts,
+      'total_attendees': totalAttendees,
+      'employee_note': employeeNote.trim(),
+      'response_version': responseVersion,
+      'source': source,
+    };
+
+    _writeTimestamp(map, 'submitted_at', submittedAt, includeNulls);
+    _writeTimestamp(map, 'updated_at', updatedAt, includeNulls);
+
+    return map;
+  }
+
+  // -----------------------------
+  // BUSINESS LOGIC
+  // -----------------------------
+
+  bool get isAttending => attendanceStatus == statusAttending;
+
+  bool get isNotAttending => attendanceStatus == statusNotAttending;
+
+  bool get isEditable => !submissionLocked;
+
+  bool get isValid {
+    if (!allowedStatuses.contains(attendanceStatus)) return false;
+
+    if (isNotAttending && totalAttendees != 0) return false;
+
+    if (isAttending && totalAttendees <= 0) return false;
+
+    return true;
+  }
+
+  // -----------------------------
+  // UTILITIES
+  // -----------------------------
+
+  static Map<String, int> _normalizeCounts(dynamic value) {
+    final Map<String, int> normalized = {};
+
+    for (final key in categoryKeys) {
+      normalized[key] = 0;
+    }
+
+    if (value is Map) {
+      value.forEach((k, v) {
+        final key = k.toString();
+        if (categoryKeys.contains(key)) {
+          normalized[key] = _readInt(v);
+        }
+      });
+    }
+
+    return normalized;
+  }
+
+  static int calculateTotal(Map<String, int> counts) {
+    int total = 0;
+    for (final key in categoryKeys) {
+      total += counts[key] ?? 0;
+    }
+    return total;
+  }
+
+  static String buildDocumentId({
+    required String eventId,
+    required String employeeNumber,
+  }) {
+    return '${eventId}_$employeeNumber'.toLowerCase();
+  }
+
+  // -----------------------------
+  // HELPERS
+  // -----------------------------
+
+  static String _normalizeStatus(dynamic value) {
+    final v = value?.toString().trim().toLowerCase() ?? statusNotAttending;
+    return allowedStatuses.contains(v) ? v : statusNotAttending;
+  }
+
+  static String _readString(dynamic value, {String fallback = ''}) {
+    return (value?.toString() ?? fallback).trim();
+  }
+
+  static int _readInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value == null) return fallback;
+    return int.tryParse(value.toString()) ?? fallback;
+  }
+
+  static bool _readBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value == null) return fallback;
+    final v = value.toString().toLowerCase();
+    return v == 'true';
+  }
+
+  static Timestamp? _readTimestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    return null;
+  }
+
+  static void _writeTimestamp(
+    Map<String, dynamic> target,
+    String key,
+    Timestamp? value,
+    bool includeNulls,
+  ) {
+    if (value != null || includeNulls) {
+      target[key] = value;
+    }
+  }
+
+  @override
+  String toString() {
+    return 'EventAttendanceResponseModel(employee: $employeeNumber, total: $totalAttendees)';
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/event_attendance_summary_model.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EventAttendanceSummaryModel {
+  static const String collectionName = 'event_attendance_summaries';
+
+  // 🔒 MUST match response model exactly
+  static const List<String> categoryKeys = [
+    'employee',
+    'spouse',
+    'kids_above_12',
+    'kids_below_12',
+    'permanent_resident_guests_adults',
+    'permanent_resident_guests_children_above_12',
+    'permanent_resident_guests_children_below_12',
+    'visiting_guests_adults',
+    'visiting_guests_children_above_12',
+    'visiting_guests_children_below_12',
+  ];
+
+  final String documentId;
+  final String eventId;
+
+  final Timestamp? lastAggregatedAt;
+
+  final int householdsResponded;
+  final int householdsPending;
+  final int householdsAttending;
+  final int householdsNotAttending;
+
+  final Map<String, int> categoryTotals;
+  final int grandTotal;
+
+  final Map<String, dynamic> rawData;
+
+  const EventAttendanceSummaryModel({
+    required this.documentId,
+    required this.eventId,
+    required this.lastAggregatedAt,
+    required this.householdsResponded,
+    required this.householdsPending,
+    required this.householdsAttending,
+    required this.householdsNotAttending,
+    required this.categoryTotals,
+    required this.grandTotal,
+    required this.rawData,
+  });
+
+  factory EventAttendanceSummaryModel.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data() ?? {};
+    return EventAttendanceSummaryModel.fromMap(
+      data,
+      documentId: document.id,
+    );
+  }
+
+  factory EventAttendanceSummaryModel.fromMap(
+    Map<String, dynamic> map, {
+    required String documentId,
+  }) {
+    return EventAttendanceSummaryModel(
+      documentId: documentId.trim(),
+      eventId: _readString(map['event_id']),
+      lastAggregatedAt: _readTimestamp(map['last_aggregated_at']),
+      householdsResponded:
+          _readInt(map['households_responded'], fallback: 0),
+      householdsPending:
+          _readInt(map['households_pending'], fallback: 0),
+      householdsAttending:
+          _readInt(map['households_attending'], fallback: 0),
+      householdsNotAttending:
+          _readInt(map['households_not_attending'], fallback: 0),
+      categoryTotals: _normalizeCategoryTotals(map['category_totals']),
+      grandTotal: _readInt(map['grand_total'], fallback: 0),
+      rawData: Map<String, dynamic>.from(map),
+    );
+  }
+
+  Map<String, dynamic> toMap({bool includeNulls = false}) {
+    final map = <String, dynamic>{
+      'event_id': eventId,
+      'households_responded': householdsResponded,
+      'households_pending': householdsPending,
+      'households_attending': householdsAttending,
+      'households_not_attending': householdsNotAttending,
+      'category_totals': categoryTotals,
+      'grand_total': grandTotal,
+    };
+
+    _writeTimestamp(
+      map,
+      'last_aggregated_at',
+      lastAggregatedAt,
+      includeNulls,
+    );
+
+    return map;
+  }
+
+  // -----------------------------
+  // BUSINESS LOGIC
+  // -----------------------------
+
+  bool get hasData => householdsResponded > 0;
+
+  bool get isBalanced =>
+      householdsResponded == (householdsAttending + householdsNotAttending);
+
+  bool get isComplete => householdsPending == 0;
+
+  int get calculatedGrandTotal {
+    int total = 0;
+    for (final key in categoryKeys) {
+      total += categoryTotals[key] ?? 0;
+    }
+    return total;
+  }
+
+  bool get isGrandTotalValid => calculatedGrandTotal == grandTotal;
+
+  // -----------------------------
+  // UTILITIES
+  // -----------------------------
+
+  static Map<String, int> _normalizeCategoryTotals(dynamic value) {
+    final Map<String, int> normalized = {};
+
+    for (final key in categoryKeys) {
+      normalized[key] = 0;
+    }
+
+    if (value is Map) {
+      value.forEach((k, v) {
+        final key = k.toString();
+        if (categoryKeys.contains(key)) {
+          normalized[key] = _readInt(v);
+        }
+      });
+    }
+
+    return normalized;
+  }
+
+  // -----------------------------
+  // HELPERS
+  // -----------------------------
+
+  static String _readString(dynamic value, {String fallback = ''}) {
+    return (value?.toString() ?? fallback).trim();
+  }
+
+  static int _readInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value == null) return fallback;
+    return int.tryParse(value.toString()) ?? fallback;
+  }
+
+  static Timestamp? _readTimestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    return null;
+  }
+
+  static void _writeTimestamp(
+    Map<String, dynamic> target,
+    String key,
+    Timestamp? value,
+    bool includeNulls,
+  ) {
+    if (value != null || includeNulls) {
+      target[key] = value;
+    }
+  }
+
+  @override
+  String toString() {
+    return 'EventAttendanceSummaryModel(eventId: $eventId, total: $grandTotal)';
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/event_model.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EventModel {
+  static const String collectionName = 'events';
+
+  static const String statusDraft = 'draft';
+  static const String statusPublished = 'published';
+  static const String statusClosed = 'closed';
+  static const String statusCancelled = 'cancelled';
+
+  static const List<String> allowedStatuses = <String>[
+    statusDraft,
+    statusPublished,
+    statusClosed,
+    statusCancelled,
+  ];
+
+  final String documentId;
+  final String eventId;
+  final String title;
+  final String subtitle;
+  final String description;
+  final String eventType;
+  final String venue;
+
+  final Timestamp? eventDate;
+  final Timestamp? startAt;
+  final Timestamp? endAt;
+  final Timestamp? responseCutoffAt;
+
+  final String status;
+
+  final String createdByUid;
+  final String createdByEmployeeNumber;
+  final String createdByName;
+
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+  final Timestamp? publishedAt;
+  final Timestamp? closedAt;
+  final Timestamp? cancelledAt;
+
+  final int dashboardPriority;
+  final bool allowEditUntilCutoff;
+  final bool showOnEmployeeDashboard;
+  final bool showPopupOnPublish;
+
+  final List<String> selectedNoteIds;
+  final List<EventNoteSnapshot> notesSnapshot;
+  final String customNotice;
+
+  final String targetScope;
+  final int targetCountEstimate;
+  final int householdsResponded;
+  final int householdsPending;
+  final int grandTotalAttendees;
+
+  final bool reportLocked;
+  final bool isDeletedSoft;
+
+  final Map<String, dynamic> rawData;
+
+  const EventModel({
+    required this.documentId,
+    required this.eventId,
+    required this.title,
+    required this.subtitle,
+    required this.description,
+    required this.eventType,
+    required this.venue,
+    required this.eventDate,
+    required this.startAt,
+    required this.endAt,
+    required this.responseCutoffAt,
+    required this.status,
+    required this.createdByUid,
+    required this.createdByEmployeeNumber,
+    required this.createdByName,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.publishedAt,
+    required this.closedAt,
+    required this.cancelledAt,
+    required this.dashboardPriority,
+    required this.allowEditUntilCutoff,
+    required this.showOnEmployeeDashboard,
+    required this.showPopupOnPublish,
+    required this.selectedNoteIds,
+    required this.notesSnapshot,
+    required this.customNotice,
+    required this.targetScope,
+    required this.targetCountEstimate,
+    required this.householdsResponded,
+    required this.householdsPending,
+    required this.grandTotalAttendees,
+    required this.reportLocked,
+    required this.isDeletedSoft,
+    required this.rawData,
+  });
+
+  factory EventModel.empty({
+    required String documentId,
+    required String createdByUid,
+    required String createdByEmployeeNumber,
+    required String createdByName,
+  }) {
+    return EventModel(
+      documentId: documentId.trim(),
+      eventId: documentId.trim(),
+      title: '',
+      subtitle: '',
+      description: '',
+      eventType: '',
+      venue: '',
+      eventDate: null,
+      startAt: null,
+      endAt: null,
+      responseCutoffAt: null,
+      status: statusDraft,
+      createdByUid: createdByUid.trim(),
+      createdByEmployeeNumber: createdByEmployeeNumber.trim(),
+      createdByName: createdByName.trim(),
+      createdAt: null,
+      updatedAt: null,
+      publishedAt: null,
+      closedAt: null,
+      cancelledAt: null,
+      dashboardPriority: 1,
+      allowEditUntilCutoff: true,
+      showOnEmployeeDashboard: true,
+      showPopupOnPublish: true,
+      selectedNoteIds: const <String>[],
+      notesSnapshot: const <EventNoteSnapshot>[],
+      customNotice: '',
+      targetScope: 'all_active_employees',
+      targetCountEstimate: 0,
+      householdsResponded: 0,
+      householdsPending: 0,
+      grandTotalAttendees: 0,
+      reportLocked: false,
+      isDeletedSoft: false,
+      rawData: const <String, dynamic>{},
+    );
+  }
+
+  factory EventModel.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data() ?? <String, dynamic>{};
+    return EventModel.fromMap(
+      data,
+      documentId: document.id,
+    );
+  }
+
+  factory EventModel.fromMap(
+    Map<String, dynamic> map, {
+    required String documentId,
+  }) {
+    final selectedNoteIdsRaw = map['selected_note_ids'];
+    final notesSnapshotRaw = map['notes_snapshot'];
+
+    return EventModel(
+      documentId: documentId.trim(),
+      eventId: _readString(map['event_id'], fallback: documentId),
+      title: _readString(map['title']),
+      subtitle: _readString(map['subtitle']),
+      description: _readString(map['description']),
+      eventType: _readString(map['event_type']),
+      venue: _readString(map['venue']),
+      eventDate: _readTimestamp(map['event_date']),
+      startAt: _readTimestamp(map['start_at']),
+      endAt: _readTimestamp(map['end_at']),
+      responseCutoffAt: _readTimestamp(map['response_cutoff_at']),
+      status: _normalizeStatus(map['status']),
+      createdByUid: _readString(map['created_by_uid']),
+      createdByEmployeeNumber: _readString(map['created_by_employee_number']),
+      createdByName: _readString(map['created_by_name']),
+      createdAt: _readTimestamp(map['created_at']),
+      updatedAt: _readTimestamp(map['updated_at']),
+      publishedAt: _readTimestamp(map['published_at']),
+      closedAt: _readTimestamp(map['closed_at']),
+      cancelledAt: _readTimestamp(map['cancelled_at']),
+      dashboardPriority: _readInt(map['dashboard_priority'], fallback: 1),
+      allowEditUntilCutoff:
+          _readBool(map['allow_edit_until_cutoff'], fallback: true),
+      showOnEmployeeDashboard:
+          _readBool(map['show_on_employee_dashboard'], fallback: true),
+      showPopupOnPublish:
+          _readBool(map['show_popup_on_publish'], fallback: true),
+      selectedNoteIds: _readStringList(selectedNoteIdsRaw),
+      notesSnapshot: _readNotesSnapshotList(notesSnapshotRaw),
+      customNotice: _readString(map['custom_notice']),
+      targetScope:
+          _readString(map['target_scope'], fallback: 'all_active_employees'),
+      targetCountEstimate:
+          _readInt(map['target_count_estimate'], fallback: 0),
+      householdsResponded:
+          _readInt(map['households_responded'], fallback: 0),
+      householdsPending:
+          _readInt(map['households_pending'], fallback: 0),
+      grandTotalAttendees:
+          _readInt(map['grand_total_attendees'], fallback: 0),
+      reportLocked: _readBool(map['report_locked'], fallback: false),
+      isDeletedSoft: _readBool(map['is_deleted_soft'], fallback: false),
+      rawData: Map<String, dynamic>.from(map),
+    );
+  }
+
+  Map<String, dynamic> toMap({
+    bool includeNulls = false,
+  }) {
+    final map = <String, dynamic>{
+      'event_id': eventId.trim(),
+      'title': title.trim(),
+      'subtitle': subtitle.trim(),
+      'description': description.trim(),
+      'event_type': eventType.trim(),
+      'venue': venue.trim(),
+      'status': normalizedStatus,
+      'created_by_uid': createdByUid.trim(),
+      'created_by_employee_number': createdByEmployeeNumber.trim(),
+      'created_by_name': createdByName.trim(),
+      'dashboard_priority': dashboardPriority,
+      'allow_edit_until_cutoff': allowEditUntilCutoff,
+      'show_on_employee_dashboard': showOnEmployeeDashboard,
+      'show_popup_on_publish': showPopupOnPublish,
+      'selected_note_ids': selectedNoteIds
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toList(),
+      'notes_snapshot':
+          notesSnapshot.map((note) => note.toMap()).toList(growable: false),
+      'custom_notice': customNotice.trim(),
+      'target_scope': targetScope.trim(),
+      'target_count_estimate': targetCountEstimate,
+      'households_responded': householdsResponded,
+      'households_pending': householdsPending,
+      'grand_total_attendees': grandTotalAttendees,
+      'report_locked': reportLocked,
+      'is_deleted_soft': isDeletedSoft,
+    };
+
+    _writeTimestamp(map, 'event_date', eventDate, includeNulls: includeNulls);
+    _writeTimestamp(map, 'start_at', startAt, includeNulls: includeNulls);
+    _writeTimestamp(map, 'end_at', endAt, includeNulls: includeNulls);
+    _writeTimestamp(
+      map,
+      'response_cutoff_at',
+      responseCutoffAt,
+      includeNulls: includeNulls,
+    );
+    _writeTimestamp(map, 'created_at', createdAt, includeNulls: includeNulls);
+    _writeTimestamp(map, 'updated_at', updatedAt, includeNulls: includeNulls);
+    _writeTimestamp(
+      map,
+      'published_at',
+      publishedAt,
+      includeNulls: includeNulls,
+    );
+    _writeTimestamp(map, 'closed_at', closedAt, includeNulls: includeNulls);
+    _writeTimestamp(
+      map,
+      'cancelled_at',
+      cancelledAt,
+      includeNulls: includeNulls,
+    );
+
+    return map;
+  }
+
+  EventModel copyWith({
+    String? documentId,
+    String? eventId,
+    String? title,
+    String? subtitle,
+    String? description,
+    String? eventType,
+    String? venue,
+    Timestamp? eventDate,
+    Timestamp? startAt,
+    Timestamp? endAt,
+    Timestamp? responseCutoffAt,
+    String? status,
+    String? createdByUid,
+    String? createdByEmployeeNumber,
+    String? createdByName,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+    Timestamp? publishedAt,
+    Timestamp? closedAt,
+    Timestamp? cancelledAt,
+    int? dashboardPriority,
+    bool? allowEditUntilCutoff,
+    bool? showOnEmployeeDashboard,
+    bool? showPopupOnPublish,
+    List<String>? selectedNoteIds,
+    List<EventNoteSnapshot>? notesSnapshot,
+    String? customNotice,
+    String? targetScope,
+    int? targetCountEstimate,
+    int? householdsResponded,
+    int? householdsPending,
+    int? grandTotalAttendees,
+    bool? reportLocked,
+    bool? isDeletedSoft,
+    Map<String, dynamic>? rawData,
+  }) {
+    return EventModel(
+      documentId: documentId ?? this.documentId,
+      eventId: eventId ?? this.eventId,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      description: description ?? this.description,
+      eventType: eventType ?? this.eventType,
+      venue: venue ?? this.venue,
+      eventDate: eventDate ?? this.eventDate,
+      startAt: startAt ?? this.startAt,
+      endAt: endAt ?? this.endAt,
+      responseCutoffAt: responseCutoffAt ?? this.responseCutoffAt,
+      status: status ?? this.status,
+      createdByUid: createdByUid ?? this.createdByUid,
+      createdByEmployeeNumber:
+          createdByEmployeeNumber ?? this.createdByEmployeeNumber,
+      createdByName: createdByName ?? this.createdByName,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      publishedAt: publishedAt ?? this.publishedAt,
+      closedAt: closedAt ?? this.closedAt,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
+      dashboardPriority: dashboardPriority ?? this.dashboardPriority,
+      allowEditUntilCutoff:
+          allowEditUntilCutoff ?? this.allowEditUntilCutoff,
+      showOnEmployeeDashboard:
+          showOnEmployeeDashboard ?? this.showOnEmployeeDashboard,
+      showPopupOnPublish: showPopupOnPublish ?? this.showPopupOnPublish,
+      selectedNoteIds: selectedNoteIds ?? this.selectedNoteIds,
+      notesSnapshot: notesSnapshot ?? this.notesSnapshot,
+      customNotice: customNotice ?? this.customNotice,
+      targetScope: targetScope ?? this.targetScope,
+      targetCountEstimate: targetCountEstimate ?? this.targetCountEstimate,
+      householdsResponded: householdsResponded ?? this.householdsResponded,
+      householdsPending: householdsPending ?? this.householdsPending,
+      grandTotalAttendees: grandTotalAttendees ?? this.grandTotalAttendees,
+      reportLocked: reportLocked ?? this.reportLocked,
+      isDeletedSoft: isDeletedSoft ?? this.isDeletedSoft,
+      rawData: rawData ?? this.rawData,
+    );
+  }
+
+  String get normalizedStatus => _normalizeStatus(status);
+
+  bool get isDraft => normalizedStatus == statusDraft;
+  bool get isPublished => normalizedStatus == statusPublished;
+  bool get isClosed => normalizedStatus == statusClosed;
+  bool get isCancelled => normalizedStatus == statusCancelled;
+  bool get isActiveForEmployees =>
+      isPublished && !isDeletedSoft && !reportLocked;
+
+  bool get hasCutoff => responseCutoffAt != null;
+  bool get hasStarted => startAt != null;
+  bool get hasEnded => endAt != null;
+  bool get hasNotes => selectedNoteIds.isNotEmpty || notesSnapshot.isNotEmpty;
+  bool get hasCustomNotice => customNotice.trim().isNotEmpty;
+
+  DateTime? get eventDateTime => eventDate?.toDate();
+  DateTime? get startDateTime => startAt?.toDate();
+  DateTime? get endDateTime => endAt?.toDate();
+  DateTime? get responseCutoffDateTime => responseCutoffAt?.toDate();
+
+  bool isResponseWindowOpen({
+    DateTime? now,
+  }) {
+    if (!isPublished || isCancelled || isClosed) {
+      return false;
+    }
+
+    if (reportLocked) {
+      return false;
+    }
+
+    final cutoff = responseCutoffDateTime;
+    if (cutoff == null) {
+      return true;
+    }
+
+    final current = now ?? DateTime.now();
+    return !current.isAfter(cutoff);
+  }
+
+  bool canEmployeeEditResponse({
+    DateTime? now,
+  }) {
+    if (!allowEditUntilCutoff) {
+      return false;
+    }
+
+    return isResponseWindowOpen(now: now);
+  }
+
+  String get displayTitle => title.trim().isEmpty ? eventId : title.trim();
+
+  String get displayVenue => venue.trim();
+
+  @override
+  String toString() {
+    return 'EventModel(documentId: $documentId, eventId: $eventId, '
+        'title: $title, status: $status)';
+  }
+
+  static String buildEventDocumentId({
+    required String slug,
+  }) {
+    final normalized = _sanitizeKey(slug);
+    return normalized.isEmpty ? 'event' : normalized;
+  }
+
+  static String buildSuggestedSlug({
+    required String title,
+    DateTime? eventDate,
+  }) {
+    final normalizedTitle = _sanitizeKey(title);
+    if (normalizedTitle.isEmpty) {
+      return eventDate == null
+          ? 'event'
+          : 'event_${eventDate.year.toString().padLeft(4, '0')}';
+    }
+
+    if (eventDate == null) {
+      return normalizedTitle;
+    }
+
+    final year = eventDate.year.toString().padLeft(4, '0');
+    return '${normalizedTitle}_$year';
+  }
+
+  static String _sanitizeKey(String value) {
+    final lower = value.trim().toLowerCase();
+    if (lower.isEmpty) {
+      return '';
+    }
+
+    final replaced = lower.replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+    final collapsed = replaced.replaceAll(RegExp(r'_+'), '_');
+    return collapsed.replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  static String _normalizeStatus(dynamic value) {
+    final normalized = value?.toString().trim().toLowerCase() ?? statusDraft;
+    if (allowedStatuses.contains(normalized)) {
+      return normalized;
+    }
+    return statusDraft;
+  }
+
+  static String _readString(dynamic value, {String fallback = ''}) {
+    final parsed = value?.toString() ?? fallback;
+    return parsed.trim();
+  }
+
+  static int _readInt(dynamic value, {int fallback = 0}) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value == null) {
+      return fallback;
+    }
+    return int.tryParse(value.toString().trim()) ?? fallback;
+  }
+
+  static bool _readBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) {
+      return value;
+    }
+    if (value == null) {
+      return fallback;
+    }
+
+    final normalized = value.toString().trim().toLowerCase();
+    if (normalized == 'true') {
+      return true;
+    }
+    if (normalized == 'false') {
+      return false;
+    }
+
+    return fallback;
+  }
+
+  static Timestamp? _readTimestamp(dynamic value) {
+    if (value is Timestamp) {
+      return value;
+    }
+    return null;
+  }
+
+  static List<String> _readStringList(dynamic value) {
+    if (value is! Iterable) {
+      return const <String>[];
+    }
+
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static List<EventNoteSnapshot> _readNotesSnapshotList(dynamic value) {
+    if (value is! Iterable) {
+      return const <EventNoteSnapshot>[];
+    }
+
+    return value
+        .whereType<Map>()
+        .map(
+          (item) => EventNoteSnapshot.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  static void _writeTimestamp(
+    Map<String, dynamic> target,
+    String key,
+    Timestamp? value, {
+    required bool includeNulls,
+  }) {
+    if (value != null || includeNulls) {
+      target[key] = value;
+    }
+  }
+}
+
+class EventNoteSnapshot {
+  final String noteId;
+  final String title;
+  final String body;
+
+  const EventNoteSnapshot({
+    required this.noteId,
+    required this.title,
+    required this.body,
+  });
+
+  factory EventNoteSnapshot.fromMap(Map<String, dynamic> map) {
+    return EventNoteSnapshot(
+      noteId: (map['note_id'] ?? '').toString().trim(),
+      title: (map['title'] ?? '').toString().trim(),
+      body: (map['body'] ?? '').toString().trim(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'note_id': noteId.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+    };
+  }
+
+  EventNoteSnapshot copyWith({
+    String? noteId,
+    String? title,
+    String? body,
+  }) {
+    return EventNoteSnapshot(
+      noteId: noteId ?? this.noteId,
+      title: title ?? this.title,
+      body: body ?? this.body,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'EventNoteSnapshot(noteId: $noteId, title: $title)';
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/event_note_template_model.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EventNoteTemplateModel {
+  static const String collectionName = 'event_note_templates';
+
+  final String documentId;
+  final String title;
+  final String body;
+  final bool isActive;
+  final int displayOrder;
+  final Timestamp? createdAt;
+  final Timestamp? updatedAt;
+
+  final Map<String, dynamic> rawData;
+
+  const EventNoteTemplateModel({
+    required this.documentId,
+    required this.title,
+    required this.body,
+    required this.isActive,
+    required this.displayOrder,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.rawData,
+  });
+
+  factory EventNoteTemplateModel.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> document,
+  ) {
+    final data = document.data() ?? <String, dynamic>{};
+
+    return EventNoteTemplateModel.fromMap(
+      data,
+      documentId: document.id,
+    );
+  }
+
+  factory EventNoteTemplateModel.fromMap(
+    Map<String, dynamic> map, {
+    required String documentId,
+  }) {
+    return EventNoteTemplateModel(
+      documentId: documentId.trim(),
+      title: _readString(map['title']),
+      body: _readString(map['body']),
+      isActive: _readBool(map['is_active'], fallback: true),
+      displayOrder: _readInt(map['display_order'], fallback: 0),
+      createdAt: _readTimestamp(map['created_at']),
+      updatedAt: _readTimestamp(map['updated_at']),
+      rawData: Map<String, dynamic>.from(map),
+    );
+  }
+
+  Map<String, dynamic> toMap({
+    bool includeNulls = false,
+  }) {
+    final map = <String, dynamic>{
+      'title': title.trim(),
+      'body': body.trim(),
+      'is_active': isActive,
+      'display_order': displayOrder,
+    };
+
+    _writeTimestamp(map, 'created_at', createdAt, includeNulls: includeNulls);
+    _writeTimestamp(map, 'updated_at', updatedAt, includeNulls: includeNulls);
+
+    return map;
+  }
+
+  EventNoteTemplateModel copyWith({
+    String? documentId,
+    String? title,
+    String? body,
+    bool? isActive,
+    int? displayOrder,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+    Map<String, dynamic>? rawData,
+  }) {
+    return EventNoteTemplateModel(
+      documentId: documentId ?? this.documentId,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      isActive: isActive ?? this.isActive,
+      displayOrder: displayOrder ?? this.displayOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rawData: rawData ?? this.rawData,
+    );
+  }
+
+  bool get isValid => title.isNotEmpty && body.isNotEmpty;
+
+  @override
+  String toString() {
+    return 'EventNoteTemplateModel(documentId: $documentId, title: $title)';
+  }
+
+  // -------------------------
+  // Helpers
+  // -------------------------
+
+  static String _readString(dynamic value, {String fallback = ''}) {
+    final parsed = value?.toString() ?? fallback;
+    return parsed.trim();
+  }
+
+  static int _readInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value == null) return fallback;
+    return int.tryParse(value.toString().trim()) ?? fallback;
+  }
+
+  static bool _readBool(dynamic value, {bool fallback = false}) {
+    if (value is bool) return value;
+    if (value == null) return fallback;
+
+    final normalized = value.toString().trim().toLowerCase();
+    if (normalized == 'true') return true;
+    if (normalized == 'false') return false;
+
+    return fallback;
+  }
+
+  static Timestamp? _readTimestamp(dynamic value) {
+    if (value is Timestamp) return value;
+    return null;
+  }
+
+  static void _writeTimestamp(
+    Map<String, dynamic> target,
+    String key,
+    Timestamp? value, {
+    required bool includeNulls,
+  }) {
+    if (value != null || includeNulls) {
+      target[key] = value;
+    }
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/meal_booking_request.dart
+==================================================
+import 'meal_option_selection.dart';
+
+class MealBookingRequest {
+  final DateTime reservationDate;
+  final String mealType;
+  final String serviceMode;
+  final List<MealOptionSelection> selectedOptions;
+  final String? notes;
+
+  const MealBookingRequest({
+    required this.reservationDate,
+    required this.mealType,
+    required this.serviceMode,
+    required this.selectedOptions,
+    this.notes,
+  });
+
+  int get totalMealCount => selectedOptions.fold<int>(
+        0,
+        (total, option) => total + option.quantity,
+      );
+
+  MealBookingRequest copyWith({
+    DateTime? reservationDate,
+    String? mealType,
+    String? serviceMode,
+    List<MealOptionSelection>? selectedOptions,
+    String? notes,
+  }) {
+    return MealBookingRequest(
+      reservationDate: reservationDate ?? this.reservationDate,
+      mealType: mealType ?? this.mealType,
+      serviceMode: serviceMode ?? this.serviceMode,
+      selectedOptions: selectedOptions ?? this.selectedOptions,
+      notes: notes ?? this.notes,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'reservation_date': reservationDate.toIso8601String(),
+      'meal_type': mealType,
+      'service_mode': serviceMode,
+      'selected_options': selectedOptions.map((e) => e.toMap()).toList(),
+      'total_meal_count': totalMealCount,
+      'notes': notes,
+    };
+  }
+
+  factory MealBookingRequest.fromMap(Map<String, dynamic> map) {
+    final rawOptions = (map['selected_options'] as List<dynamic>?) ?? const [];
+
+    return MealBookingRequest(
+      reservationDate: DateTime.tryParse(
+            (map['reservation_date'] ?? '').toString(),
+          ) ??
+          DateTime.now(),
+      mealType: (map['meal_type'] ?? '').toString(),
+      serviceMode: (map['service_mode'] ?? '').toString(),
+      selectedOptions: rawOptions
+          .whereType<Map>()
+          .map((e) => MealOptionSelection.fromMap(Map<String, dynamic>.from(e)))
+          .toList(),
+      notes: map['notes']?.toString(),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'MealBookingRequest(reservationDate: $reservationDate, mealType: $mealType, serviceMode: $serviceMode, selectedOptions: $selectedOptions, totalMealCount: $totalMealCount, notes: $notes)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is MealBookingRequest &&
+        other.reservationDate == reservationDate &&
+        other.mealType == mealType &&
+        other.serviceMode == serviceMode &&
+        other.notes == notes;
+  }
+
+  @override
+  int get hashCode {
+    return reservationDate.hashCode ^
+        mealType.hashCode ^
+        serviceMode.hashCode ^
+        notes.hashCode;
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/meal_option_selection.dart
+==================================================
+class MealOptionSelection {
+  final String optionKey;
+  final String optionLabel;
+  final int quantity;
+
+  const MealOptionSelection({
+    required this.optionKey,
+    required this.optionLabel,
+    required this.quantity,
+  });
+
+  MealOptionSelection copyWith({
+    String? optionKey,
+    String? optionLabel,
+    int? quantity,
+  }) {
+    return MealOptionSelection(
+      optionKey: optionKey ?? this.optionKey,
+      optionLabel: optionLabel ?? this.optionLabel,
+      quantity: quantity ?? this.quantity,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'option_key': optionKey,
+      'option_label': optionLabel,
+      'quantity': quantity,
+    };
+  }
+
+  factory MealOptionSelection.fromMap(Map<String, dynamic> map) {
+    return MealOptionSelection(
+      optionKey: (map['option_key'] ?? '').toString(),
+      optionLabel: (map['option_label'] ?? '').toString(),
+      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'MealOptionSelection(optionKey: $optionKey, optionLabel: $optionLabel, quantity: $quantity)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is MealOptionSelection &&
+        other.optionKey == optionKey &&
+        other.optionLabel == optionLabel &&
+        other.quantity == quantity;
+  }
+
+  @override
+  int get hashCode {
+    return optionKey.hashCode ^ optionLabel.hashCode ^ quantity.hashCode;
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/meal_reservation.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'meal_option_selection.dart';
+
+class MealReservation {
+  final String? id;
+  final DateTime reservationDate;
+  final String mealType;
+  final String reservationCategory;
+  final String? forEmployeeNumber;
+  final String? forEmployeeName;
+  final String? hostEmployeeNumber;
+  final String? hostDepartment;
+  final String bookedByUserId;
+  final String? bookedByEmployeeNumber;
+  final String bookingSource;
+  final String serviceMode;
+  final int totalMealCount;
+  final List<MealOptionSelection> selectedOptions;
+  final String status;
+  final bool overrideFlag;
+  final String? overrideReason;
+  final String? notes;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const MealReservation({
+    this.id,
+    required this.reservationDate,
+    required this.mealType,
+    required this.reservationCategory,
+    this.forEmployeeNumber,
+    this.forEmployeeName,
+    this.hostEmployeeNumber,
+    this.hostDepartment,
+    required this.bookedByUserId,
+    this.bookedByEmployeeNumber,
+    required this.bookingSource,
+    required this.serviceMode,
+    required this.totalMealCount,
+    required this.selectedOptions,
+    required this.status,
+    required this.overrideFlag,
+    this.overrideReason,
+    this.notes,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  MealReservation copyWith({
+    String? id,
+    DateTime? reservationDate,
+    String? mealType,
+    String? reservationCategory,
+    String? forEmployeeNumber,
+    String? forEmployeeName,
+    String? hostEmployeeNumber,
+    String? hostDepartment,
+    String? bookedByUserId,
+    String? bookedByEmployeeNumber,
+    String? bookingSource,
+    String? serviceMode,
+    int? totalMealCount,
+    List<MealOptionSelection>? selectedOptions,
+    String? status,
+    bool? overrideFlag,
+    String? overrideReason,
+    String? notes,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return MealReservation(
+      id: id ?? this.id,
+      reservationDate: reservationDate ?? this.reservationDate,
+      mealType: mealType ?? this.mealType,
+      reservationCategory: reservationCategory ?? this.reservationCategory,
+      forEmployeeNumber: forEmployeeNumber ?? this.forEmployeeNumber,
+      forEmployeeName: forEmployeeName ?? this.forEmployeeName,
+      hostEmployeeNumber: hostEmployeeNumber ?? this.hostEmployeeNumber,
+      hostDepartment: hostDepartment ?? this.hostDepartment,
+      bookedByUserId: bookedByUserId ?? this.bookedByUserId,
+      bookedByEmployeeNumber:
+          bookedByEmployeeNumber ?? this.bookedByEmployeeNumber,
+      bookingSource: bookingSource ?? this.bookingSource,
+      serviceMode: serviceMode ?? this.serviceMode,
+      totalMealCount: totalMealCount ?? this.totalMealCount,
+      selectedOptions: selectedOptions ?? this.selectedOptions,
+      status: status ?? this.status,
+      overrideFlag: overrideFlag ?? this.overrideFlag,
+      overrideReason: overrideReason ?? this.overrideReason,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'reservation_date': Timestamp.fromDate(
+        DateTime(
+          reservationDate.year,
+          reservationDate.month,
+          reservationDate.day,
+        ),
+      ),
+      'meal_type': mealType,
+      'reservation_category': reservationCategory,
+      'for_employee_number': forEmployeeNumber,
+      'for_employee_name': forEmployeeName,
+      'host_employee_number': hostEmployeeNumber,
+      'host_department': hostDepartment,
+      'booked_by_user_id': bookedByUserId,
+      'booked_by_employee_number': bookedByEmployeeNumber,
+      'booking_source': bookingSource,
+      'service_mode': serviceMode,
+      'total_meal_count': totalMealCount,
+      'selected_options': selectedOptions.map((e) => e.toMap()).toList(),
+      'status': status,
+      'override_flag': overrideFlag,
+      'override_reason': overrideReason,
+      'notes': notes,
+      'created_at': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
+      'updated_at': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
+    };
+  }
+
+  factory MealReservation.fromMap(Map<String, dynamic> map, {String? id}) {
+    final selectedOptionsRaw =
+        (map['selected_options'] as List<dynamic>?) ?? const [];
+
+    return MealReservation(
+      id: id,
+      reservationDate: _readDate(map['reservation_date']),
+      mealType: (map['meal_type'] ?? '').toString(),
+      reservationCategory: (map['reservation_category'] ?? '').toString(),
+      forEmployeeNumber: map['for_employee_number']?.toString(),
+      forEmployeeName: map['for_employee_name']?.toString(),
+      hostEmployeeNumber: map['host_employee_number']?.toString(),
+      hostDepartment: map['host_department']?.toString(),
+      bookedByUserId: (map['booked_by_user_id'] ?? '').toString(),
+      bookedByEmployeeNumber: map['booked_by_employee_number']?.toString(),
+      bookingSource: (map['booking_source'] ?? '').toString(),
+      serviceMode: (map['service_mode'] ?? '').toString(),
+      totalMealCount: (map['total_meal_count'] as num?)?.toInt() ?? 0,
+      selectedOptions: selectedOptionsRaw
+          .whereType<Map>()
+          .map((e) => MealOptionSelection.fromMap(Map<String, dynamic>.from(e)))
+          .toList(),
+      status: (map['status'] ?? '').toString(),
+      overrideFlag: map['override_flag'] as bool? ?? false,
+      overrideReason: map['override_reason']?.toString(),
+      notes: map['notes']?.toString(),
+      createdAt: _readNullableDate(map['created_at']),
+      updatedAt: _readNullableDate(map['updated_at']),
+    );
+  }
+
+  static DateTime _readDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return DateTime.now();
+  }
+
+  static DateTime? _readNullableDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  @override
+  String toString() {
+    return 'MealReservation(id: $id, reservationDate: $reservationDate, mealType: $mealType, reservationCategory: $reservationCategory, forEmployeeNumber: $forEmployeeNumber, forEmployeeName: $forEmployeeName, hostEmployeeNumber: $hostEmployeeNumber, hostDepartment: $hostDepartment, bookedByUserId: $bookedByUserId, bookedByEmployeeNumber: $bookedByEmployeeNumber, bookingSource: $bookingSource, serviceMode: $serviceMode, totalMealCount: $totalMealCount, selectedOptions: $selectedOptions, status: $status, overrideFlag: $overrideFlag, overrideReason: $overrideReason, notes: $notes, createdAt: $createdAt, updatedAt: $updatedAt)';
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/reservation_settings.dart
+==================================================
+class ReservationSettings {
+  final String breakfastCutoffTime;
+  final String lunchCutoffTime;
+  final String dinnerCutoffTime;
+  final int maxMealCountPerBooking;
+  final bool allowTakeaway;
+  final bool supervisorOverrideEnabled;
+  final int defaultBookingWindowDays;
+
+  const ReservationSettings({
+    required this.breakfastCutoffTime,
+    required this.lunchCutoffTime,
+    required this.dinnerCutoffTime,
+    required this.maxMealCountPerBooking,
+    required this.allowTakeaway,
+    required this.supervisorOverrideEnabled,
+    required this.defaultBookingWindowDays,
+  });
+
+  factory ReservationSettings.defaults() {
+    return const ReservationSettings(
+      breakfastCutoffTime: '08:00',
+      lunchCutoffTime: '13:00',
+      dinnerCutoffTime: '20:00',
+      maxMealCountPerBooking: 10,
+      allowTakeaway: true,
+      supervisorOverrideEnabled: true,
+      defaultBookingWindowDays: 1,
+    );
+  }
+
+  ReservationSettings copyWith({
+    String? breakfastCutoffTime,
+    String? lunchCutoffTime,
+    String? dinnerCutoffTime,
+    int? maxMealCountPerBooking,
+    bool? allowTakeaway,
+    bool? supervisorOverrideEnabled,
+    int? defaultBookingWindowDays,
+  }) {
+    return ReservationSettings(
+      breakfastCutoffTime: breakfastCutoffTime ?? this.breakfastCutoffTime,
+      lunchCutoffTime: lunchCutoffTime ?? this.lunchCutoffTime,
+      dinnerCutoffTime: dinnerCutoffTime ?? this.dinnerCutoffTime,
+      maxMealCountPerBooking:
+          maxMealCountPerBooking ?? this.maxMealCountPerBooking,
+      allowTakeaway: allowTakeaway ?? this.allowTakeaway,
+      supervisorOverrideEnabled:
+          supervisorOverrideEnabled ?? this.supervisorOverrideEnabled,
+      defaultBookingWindowDays:
+          defaultBookingWindowDays ?? this.defaultBookingWindowDays,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'breakfast_cutoff_time': breakfastCutoffTime,
+      'lunch_cutoff_time': lunchCutoffTime,
+      'dinner_cutoff_time': dinnerCutoffTime,
+      'max_meal_count_per_booking': maxMealCountPerBooking,
+      'allow_takeaway': allowTakeaway,
+      'supervisor_override_enabled': supervisorOverrideEnabled,
+      'default_booking_window_days': defaultBookingWindowDays,
+    };
+  }
+
+  factory ReservationSettings.fromMap(Map<String, dynamic> map) {
+    return ReservationSettings(
+      breakfastCutoffTime: (map['breakfast_cutoff_time'] ?? '08:00').toString(),
+      lunchCutoffTime: (map['lunch_cutoff_time'] ?? '13:00').toString(),
+      dinnerCutoffTime: (map['dinner_cutoff_time'] ?? '20:00').toString(),
+      maxMealCountPerBooking:
+          (map['max_meal_count_per_booking'] as num?)?.toInt() ?? 10,
+      allowTakeaway: map['allow_takeaway'] as bool? ?? true,
+      supervisorOverrideEnabled:
+          map['supervisor_override_enabled'] as bool? ?? true,
+      defaultBookingWindowDays:
+          (map['default_booking_window_days'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'ReservationSettings(breakfastCutoffTime: $breakfastCutoffTime, lunchCutoffTime: $lunchCutoffTime, dinnerCutoffTime: $dinnerCutoffTime, maxMealCountPerBooking: $maxMealCountPerBooking, allowTakeaway: $allowTakeaway, supervisorOverrideEnabled: $supervisorOverrideEnabled, defaultBookingWindowDays: $defaultBookingWindowDays)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is ReservationSettings &&
+        other.breakfastCutoffTime == breakfastCutoffTime &&
+        other.lunchCutoffTime == lunchCutoffTime &&
+        other.dinnerCutoffTime == dinnerCutoffTime &&
+        other.maxMealCountPerBooking == maxMealCountPerBooking &&
+        other.allowTakeaway == allowTakeaway &&
+        other.supervisorOverrideEnabled == supervisorOverrideEnabled &&
+        other.defaultBookingWindowDays == defaultBookingWindowDays;
+  }
+
+  @override
+  int get hashCode {
+    return breakfastCutoffTime.hashCode ^
+        lunchCutoffTime.hashCode ^
+        dinnerCutoffTime.hashCode ^
+        maxMealCountPerBooking.hashCode ^
+        allowTakeaway.hashCode ^
+        supervisorOverrideEnabled.hashCode ^
+        defaultBookingWindowDays.hashCode;
+  }
+}
+
+
+
+==================================================
+FILE: lib/models/resolved_meal_option.dart
+==================================================
+class ResolvedMealOption {
+  final String optionKey;
+  final String optionLabel;
+  final List<Map<String, dynamic>> items;
+
+  const ResolvedMealOption({
+    required this.optionKey,
+    required this.optionLabel,
+    required this.items,
+  });
+
+  ResolvedMealOption copyWith({
+    String? optionKey,
+    String? optionLabel,
+    List<Map<String, dynamic>>? items,
+  }) {
+    return ResolvedMealOption(
+      optionKey: optionKey ?? this.optionKey,
+      optionLabel: optionLabel ?? this.optionLabel,
+      items: items ?? this.items,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'option_key': optionKey,
+      'option_label': optionLabel,
+      'items': items,
+    };
+  }
+
+  factory ResolvedMealOption.fromMap(Map<String, dynamic> map) {
+    final rawItems = (map['items'] as List<dynamic>?) ?? const [];
+
+    return ResolvedMealOption(
+      optionKey: (map['option_key'] ?? '').toString(),
+      optionLabel: (map['option_label'] ?? '').toString(),
+      items: rawItems
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'ResolvedMealOption(optionKey: $optionKey, optionLabel: $optionLabel, items: $items)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is ResolvedMealOption &&
+        other.optionKey == optionKey &&
+        other.optionLabel == optionLabel;
+  }
+
+  @override
+  int get hashCode {
+    return optionKey.hashCode ^ optionLabel.hashCode;
+  }
+}
+
+
+

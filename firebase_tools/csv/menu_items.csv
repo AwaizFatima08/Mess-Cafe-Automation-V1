@@ -1,307 +1,361 @@
-docId,item_name,category,is_active,estimated_price,serving_size,created_at,updated_at,status
-ITEM001,Lahori Chicken Channay,main_course,true,,,,,
-ITEM002,Chicken White Qorma,main_course,true,,,,,
-ITEM003,Anda alu bhujiya,main_course,true,,,,,
-ITEM004,Chicken Nihari,main_course,true,,,,,
-ITEM005,Aloo Kutli Zeera,main_course,true,,,,,
-ITEM006,Mix vegetables,main_course,true,,,,,
-ITEM007,Beef Karahi,main_course,true,,,,,
-ITEM008,Chicken Degi Quorma,main_course,true,,,,,
-ITEM009,Chicken Kofta,main_course,true,,,,,
-ITEM010,Chicken Balochi Karahi,main_course,true,,,,,
-ITEM011,Masoor Daal,main_course,true,,,,,
-ITEM012,Kadhi Pakora,main_course,true,,,,,
-ITEM013,Plain Channay,main_course,true,,,,,
-ITEM014,Beef Paye,main_course,true,,,,,
-ITEM015,Daal Makhani,main_course,true,,,,,
-ITEM016,Sarson Saag,main_course,true,,,,,
-ITEM017,Chicken shaljam,main_course,true,,,,,
-ITEM018,Matar Chicken,main_course,true,,,,,
-ITEM019,Beef Haleem,main_course,true,,,,,
-ITEM020,Mutton Kunna,main_course,true,,,,,
-ITEM021,Hareesa,main_course,true,,,,,
-ITEM022,Beef Bong Nihari,main_course,true,,,,,
-ITEM023,Chicken Hari Mirch Karahi,main_course,true,,,,,
-ITEM024,Mutton Paye,main_course,true,,,,,
-ITEM025,Chicken Haleem,main_course,true,,,,,
-ITEM026,Chicken Handi,main_course,true,,,,,
-ITEM027,Beef Kabli Pullao,rice,true,,,,,
-ITEM028,Zeera Rice,rice,true,,,,,
-ITEM029,Matar Pulao,rice,true,,,,,
-ITEM030,Gur Rice,rice,true,,,,,
-ITEM031,Plain Rice,rice,true,,,,,
-ITEM032,Mutanjan,rice,true,,,,,
-ITEM033,Chicken smoky Biryani,rice,true,,,,,
-ITEM034,Chicken sindhi Biryani,rice,true,,,,,
-ITEM035,Alu Cutlet,side_item,true,,,,,
-ITEM036,Shami Kabab,side_item,true,,,,,
-ITEM037,Pathora Channa,breakfast_item,true,,,,,
-ITEM038,Spanish Omelette,breakfast_item,true,,,,,
-ITEM039,French Toast,breakfast_item,true,,,,,
-ITEM040,Scrambled Egg,breakfast_item,true,,,,,
-ITEM041,Regular Omelette,breakfast_item,true,,,,,
-ITEM042,Boiled Egg,breakfast_item,true,,,,,
-ITEM043,Fried Egg,breakfast_item,true,,,,,
-ITEM044,Bread Slice,bread,true,,,,,
-ITEM045,Russian Salad,salad,true,,,,,
-ITEM046,Potato Salad,salad,true,,,,,
-ITEM047,Cesar Salad,salad,true,,,,,
-ITEM048,Bean Salad,salad,true,,,,,
-ITEM049,Kachumar Salad,salad,true,,,,,
-ITEM050,Grean Salad,salad,true,,,,,
-ITEM051,Mexican Salad,salad,true,,,,,
-ITEM052,Lentil Salad,salad,true,,,,,
-ITEM053,Plain Yogurt,breakfast_item,true,,,,,
-ITEM054,Raita,sauce,true,,,,,
-ITEM055,BBQ Sauce,sauce,true,,,,,
-ITEM056,Plum Sauce,sauce,true,,,,,
-ITEM057,Fried Finger Fish,bbq item,true,,,,,
-ITEM058,Fried Fish (Lahori),bbq item,true,,,,,
-ITEM059,Grill Fish,bbq item,true,,,,,
-ITEM060,Chicken Steam Roast,bbq item,true,,,,,
-ITEM061,Gola Kabab,bbq item,true,,,,,
-ITEM062,Turkish Kabab,bbq item,true,,,,,
-ITEM063,Chicken Reshmi Kabab,bbq item,true,,,,,
-ITEM064,Chicken Tikka,bbq item,true,,,,,
-ITEM065,Chicken Tawa Piece,bbq item,true,,,,,
-ITEM066,Latte (Machine Made),hot bevarage,true,,,,,
-ITEM067,Cappucino (Machine Made),hot bevarage,true,,,,,
-ITEM068,Black Coffee (Machine Made),hot bevarage,true,,,,,
-ITEM069,Cardimom Tea (Nescafe),hot bevarage,true,,,,,
-ITEM070,Mix Tea,hot bevarage,true,,,,,
-ITEM071,Separate Tea,hot bevarage,true,,,,,
-ITEM072,Green Tea,hot bevarage,true,,,,,
-ITEM073,Qahva,hot bevarage,true,,,,,
-ITEM074,Black Coffee,hot bevarage,true,,,,,
-ITEM075,Cappucino,hot bevarage,true,,,,,
-ITEM076,Sweet  Lassi,bevarage,true,,,,,
-ITEM077,Salted Lassi,bevarage,true,,,,,
-ITEM092,Halwa Puri + Channay,breakfast_item,true,,,,,
-,Pathora Channa,breakfast_item,True,,,,,
-,Beef Bong Nihari + Lassi ,breakfast_item,True,,,,,
-,Mutton Paye + Lassi,breakfast_item,,,,,,
-,Halwa Puri + Channay,breakfast_item,,,,,,
-, Beef Paye + Lassi,breakfast_item,,,,,,
-,Daal Makhani,breakfast_item,True,,,,,
-,Anda Aloo Bhujiya,breakfast_item,True,,,,,
-,Spanish Omelette + French Toast,breakfast_item,True,,,,,
-,Chicken Almond & Egg Fried Rice,Cafe_item,True,430,single,,,
-,Chicken Chili Dry & Egg Fried Rice,Cafe_item,True,410,single,,,
-,Chicken Kung Pao & Egg Fried Rice,Cafe_item,True,390,single,,,
-,Chicken Manchurian & Egg Fried Rice,Cafe_item,True,370,single,,,
-,Chicken Mushroom Oyster & Egg Fried Rice,Cafe_item,True,460,single,,,
-,Chicken Sweet & Sour with Rice,Cafe_item,True,440,single,,,
-,Chinyoti Daal,Cafe_item,True,110,,,,
-,Saute Vegetables,Cafe_item,True,150,,,,
-,Shahi Daal,Cafe_item,True,130,,,,
-,Beef Achari Karahi,Cafe_item,True,1950,full,,,
-,Beef Achari Karahi,Cafe_item,True,975,half,,,
-,Beef Achari Karahi,Cafe_item,True,590,single,,,
-,Beef Balochi Karahi,Cafe_item,True,1850,full,,,
-,Beef Balochi Karahi,Cafe_item,True,925,half,,,
-,Beef Balochi Karahi,Cafe_item,True,560,single,,,
-,Beef Dum Qeema,Cafe_item,True,1900,full,,,
-,Beef Dum Qeema,Cafe_item,True,950,half,,,
-,Beef Dum Qeema,Cafe_item,True,570,single,,,
-,Beef Kofta Curry,Cafe_item,True,1750,full,,,
-,Beef Kofta Curry,Cafe_item,True,890,half,,,
-,Beef Kofta Curry,Cafe_item,True,450,single,,,
-,Beef Shinwari Karahi,Cafe_item,True,1950,full,,,
-,Beef Shinwari Karahi,Cafe_item,True,975,half,,,
-,Beef Shinwari Karahi,Cafe_item,True,585,single,,,
-,Chicken Balochi Karahi,Cafe_item,True,950,full,,,
-,Chicken Balochi Karahi,Cafe_item,True,495,half,,,
-,Chicken Balochi Karahi,Cafe_item,True,320,single,,,
-,Chicken Black Pepper Karahi,Cafe_item,True,990,full,,,
-,Chicken Black Pepper Karahi,Cafe_item,True,495,half,,,
-,Chicken Black Pepper Karahi,Cafe_item,True,320,single,,,
-,Chicken Green Chilli Handi,Cafe_item,True,1130,full,,,
-,Chicken Green Chilli Handi,Cafe_item,True,565,half,,,
-,Chicken Green Chilli Handi,Cafe_item,True,360,single,,,
-,Chicken Green Chilli Karahi,Cafe_item,True,1050,full,,,
-,Chicken Green Chilli Karahi,Cafe_item,True,525,half,,,
-,Chicken Green Chilli Karahi,Cafe_item,True,330,single,,,
-,Chicken Kalonji Handi,Cafe_item,True,1130,full,,,
-,Chicken Kalonji Handi,Cafe_item,True,565,half,,,
-,Chicken Kalonji Handi,Cafe_item,True,360,single,,,
-,Chicken Shajahani,Cafe_item,True,1190,full,,,
-,Chicken Shajahani,Cafe_item,True,595,half,,,
-,Chicken Shajahani,Cafe_item,True,380,single,,,
-,Chicken Shinwari Karahi,Cafe_item,True,990,full,,,
-,Chicken Shinwari Karahi,Cafe_item,True,495,half,,,
-,Chicken Shinwari Karahi,Cafe_item,True,320,single,,,
-,Desi Murgh Curry,Cafe_item,True,2830,full,,,
-,Desi Murgh Curry,Cafe_item,True,1420,half,,,
-,Desi Murgh Curry,Cafe_item,True,860,single,,,
-,Mutton Achari Karahi,Cafe_item,True,2475,full,,,
-,Mutton Achari Karahi,Cafe_item,True,1240,half,,,
-,Mutton Achari Karahi,Cafe_item,True,760,single,,,
-,Mutton Afghani Karahi,Cafe_item,True,2550,full,,,
-,Mutton Afghani Karahi,Cafe_item,True,1275,half,,,
-,Mutton Afghani Karahi,Cafe_item,True,820,single,,,
-,Mutton Balochi Karahi,Cafe_item,True,2375,full,,,
-,Mutton Balochi Karahi,Cafe_item,True,1190,half,,,
-,Mutton Balochi Karahi,Cafe_item,True,750,single,,,
-,Mutton Black Pepper Karahi,Cafe_item,True,2375,full,,,
-,Mutton Black Pepper Karahi,Cafe_item,True,1190,half,,,
-,Mutton Black Pepper Karahi,Cafe_item,True,760,single,,,
-,Mutton Green Chilli Karahi,Cafe_item,True,2475,full,,,
-,Mutton Green Chilli Karahi,Cafe_item,True,1240,half,,,
-,Mutton Green Chilli Karahi,Cafe_item,True,760,single,,,
-,Mutton Namkeen Karahi,Cafe_item,True,2375,full,,,
-,Mutton Namkeen Karahi,Cafe_item,True,1190,half,,,
-,Mutton Namkeen Karahi,Cafe_item,True,750,single,,,
-,Mutton Qorma,Cafe_item,True,2375,full,,,
-,Mutton Qorma,Cafe_item,True,1190,half,,,
-,Mutton Qorma,Cafe_item,True,750,single,,,
-,Mutton Shinwari Karahi,Cafe_item,True,2375,full,,,
-,Mutton Shinwari Karahi,Cafe_item,True,1190,half,,,
-,Mutton Shinwari Karahi,Cafe_item,True,750,single,,,
-,Chicken Smoky Biryani / Chicken Sindhi Biryani + Alu Cutlet / Shami Kabab,mess_menu,True,,,,,
-,Aloo Kutli Zeera,mess_menu,True,,,,,
-,Chicken White Qorma,mess_menu,True,,,,,
-,"Sarson Saag, Makai Roti, Salty Lassi",mess_menu,True,,,,,
-,Kadhi Pakora + Zeera Rice + Chicken Chapli Kabab,mess_menu,True,,,,,
-,White Chana + Zeera Rice + Chicken Chapli Kabab,mess_menu,True,,,,,
-,Matar Chicken / Chicken Shaljam,mess_menu,True,,,,,
-,Chicken Nihari,mess_menu,True,,,,,
-,Mix Vegetables,mess_menu,True,,,,,
-,Masoor Daal + Zeera Rice + Steam Roast,mess_menu,True,,,,,
-,Beef Afghani Pullao,Cafe_item,True,1300,full,,,
-,Beef Afghani Pullao,Cafe_item,True,780,half,,,
-,Beef Biryani,Cafe_item,True,1150,full,,,
-,Beef Biryani,Cafe_item,True,690,half,,,
-,Beef Pullao,Cafe_item,True,1150,full,,,
-,Beef Pullao,Cafe_item,True,650,half,,,
-,Chicken Afghani Pullao,Cafe_item,True,840,full,,,
-,Chicken Afghani Pullao,Cafe_item,True,520,half,,,
-,Chicken Sindhi Biryani,Cafe_item,True,780,full,,,
-,Chicken Sindhi Biryani,Cafe_item,True,480,half,,,
-,Chicken Smoky Biryani,Cafe_item,True,780,full,,,
-,Chicken Smoky Biryani,Cafe_item,True,480,half,,,
-,Chicken Yakhani Pullao,Cafe_item,True,740,full,,,
-,Chicken Yakhani Pullao,Cafe_item,True,460,half,,,
-,Egg Fried Rice,Cafe_item,True,395,full,,,
-,Egg Fried Rice,Cafe_item,True,240,half,,,
-,Mutton Afghani Pullao,Cafe_item,True,1890,full,,,
-,Mutton Afghani Pullao,Cafe_item,True,945,half,,,
-,Mutton Pullao,Cafe_item,True,1780,full,,,
-,Mutton Pullao,Cafe_item,True,890,half,,,
-,Zeera Rice,Cafe_item,True,360,full,,,
-,Zeera Rice,Cafe_item,True,200,half,,,
-,Beef Chapli Kabab,bbq item,True,130,,,,
-,Chicken Chapli Kabab,bbq item,True,90,,,,
-,Chicken Gola Kabab,bbq item,True,120,,,,
-,Chicken Kastoori Boti,bbq item,True,160,,,,
-,Chicken Malai Boti,bbq item,True,160,,,,
-,Chicken Rajisthani Boti,bbq item,True,130,,,,
-,Chicken Shish Tawook Boti,bbq item,True,180,,,,
-,Chicken Tawa Piece,bbq item,True,240,,,,
-,Chicken Tikka,bbq item,True,220,,,,
-,Chicken Turkish Kabab,bbq item,True,120,,,,
-,Grilled Fish (1kg),bbq item,True,990,,,,
-,Chicken Handi,mess_menu,True,,,,,
-,Grill Fish with Rice & Plum Sauce,mess_menu,True,,,,,
-,Mexican Salad + Chicken Roast,mess_menu,True,,,,,
-,Bean Salad + Chicken Roast,mess_menu,True,,,,,
-,Beef Kabli Pullao with Turkish Kabab,mess_menu,True,,,,,
-,Chicken Black Pepper Karahi,mess_menu,True,,,,,
-,Chickpea Salad + Chicken Tikka,mess_menu,True,,,,,
-,Bean Salad + Tawa Piece,mess_menu,True,,,,,
-,Beef Haleem,mess_menu,True,,,,,
-,Beef Karahi,mess_menu,True,,,,,
-,Lentil Salad + Chicken Tikka,mess_menu,True,,,,,
-,Cesar Salad + Grilled Fish,mess_menu,True,,,,,
-,Chicken Hari Mirch Karahi,mess_menu,True,,,,,
-,Beef Steak,Cafe_item,True,720,,,,
-,Creamy Mushroom Steak,Cafe_item,True,590,,,,
-,Finger Fish (1kg),Cafe_item,True,2450,,,,
-,Fried Fish (1kg),Cafe_item,True,1200,,,,
-,Mexican Steak,Cafe_item,True,580,,,,
-,Peppercorn Chicken Steak,Cafe_item,True,530,,,,
-,Stuffed Cheese Chicken,Cafe_item,True,520,,,,
-,Banana Bread,snacks,True,60,,,,
-,Chicken Cheese Pie,snacks,True,130,,,,
-,Beef Smash Burger,snacks,True,340,,,,
-,Chicken Corn Soup,snacks,True,55,,,,
-,Chicken Tandoori Pizza,snacks,True,,,,,
-,Chocolate Brownie,snacks,True,65,,,,
-,Fish Crackers,snacks,True,,,,,
-,Papri Chaat with Plum & Imli Sauce,snacks,True,120,,,,
-,Chicken Spinach Pie,snacks,True,135,,,,
-,Crispy Fried Chicken (250gm),snacks,True,280,,,,
-,Fish Crackers,snacks,True,,,,,
-,Hot & Sour Soup,soup,True,,,,,
-,Malai Boti Paratha Roll with Plum Sauce,snacks,True,340,,,,
-,Pineapple Pastry,snacks,True,,,,,
-,Chicken Bread,snacks,True,75,,,,
-,Coffee Crunch Delight,snacks,True,130,,,,
-,Cream of Almond Soup,soup,True,,,,,
-,Fish Crackers,snacks,True,,,,,
-,Shawarma Platter,snacks,True,270,,,,
-,Chicken Patties,snacks,True,60,,,,
-,Chicken Vegetable Soup,soup,True,,,,,
-,Fish Crackers,snacks,True,,,,,
-,Lemon Cake,snacks,True,30,,,,
-,Samosa Chaat with Channa & Chutney,snacks,True,160,,,,
-,Tikka Wraps,snacks,True,320,,,,
-,Chocolate Donuts,snacks,True,70,,,,
-,Fish Crackers,snacks,True,,,,,
-,Quesadilla with Salsa Sauce,snacks,True,340,,,,
-,Vegetable Patties,snacks,True,45,,,,
-,Chicken Mushroom Soup,soup,True,,,,,
-,Chocolate Caramel Tart,snacks,True,40,,,,
-,Dahi Bhallay with Papri,snacks,True,120,,,,
-,Fish Crackers,snacks,True,,,,,
-,Honey Wings,snacks,True,90,,,,
-,Stuffed Tandoori Buns,snacks,True,165,,,,
-,Apple Shake,drinks,True,200,,,,
-,Banana Shake,drinks,True,150,,,,
-,Butter Scotch Shake,drinks,True,320,,,,
-,Cappuccino,drinks,True,100,,,,
-,Cardamom Tea,drinks,True,80,,,,
-,Carrot Juice,drinks,True,80,,,,
-,Chocolate Shake,drinks,True,320,,,,
-,Cold Coffee,drinks,True,250,,,,
-,Cream Coffee,drinks,True,170,,,,
-,Espresso,drinks,True,70,,,,
-,Fresh Lime,drinks,True,50,,,,
-,Hazelnut Shake,drinks,True,320,,,,
-,Khoya Khajor Shake,drinks,True,350,,,,
-,Kiwi Juice,drinks,True,420,,,,
-,Latte,drinks,True,90,,,,
-,Mint Margarita,drinks,True,60,,,,
-,Orange Carrot Juice,drinks,True,100,,,,
-,Oreo Shake,drinks,True,250,,,,
-,Passion Fruit Juice,drinks,True,420,,,,
-,Separate Tea,drinks,True,50,,,,
-,Candy Milk Delight,dessert,True,220,,,,
-,Gajar Halwa,dessert,True,250,,,,
-,Gulab Jamun (Qty: 03),dessert,True,70,,,,
-,Kulfa Falooda,dessert,True,225,,,,
-,Kulfi,dessert,True,70,,,,
-,Bread Slice (White/Brown),Bread,True,15,,,,
-,Keema Paratha,Bread,True,140,,,,
-,Lacha Paratha,Bread,True,90,,,,
-,Puri (Per Piece),Bread,True,30,,,,
-ITEM078,Aaloo Puratha,bread,true,,,,,
-ITEM079,Mooli Puratha,bread,true,,,,,
-ITEM080,Chicken Puratha,bread,true,,,,,
-ITEM081,Plain Puratha,bread,true,,,,,
-ITEM082,Roti,bread,true,,,,,
-ITEM083,Makai Roti,bread,true,,,,,
-ITEM084,Plain Naan,bread,true,,,,,
-ITEM085,Roghni Naan,bread,true,,,,,
-ITEM086,Kalvanji Naan,bread,true,,,,,
-ITEM087,Garlic naan,bread,true,,,,,
-ITEM088,Chicken Naan,bread,true,,,,,
-ITEM089,Aaloo Naan,bread,true,,,,,
-ITEM090,Cheese Naan,bread,true,,,,,
-ITEM091,Whole Bread Naan,bread,true,,,,,
-,,,,,,,,
-,Green Salad,Salad,True,30,,,,
-,BBQ Sauce,Sauce,True,40,,,,
-,Mint Chutney,Sauce,True,30,,,,
-,Mint Raita,Sauce,True,40,,,,
-,Plum Sauce,Sauce,True,60,,,,
-,Zeera Raita,Sauce,True,40,,,,
+docId,item_Id,name,food_type_code,food_type_name,available_meal_types,is_active,estimated_price,base_unit,created_at,updated_at,is_visible,supports_feedback,supports_rate,sort_order
+ITEM001,ITEM001,Lahori Chicken Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM002,ITEM002,Lahori Chicken Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM003,ITEM003,Lahori Chicken Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM004,ITEM004,Chicken White Qorma,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM005,ITEM005,Chicken White Qorma,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM006,ITEM006,Chicken White Qorma,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM007,ITEM007,Anda alu bhujiya,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM008,ITEM008,Anda alu bhujiya,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM009,ITEM009,Anda alu bhujiya,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM010,ITEM010,Chicken Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM011,ITEM011,Chicken Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM012,ITEM012,Chicken Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM013,ITEM013,Aloo Kutli Zeera,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM014,ITEM014,Aloo Kutli Zeera,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM015,ITEM015,Aloo Kutli Zeera,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM016,ITEM016,Mix vegetables,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM017,ITEM017,Mix vegetables,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM018,ITEM018,Mix vegetables,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM019,ITEM019,Beef Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM020,ITEM020,Beef Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM021,ITEM021,Beef Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM022,ITEM022,Chicken degi Quorma,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM023,ITEM023,Chicken Kofta,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM024,ITEM024,Chicken Kofta,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM025,ITEM025,Chicken Kofta,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,half,,,true,true,true,1
+ITEM026,ITEM026,Chicken Balochi Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM027,ITEM027,Chicken Balochi Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM028,ITEM028,Chicken Balochi Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM029,ITEM029,Masoor daal,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM030,ITEM030,Masoor daal,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM031,ITEM031,Masoor daal,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM032,ITEM032,Kadhi Pakora,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM033,ITEM033,Kadhi Pakora,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM034,ITEM034,Kadhi Pakora,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM035,ITEM035,Plain Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM036,ITEM036,Plain Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM037,ITEM037,Plain Channay,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM038,ITEM038,Beef Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM039,ITEM039,Beef Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM040,ITEM040,Beef Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM041,ITEM041,daal Makhani,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM042,ITEM042,daal Makhani,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM043,ITEM043,daal Makhani,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM044,ITEM044,Sarson Saag,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM045,ITEM045,Sarson Saag,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM046,ITEM046,Sarson Saag,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM047,ITEM047,Chicken shaljam,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM048,ITEM048,Chicken shaljam,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM049,ITEM049,Chicken shaljam,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM050,ITEM050,Matar Chicken,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM051,ITEM051,Matar Chicken,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM052,ITEM052,Matar Chicken,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM053,ITEM053,Beef Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM054,ITEM054,Beef Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM055,ITEM055,Beef Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,half,,,true,true,true,1
+ITEM056,ITEM056,Mutton Kunna,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM057,ITEM057,Mutton Kunna,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM058,ITEM058,Mutton Kunna,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM059,ITEM059,Hareesa,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM060,ITEM060,Hareesa,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM061,ITEM061,Hareesa,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM062,ITEM062,Beef Bong Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM063,ITEM063,Beef Bong Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM064,ITEM064,Beef Bong Nihari,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM065,ITEM065,Chicken Hari Mirch Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM066,ITEM066,Chicken Hari Mirch Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM067,ITEM067,Chicken Hari Mirch Karahi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM068,ITEM068,Mutton Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM069,ITEM069,Mutton Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM070,ITEM070,Mutton Paye,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM071,ITEM071,Chicken Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM072,ITEM072,Chicken Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM073,ITEM073,Chicken Haleem,desi,desi,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,half,,,true,true,true,1
+ITEM074,ITEM074,Chicken Handi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM075,ITEM075,Chicken Handi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM076,ITEM076,Chicken Handi,desi,desi,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM077,ITEM077,Gur Rice,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM078,ITEM078,Gur Rice,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM079,ITEM079,Gur Rice,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM080,ITEM080,Mutanjan,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM081,ITEM081,Mutanjan,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM082,ITEM082,Mutanjan,dessert,dessert,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM083,ITEM083,Alu Cutlet,side_item,Side_Item,"[“lunch”, “dinner”, “cafe”]",true,,sinfle,,,true,true,true,1
+ITEM084,ITEM084,Shami Kabab,side_item,Side_Item,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM085,ITEM085,Pathora Channa,desi,desi,"[“breakfast”, “lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM086,ITEM086,Spanish Omelette,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM087,ITEM087,French Toast,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM088,ITEM088,Scrambled Egg,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM089,ITEM089,Regular Omelette,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM090,ITEM090,Boiled Egg,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM091,ITEM091,Fried Egg,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM092,ITEM092,Bread Slice,bread,Bread,[“breakfast”],true,,single,,,true,true,true,1
+ITEM093,ITEM093,Russian Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM094,ITEM094,Potato Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM095,ITEM095,Cesar Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM096,ITEM096,Bean Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM097,ITEM097,Kachumar Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM098,ITEM098,Grean Salad,salad,Salad,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM099,ITEM099,Mexican Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM100,ITEM100,Lentil Salad,salad,Salad,[“cafe”],true,,single,,,true,true,true,1
+ITEM101,ITEM101,Plain Yogurt,bf_item,BF_Item,[“breakfast”],true,,single,,,true,true,true,1
+ITEM102,ITEM102,Raita,sauce,Sauce,"[“lunch”, “dinner”, “cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM103,ITEM103,BBQ Sauce,sauce,Sauce,"[“bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM104,ITEM104,Plum Sauce,sauce,Sauce,"[“bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM105,ITEM105,Latte (Machine Made),hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM106,ITEM106,Cappucino (Machine Made),hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM107,ITEM107,Black Coffee (Machine Made),hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM108,ITEM108,Cardimom Tea (Nescafe),hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM109,ITEM109,Mix Tea,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM110,ITEM110,Separate Tea,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM111,ITEM111,Green Tea,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM112,ITEM112,Qahva,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM113,ITEM113,Black Coffee,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM114,ITEM114,Cappucino,hot_bevarage,Hot_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM115,ITEM115,Sweet  Lassi,cold_bevarage,Cold_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM116,ITEM116,Salted Lassi,cold_bevarage,Cold_Bevarage,"[“breakfast”, “cafe”]",true,,single,,,true,true,true,1
+ITEM117,ITEM117,Halwa Puri + Channay,desi,Desi,[“breakfast”],true,,single,,,true,true,true,1
+ITEM118,ITEM118,Chicken Almond & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,430,single,,,true,true,true,1
+ITEM119,ITEM119,Chicken Almond & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM120,ITEM120,Chicken Almond & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM121,ITEM121,Chicken Chili dry & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,410,single,,,true,true,true,1
+ITEM122,ITEM122,Chicken Chili dry & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM123,ITEM123,Chicken Chili dry & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM124,ITEM124,Chicken Kung Pao & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,390,single,,,true,true,true,1
+ITEM125,ITEM125,Chicken Kung Pao & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM126,ITEM126,Chicken Kung Pao & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM127,ITEM127,Chicken Manchurian & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,370,single,,,true,true,true,1
+ITEM128,ITEM128,Chicken Manchurian & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM129,ITEM129,Chicken Manchurian & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM130,ITEM130,Chicken Mushroom Oyster & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,460,single,,,true,true,true,1
+ITEM131,ITEM131,Chicken Mushroom Oyster & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM132,ITEM132,Chicken Mushroom Oyster & Egg Fried Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM133,ITEM133,Chicken Sweet & Sour with Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,440,single,,,true,true,true,1
+ITEM134,ITEM134,Chicken Sweet & Sour with Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM135,ITEM135,Chicken Sweet & Sour with Rice,chinese,Chinese,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM136,ITEM136,Chinyoti daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,110,single,,,true,true,true,1
+ITEM137,ITEM137,Chinyoti daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM138,ITEM138,Chinyoti daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM139,ITEM139,Saute Vegetables,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,150,single,,,true,true,true,1
+ITEM140,ITEM140,Saute Vegetables,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM141,ITEM141,Saute Vegetables,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM142,ITEM142,Shahi daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,130,single,,,true,true,true,1
+ITEM143,ITEM143,Shahi daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,full,,,true,true,true,1
+ITEM144,ITEM144,Shahi daal,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,,half,,,true,true,true,1
+ITEM145,ITEM145,Beef Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1950,single,,,true,true,true,1
+ITEM146,ITEM146,Beef Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,975,full,,,true,true,true,1
+ITEM147,ITEM147,Beef Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,590,half,,,true,true,true,1
+ITEM148,ITEM148,Beef Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1850,single,,,true,true,true,1
+ITEM149,ITEM149,Beef Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,925,full,,,true,true,true,1
+ITEM150,ITEM150,Beef Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,560,half,,,true,true,true,1
+ITEM151,ITEM151,Beef dum Qeema,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1900,single,,,true,true,true,1
+ITEM152,ITEM152,Beef dum Qeema,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,950,full,,,true,true,true,1
+ITEM153,ITEM153,Beef dum Qeema,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,570,half,,,true,true,true,1
+ITEM154,ITEM154,Beef Kofta Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1750,single,,,true,true,true,1
+ITEM155,ITEM155,Beef Kofta Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,890,full,,,true,true,true,1
+ITEM156,ITEM156,Beef Kofta Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,450,half,,,true,true,true,1
+ITEM157,ITEM157,Beef Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1950,single,,,true,true,true,1
+ITEM158,ITEM158,Beef Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,975,full,,,true,true,true,1
+ITEM159,ITEM159,Beef Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,585,half,,,true,true,true,1
+ITEM160,ITEM160,Chicken Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,950,single,,,true,true,true,1
+ITEM161,ITEM161,Chicken Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,495,full,,,true,true,true,1
+ITEM162,ITEM162,Chicken Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,320,half,,,true,true,true,1
+ITEM163,ITEM163,Chicken Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,990,single,,,true,true,true,1
+ITEM164,ITEM164,Chicken Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,495,full,,,true,true,true,1
+ITEM165,ITEM165,Chicken Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,320,half,,,true,true,true,1
+ITEM166,ITEM166,Chicken Green Chilli Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1130,single,,,true,true,true,1
+ITEM167,ITEM167,Chicken Green Chilli Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,565,full,,,true,true,true,1
+ITEM168,ITEM168,Chicken Green Chilli Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,360,half,,,true,true,true,1
+ITEM169,ITEM169,Chicken Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1050,single,,,true,true,true,1
+ITEM170,ITEM170,Chicken Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,525,full,,,true,true,true,1
+ITEM171,ITEM171,Chicken Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,330,half,,,true,true,true,1
+ITEM172,ITEM172,Chicken Kalonji Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1130,single,,,true,true,true,1
+ITEM173,ITEM173,Chicken Kalonji Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,565,full,,,true,true,true,1
+ITEM174,ITEM174,Chicken Kalonji Handi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,360,half,,,true,true,true,1
+ITEM175,ITEM175,Chicken Shajahani,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,single,,,true,true,true,1
+ITEM176,ITEM176,Chicken Shajahani,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,595,full,,,true,true,true,1
+ITEM177,ITEM177,Chicken Shajahani,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,380,half,,,true,true,true,1
+ITEM178,ITEM178,Chicken Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,990,single,,,true,true,true,1
+ITEM179,ITEM179,Chicken Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,495,full,,,true,true,true,1
+ITEM180,ITEM180,Chicken Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,320,half,,,true,true,true,1
+ITEM181,ITEM181,desi Murgh Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2830,single,,,true,true,true,1
+ITEM182,ITEM182,desi Murgh Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1420,full,,,true,true,true,1
+ITEM183,ITEM183,desi Murgh Curry,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,860,half,,,true,true,true,1
+ITEM184,ITEM184,Mutton Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2475,single,,,true,true,true,1
+ITEM185,ITEM185,Mutton Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1240,full,,,true,true,true,1
+ITEM186,ITEM186,Mutton Achari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,760,half,,,true,true,true,1
+ITEM187,ITEM187,Mutton Afghani Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2550,single,,,true,true,true,1
+ITEM188,ITEM188,Mutton Afghani Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1275,full,,,true,true,true,1
+ITEM189,ITEM189,Mutton Afghani Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,820,half,,,true,true,true,1
+ITEM190,ITEM190,Mutton Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2375,single,,,true,true,true,1
+ITEM191,ITEM191,Mutton Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,full,,,true,true,true,1
+ITEM192,ITEM192,Mutton Balochi Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,750,half,,,true,true,true,1
+ITEM193,ITEM193,Mutton Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2375,single,,,true,true,true,1
+ITEM194,ITEM194,Mutton Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,full,,,true,true,true,1
+ITEM195,ITEM195,Mutton Black Pepper Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,760,half,,,true,true,true,1
+ITEM196,ITEM196,Mutton Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2475,single,,,true,true,true,1
+ITEM197,ITEM197,Mutton Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1240,full,,,true,true,true,1
+ITEM198,ITEM198,Mutton Green Chilli Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,760,half,,,true,true,true,1
+ITEM199,ITEM199,Mutton Namkeen Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2375,single,,,true,true,true,1
+ITEM200,ITEM200,Mutton Namkeen Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,full,,,true,true,true,1
+ITEM201,ITEM201,Mutton Namkeen Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,750,half,,,true,true,true,1
+ITEM202,ITEM202,Mutton Qorma,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2375,single,,,true,true,true,1
+ITEM203,ITEM203,Mutton Qorma,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,full,,,true,true,true,1
+ITEM204,ITEM204,Mutton Qorma,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,750,half,,,true,true,true,1
+ITEM205,ITEM205,Mutton Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,2375,single,,,true,true,true,1
+ITEM206,ITEM206,Mutton Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,1190,full,,,true,true,true,1
+ITEM207,ITEM207,Mutton Shinwari Karahi,desi,Desi,"[“cafe”, “lunch”, “dinner”]",true,750,half,,,true,true,true,1
+ITEM208,ITEM208,Chicken Smoky Biryani / Chicken Sindhi Biryani + Alu Cutlet / Shami Kabab,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM209,ITEM209,"Sarson Saag, Makai Roti, Salty Lassi",desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM210,ITEM210,Kadhi Pakora + Zeera Rice + Chicken Chapli Kabab,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM211,ITEM211,White Chana + Zeera Rice + Chicken Chapli Kabab,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM212,ITEM212,Matar Chicken / Chicken Shaljam,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM213,ITEM213,Masoor daal + Zeera Rice + Steam Roast,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM214,ITEM214,Plain Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM215,ITEM215,Plain Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM216,ITEM216,Plain Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM217,ITEM217,Chicken smoky Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM218,ITEM218,Chicken smoky Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM219,ITEM219,Chicken smoky Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM220,ITEM220,Chicken sindhi Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM221,ITEM221,Chicken sindhi Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM222,ITEM222,Chicken sindhi Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM223,ITEM223,Beef Kabli Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM224,ITEM224,Beef Kabli Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM225,ITEM225,Beef Kabli Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM226,ITEM226,Zeera Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM227,ITEM227,Zeera Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM228,ITEM228,Zeera Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM229,ITEM229,Matar Pulao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM230,ITEM230,Matar Pulao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM231,ITEM231,Matar Pulao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,half,,,true,true,true,1
+ITEM232,ITEM232,Beef Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM233,ITEM233,Beef Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,1300,full,,,true,true,true,1
+ITEM234,ITEM234,Beef Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,780,half,,,true,true,true,1
+ITEM235,ITEM235,Beef Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM236,ITEM236,Beef Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,1150,full,,,true,true,true,1
+ITEM237,ITEM237,Beef Biryani,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,690,half,,,true,true,true,1
+ITEM238,ITEM238,Beef Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM239,ITEM239,Beef Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,1150,full,,,true,true,true,1
+ITEM240,ITEM240,Beef Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,650,half,,,true,true,true,1
+ITEM241,ITEM241,Chicken Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM242,ITEM242,Chicken Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,840,full,,,true,true,true,1
+ITEM243,ITEM243,Chicken Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,520,half,,,true,true,true,1
+ITEM244,ITEM244,Chicken Yakhani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM245,ITEM245,Chicken Yakhani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,740,full,,,true,true,true,1
+ITEM246,ITEM246,Chicken Yakhani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,460,half,,,true,true,true,1
+ITEM247,ITEM247,Egg Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM248,ITEM248,Egg Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,395,full,,,true,true,true,1
+ITEM249,ITEM249,Egg Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,240,half,,,true,true,true,1
+ITEM250,ITEM250,Mutton Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM251,ITEM251,Mutton Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,1890,full,,,true,true,true,1
+ITEM252,ITEM252,Mutton Afghani Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,945,half,,,true,true,true,1
+ITEM253,ITEM253,Mutton Yakhni Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,single,,,true,true,true,1
+ITEM254,ITEM254,Mutton Yakhni Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,1780,full,,,true,true,true,1
+ITEM255,ITEM255,Mutton Yakhni Pullao,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,890,half,,,true,true,true,1
+ITEM256,ITEM256,Chicken Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,360,single,,,true,true,true,1
+ITEM257,ITEM257,Chicken Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,,full,,,true,true,true,1
+ITEM258,ITEM258,Chicken Fried Rice,rice,Rice,"[“lunch”, “dinner”, “cafe”]",true,200,half,,,true,true,true,1
+ITEM259,ITEM259,Beef Chapli Kabab,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,130,single,,,true,true,true,1
+ITEM260,ITEM260,Chicken Chapli Kabab,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,90,single,,,true,true,true,1
+ITEM261,ITEM261,Chicken Gola Kabab,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,120,single,,,true,true,true,1
+ITEM262,ITEM262,Chicken Kastoori Boti,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,160,single,,,true,true,true,1
+ITEM263,ITEM263,Chicken Malai Boti,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,160,single,,,true,true,true,1
+ITEM264,ITEM264,Chicken Rajisthani Boti,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,130,single,,,true,true,true,1
+ITEM265,ITEM265,Chicken Shish Tawook Boti,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,180,single,,,true,true,true,1
+ITEM266,ITEM266,Chicken Turkish Kabab,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,120,single,,,true,true,true,1
+ITEM267,ITEM267,Fried Finger Fish,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,kilogram,,,true,true,true,1
+ITEM268,ITEM268,Fried Fish (Lahori),bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,kilogram,,,true,true,true,1
+ITEM269,ITEM269,Grill Fish,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,kilogram,,,true,true,true,1
+ITEM270,ITEM270,Chicken Steam Roast,bbq_item,Bbq_Item,"[“bbq”, “cafe”, “lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM271,ITEM271,Chicken Reshmi Kabab,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM272,ITEM272,Chicken Tikka,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM273,ITEM273,Chicken Tawa Piece,bbq_item,Bbq_Item,"[“bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM274,ITEM274,Grill Fish with Rice & Plum Sauce,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM275,ITEM275,Mexican Salad + Chicken Roast,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM276,ITEM276,Bean Salad + Chicken Roast,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM277,ITEM277,Beef Kabli Pullao with Turkish Kabab,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM278,ITEM278,Chicken Black Pepper Karahi,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM279,ITEM279,Chickpea Salad + Chicken Tikka,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM280,ITEM280,Bean Salad + Tawa Piece,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM281,ITEM281,Lentil Salad + Chicken Tikka,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM282,ITEM282,Cesar Salad + Grilled Fish,desi,Desi,"[“lunch”, “dinner”]",true,,single,,,true,true,true,1
+ITEM283,ITEM283,Beef Steak,continental,Continental,[“cafe”],true,720,single,,,true,true,true,1
+ITEM284,ITEM284,Creamy Mushroom Steak,continental,Continental,[“cafe”],true,590,single,,,true,true,true,1
+ITEM285,ITEM285,Mexican Steak,continental,Continental,[“cafe”],true,580,single,,,true,true,true,1
+ITEM286,ITEM286,Peppercorn Chicken Steak,continental,Continental,[“cafe”],true,530,single,,,true,true,true,1
+ITEM287,ITEM287,Stuffed Cheese Chicken,snack,Snack,[“cafe”],true,520,single,,,true,true,true,1
+ITEM288,ITEM288,Banana Bread,snack,Snack,[“cafe”],true,60,slice,,,true,true,true,1
+ITEM289,ITEM289,Chicken Cheese Pie,snack,Snack,[“cafe”],true,130,single,,,true,true,true,1
+ITEM290,ITEM290,Beef Smash Burger,snack,Snack,[“cafe”],true,340,single,,,true,true,true,1
+ITEM291,ITEM291,Chicken Corn Soup,soup,Soup,"[“cafe”, “bbq”]",true,55,single,,,true,true,true,1
+ITEM292,ITEM292,Chicken Tandoori Pizza,snack,Snack,[“cafe”],true,,slice,,,true,true,true,1
+ITEM293,ITEM293,Chocolate Brownie,bakery_item,Bakery_Item,[“bakery”],true,65,single,,,true,true,true,1
+ITEM294,ITEM294,Fish Crackers,side_item,Side_Item,"[“cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM295,ITEM295,Fish Crackers,side_item,Side_Item,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM296,ITEM296,Papri Chaat with Plum & Imli Sauce,snack,Snack,[“cafe”],true,120,single,,,true,true,true,1
+ITEM297,ITEM297,Chicken Spinach Pie,snack,Snack,[“cafe”],true,135,single,,,true,true,true,1
+ITEM298,ITEM298,Crispy Fried Chicken (250gm),snack,Snack,[“cafe”],true,280,single,,,true,true,true,1
+ITEM299,ITEM299,Hot & Sour Soup,soup,Soup,"[“cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM300,ITEM300,Hot & Sour Soup,soup,Soup,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM301,ITEM301,Malai Boti Paratha Roll with Plum Sauce,snack,Snack,[“cafe”],true,340,single,,,true,true,true,1
+ITEM302,ITEM302,Pineapple Pastry,bakery_item,Bakery_Item,[“bakery”],true,,single,,,true,true,true,1
+ITEM303,ITEM303,Chicken Bread,bakery_item,Bakery_Item,[“bakery”],true,75,single,,,true,true,true,1
+ITEM304,ITEM304,Coffee Crunch delight,dessert,Dessert,[“cafe”],true,130,single,,,true,true,true,1
+ITEM305,ITEM305,Cream of Almond Soup,soup,Soup,"[“cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM306,ITEM306,Cream of Almond Soup,soup,Soup,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM307,ITEM307,Shawarma Platter,snack,Snack,[“cafe”],true,270,single,,,true,true,true,1
+ITEM308,ITEM308,Chicken Patties,bakery_item,Bakery_Item,[“bakery”],true,60,single,,,true,true,true,1
+ITEM309,ITEM309,Chicken Vegetable Soup,soup,Soup,"[“cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM310,ITEM310,Chicken Vegetable Soup,soup,Soup,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM311,ITEM311,Lemon Cake,bakery_item,Bakery_Item,[“bakery”],true,30,single,,,true,true,true,1
+ITEM312,ITEM312,Samosa Chaat with Channa & Chutney,snack,Snack,[“cafe”],true,160,single,,,true,true,true,1
+ITEM313,ITEM313,Tikka Wraps,snack,Snack,[“cafe”],true,320,single,,,true,true,true,1
+ITEM314,ITEM314,Chocolate donuts,bakery_item,Bakery_Item,[“bakery”],true,70,single,,,true,true,true,1
+ITEM315,ITEM315,Quesadilla with Salsa Sauce,snack,Snack,[“cafe”],true,340,single,,,true,true,true,1
+ITEM316,ITEM316,Vegetable Patties,bakery_item,Bakery_Item,[“bakery”],true,45,single,,,true,true,true,1
+ITEM317,ITEM317,Chicken Mushroom Soup,soup,Soup,"[“cafe”, “bbq”]",true,,full,,,true,true,true,1
+ITEM318,ITEM318,Chicken Mushroom Soup,soup,Soup,"[“cafe”, “bbq”]",true,,single,,,true,true,true,1
+ITEM319,ITEM319,Chocolate Caramel Tart,bakery_item,Bakery_Item,[“bakery”],true,40,single,,,true,true,true,1
+ITEM320,ITEM320,dahi Bhallay with Papri,snack,Snack,[“cafe”],true,120,single,,,true,true,true,1
+ITEM321,ITEM321,Honey Wings,snack,Snack,[“cafe”],true,90,single,,,true,true,true,1
+ITEM322,ITEM322,Stuffed Tandoori Buns,bakery_item,Bakery_Item,[“bakery”],true,165,single,,,true,true,true,1
+ITEM323,ITEM323,Apple Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,200,single,,,true,true,true,1
+ITEM324,ITEM324,Banana Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,150,single,,,true,true,true,1
+ITEM325,ITEM325,Butter Scotch Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,320,single,,,true,true,true,1
+ITEM326,ITEM326,Carrot Juice,cold_bevarage,Cold_Bevarage,[“cafe”],true,80,single,,,true,true,true,1
+ITEM327,ITEM327,Chocolate Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,320,single,,,true,true,true,1
+ITEM328,ITEM328,Cold Coffee,cold_bevarage,Cold_Bevarage,[“cafe”],true,250,single,,,true,true,true,1
+ITEM329,ITEM329,Fresh Lime,cold_bevarage,Cold_Bevarage,[“cafe”],true,50,single,,,true,true,true,1
+ITEM330,ITEM330,Hazelnut Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,320,single,,,true,true,true,1
+ITEM331,ITEM331,Khoya Khajor Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,350,single,,,true,true,true,1
+ITEM332,ITEM332,Kiwi Juice,cold_bevarage,Cold_Bevarage,[“cafe”],true,420,single,,,true,true,true,1
+ITEM333,ITEM333,Mint Margarita,cold_bevarage,Cold_Bevarage,[“cafe”],true,60,single,,,true,true,true,1
+ITEM334,ITEM334,Orange Carrot Juice,cold_bevarage,Cold_Bevarage,[“cafe”],true,100,single,,,true,true,true,1
+ITEM335,ITEM335,Oreo Shake,cold_bevarage,Cold_Bevarage,[“cafe”],true,250,single,,,true,true,true,1
+ITEM336,ITEM336,Passion Fruit Juice,cold_bevarage,Cold_Bevarage,[“cafe”],true,420,single,,,true,true,true,1
+ITEM337,ITEM337,Candy Milk delight,dessert,Dessert,[“cafe”],true,220,single,,,true,true,true,1
+ITEM338,ITEM338,Gajar Halwa,dessert,Dessert,[“cafe”],true,250,full,,,true,true,true,1
+ITEM339,ITEM339,Gajar Halwa,dessert,Dessert,[“cafe”],true,250,single,,,true,true,true,1
+ITEM340,ITEM340,Gulab Jamun,dessert,Dessert,[“cafe”],true,70,single,,,true,true,true,1
+ITEM341,ITEM341,Kulfa Falooda,dessert,Dessert,[“cafe”],true,225,single,,,true,true,true,1
+ITEM342,ITEM342,Kulfi,dessert,Dessert,[“cafe”],true,70,single,,,true,true,true,1
+ITEM343,ITEM343,Bread Slice (White/Brown),bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,15,single,,,true,true,true,1
+ITEM344,ITEM344,Keema Paratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,140,single,,,true,true,true,1
+ITEM345,ITEM345,Lacha Paratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,90,single,,,true,true,true,1
+ITEM346,ITEM346,Puri (Per Piece),bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,30,single,,,true,true,true,1
+ITEM347,ITEM347,Aaloo Puratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM348,ITEM348,Mooli Puratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM349,ITEM349,Chicken Puratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM350,ITEM350,Plain Puratha,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM351,ITEM351,Roti,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM352,ITEM352,Makai Roti,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM353,ITEM353,Plain Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM354,ITEM354,Roghni Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM355,ITEM355,Kalvanji Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM356,ITEM356,Garlic naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM357,ITEM357,Chicken Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM358,ITEM358,Aaloo Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM359,ITEM359,Cheese Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1
+ITEM360,ITEM360,Whole Bread Naan,bread,Bread,"[“breakfast”, “lunch”, “dinner”, “bbq”, “cafe”]",true,,single,,,true,true,true,1

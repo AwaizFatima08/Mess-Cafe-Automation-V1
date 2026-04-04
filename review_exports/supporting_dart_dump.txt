@@ -1,0 +1,1440 @@
+==================================================
+FILE: lib/admin/widgets/add_menu_item_dialog.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+class AddMenuItemDialog extends StatefulWidget {
+  const AddMenuItemDialog({super.key});
+
+  @override
+  State<AddMenuItemDialog> createState() => _AddMenuItemDialogState();
+}
+
+class _AddMenuItemDialogState extends State<AddMenuItemDialog> {
+  final TextEditingController itemNameController = TextEditingController();
+  final TextEditingController priceController = TextEditingController();
+
+  String category = 'other';
+  bool isSaving = false;
+  String? errorMessage;
+
+  Future<String> _generateNextItemId() async {
+    final snapshot = await FirebaseFirestore.instance.collection('menu_items').get();
+
+    var maxNumber = 0;
+    final regex = RegExp(r'^ITEM(\d+)$');
+
+    for (final doc in snapshot.docs) {
+      final match = regex.firstMatch(doc.id.trim().toUpperCase());
+      if (match == null) continue;
+
+      final number = int.tryParse(match.group(1) ?? '0') ?? 0;
+      if (number > maxNumber) {
+        maxNumber = number;
+      }
+    }
+
+    final nextNumber = maxNumber + 1;
+    return 'ITEM${nextNumber.toString().padLeft(3, '0')}';
+  }
+
+  Future<void> createMenuItem() async {
+    final itemName = itemNameController.text.trim();
+    final priceText = priceController.text.trim();
+
+    if (itemName.isEmpty || priceText.isEmpty) {
+      setState(() {
+        errorMessage = 'Please fill all required fields.';
+      });
+      return;
+    }
+
+    final estimatedPrice = num.tryParse(priceText);
+    if (estimatedPrice == null) {
+      setState(() {
+        errorMessage = 'Estimated price must be a valid number.';
+      });
+      return;
+    }
+
+    try {
+      setState(() {
+        isSaving = true;
+        errorMessage = null;
+      });
+
+      final docId = await _generateNextItemId();
+
+      await FirebaseFirestore.instance.collection('menu_items').doc(docId).set({
+        'item_name': itemName,
+        'category': category,
+        'estimated_price': estimatedPrice,
+        'status': 'active',
+        'is_active': true,
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Failed to create menu item: $e';
+        isSaving = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    itemNameController.dispose();
+    priceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Menu Item'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: itemNameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Item Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: category,
+              decoration: const InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'bread', child: Text('bread')),
+                DropdownMenuItem(value: 'rice', child: Text('rice')),
+                DropdownMenuItem(value: 'main_course', child: Text('main_course')),
+                DropdownMenuItem(value: 'side_item', child: Text('side_item')),
+                DropdownMenuItem(value: 'salad', child: Text('salad')),
+                DropdownMenuItem(value: 'sauce', child: Text('sauce')),
+                DropdownMenuItem(value: 'dessert', child: Text('dessert')),
+                DropdownMenuItem(value: 'beverage', child: Text('beverage')),
+                DropdownMenuItem(value: 'hot_beverage', child: Text('hot_beverage')),
+                DropdownMenuItem(value: 'other', child: Text('other')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  category = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Estimated Price',
+                prefixText: 'Rs ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                errorMessage!,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSaving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: isSaving ? null : createMenuItem,
+          child: Text(isSaving ? 'Saving...' : 'Create'),
+        ),
+      ],
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/admin/widgets/admin_section_placeholder_card.dart
+==================================================
+import 'package:flutter/material.dart';
+
+class AdminSectionPlaceholderCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final String userEmail;
+
+  const AdminSectionPlaceholderCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.userEmail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 700),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 48),
+                  const SizedBox(height: 16),
+                  Text(title, style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Logged in as: $userEmail',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Status: Placeholder screen created successfully.',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Backend integration, forms, and data workflows will be added in later steps.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/admin/widgets/edit_menu_item_dialog.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+class EditMenuItemDialog extends StatefulWidget {
+  final String itemId;
+  final Map<String, dynamic> existingData;
+
+  const EditMenuItemDialog({
+    super.key,
+    required this.itemId,
+    required this.existingData,
+  });
+
+  @override
+  State<EditMenuItemDialog> createState() => _EditMenuItemDialogState();
+}
+
+class _EditMenuItemDialogState extends State<EditMenuItemDialog> {
+  late final TextEditingController itemNameController;
+  late final TextEditingController priceController;
+
+  late String category;
+  late bool isActive;
+
+  bool isSaving = false;
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+
+    itemNameController = TextEditingController(
+      text: (widget.existingData['item_name'] ?? '').toString(),
+    );
+
+    priceController = TextEditingController(
+      text: (widget.existingData['estimated_price'] ?? 0).toString(),
+    );
+
+    category = (widget.existingData['category'] ?? 'other').toString();
+
+    isActive = widget.existingData['is_active'] == true ||
+        (widget.existingData['status'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase() ==
+            'active';
+  }
+
+  Future<void> updateMenuItem() async {
+    final itemName = itemNameController.text.trim();
+    final priceText = priceController.text.trim();
+
+    if (itemName.isEmpty || priceText.isEmpty) {
+      setState(() {
+        errorMessage = 'Please fill all required fields.';
+      });
+      return;
+    }
+
+    final estimatedPrice = num.tryParse(priceText);
+    if (estimatedPrice == null) {
+      setState(() {
+        errorMessage = 'Estimated price must be a valid number.';
+      });
+      return;
+    }
+
+    try {
+      setState(() {
+        isSaving = true;
+        errorMessage = null;
+      });
+
+      await FirebaseFirestore.instance
+          .collection('menu_items')
+          .doc(widget.itemId)
+          .update({
+        'item_name': itemName,
+        'category': category,
+        'estimated_price': estimatedPrice,
+        'is_active': isActive,
+        'status': isActive ? 'active' : 'inactive',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Failed to update menu item: $e';
+        isSaving = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    itemNameController.dispose();
+    priceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Edit Menu Item (${widget.itemId})'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Item ID',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.itemId),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: itemNameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Item Name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: category,
+              decoration: const InputDecoration(
+                labelText: 'Category',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'bread', child: Text('bread')),
+                DropdownMenuItem(value: 'rice', child: Text('rice')),
+                DropdownMenuItem(value: 'main_course', child: Text('main_course')),
+                DropdownMenuItem(value: 'side_item', child: Text('side_item')),
+                DropdownMenuItem(value: 'salad', child: Text('salad')),
+                DropdownMenuItem(value: 'sauce', child: Text('sauce')),
+                DropdownMenuItem(value: 'dessert', child: Text('dessert')),
+                DropdownMenuItem(value: 'beverage', child: Text('beverage')),
+                DropdownMenuItem(value: 'hot_beverage', child: Text('hot_beverage')),
+                DropdownMenuItem(value: 'other', child: Text('other')),
+              ],
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  category = value;
+                });
+              },
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: priceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Estimated Price',
+                prefixText: 'Rs ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Active'),
+              subtitle: Text(
+                isActive ? 'Item is active' : 'Item is inactive',
+              ),
+              value: isActive,
+              onChanged: (value) {
+                setState(() {
+                  isActive = value;
+                });
+              },
+            ),
+            if (errorMessage != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                errorMessage!,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: isSaving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: isSaving ? null : updateMenuItem,
+          child: Text(isSaving ? 'Saving...' : 'Update'),
+        ),
+      ],
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/admin/widgets/pending_approvals_card.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+class PendingApprovalsCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const PendingApprovalsCard({
+    super.key,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .where('status', isEqualTo: 'pending')
+          .snapshots(),
+      builder: (context, snapshot) {
+        final pendingCount = snapshot.data?.docs.length ?? 0;
+        final isLoading = snapshot.connectionState == ConnectionState.waiting;
+        final hasError = snapshot.hasError;
+
+        return Card(
+          elevation: 2,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: hasError ? null : onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.pending_actions_outlined,
+                      color: Colors.orange,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Pending Approvals',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        if (hasError)
+                          Text(
+                            'Failed to load pending users',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          )
+                        else if (isLoading)
+                          const Text('Loading...')
+                        else if (pendingCount == 0)
+                          const Text('No registrations waiting for approval')
+                        else if (pendingCount == 1)
+                          const Text('1 registration is waiting for approval')
+                        else
+                          Text('$pendingCount registrations are waiting for approval'),
+                      ],
+                    ),
+                  ),
+                  if (isLoading)
+                    const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  else
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: pendingCount > 0
+                          ? Colors.orange.withValues(alpha: 0.14)
+                          : Colors.grey.withValues(alpha: 0.12),
+                      child: Text(
+                        '$pendingCount',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: pendingCount > 0 ? Colors.orange : Colors.grey,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/core/constants/app_constants.dart
+==================================================
+class AppConstants {
+  const AppConstants._();
+
+  // Product architecture
+  static const String productEngineName = 'Club Manager';
+
+  // V1 deployment branding
+  static const String tenantDisplayName = 'FFL Management Club';
+  static const String visibleAppName = tenantDisplayName;
+
+  // Organization
+  static const String organizationName = 'Fatima Fertilizer';
+
+  // Assets
+  // Add the actual file later when ready, for example:
+  // assets/images/ffl_logo.png
+  static const String logoAssetPath = 'assets/images/ffl_logo.png';
+
+  // UI copy
+  static const String signInTitle = 'Sign In';
+  static const String loginSubtitle =
+      'Use your registered email and password to continue.';
+}
+
+
+
+==================================================
+FILE: lib/core/constants/reservation_constants.dart
+==================================================
+class ReservationConstants {
+  ReservationConstants._();
+
+  // Collection names
+  static const String mealReservationsCollection = 'meal_reservations';
+  static const String reservationSettingsCollection = 'reservation_settings';
+
+  // Meal types
+  static const String breakfast = 'breakfast';
+  static const String lunch = 'lunch';
+  static const String dinner = 'dinner';
+
+  static const List<String> mealTypes = [
+    breakfast,
+    lunch,
+    dinner,
+  ];
+
+  // Reservation categories
+  static const String employee = 'employee';
+  static const String officialGuest = 'official_guest';
+
+  static const List<String> reservationCategories = [
+    employee,
+    officialGuest,
+  ];
+
+  // Service modes
+  static const String dineIn = 'dine_in';
+  static const String takeaway = 'takeaway';
+
+  static const List<String> serviceModes = [
+    dineIn,
+    takeaway,
+  ];
+
+  // Booking sources
+  static const String employeeApp = 'employee_app';
+  static const String supervisorConsole = 'supervisor_console';
+  static const String adminConsole = 'admin_console';
+
+  static const List<String> bookingSources = [
+    employeeApp,
+    supervisorConsole,
+    adminConsole,
+  ];
+
+  // Reservation status
+  static const String active = 'active';
+  static const String cancelled = 'cancelled';
+  static const String consumed = 'consumed';
+
+  static const List<String> reservationStatuses = [
+    active,
+    cancelled,
+    consumed,
+  ];
+
+  // Option keys (for structured menu selection)
+  static const String breakfastOption1 = 'breakfast_option_1';
+  static const String breakfastOption2 = 'breakfast_option_2';
+  static const String lunchCombo1 = 'lunch_combo_1';
+  static const String lunchCombo2 = 'lunch_combo_2';
+  static const String dinnerCombo1 = 'dinner_combo_1';
+  static const String dinnerCombo2 = 'dinner_combo_2';
+
+  static const List<String> knownOptionKeys = [
+    breakfastOption1,
+    breakfastOption2,
+    lunchCombo1,
+    lunchCombo2,
+    dinnerCombo1,
+    dinnerCombo2,
+  ];
+}
+
+
+
+==================================================
+FILE: lib/core/theme/app_theme.dart
+==================================================
+import 'package:flutter/material.dart';
+
+class AppColors {
+  const AppColors._();
+
+  static const Color primary = Color(0xFF0F6D3F);
+  static const Color primaryDark = Color(0xFF0B4F2E);
+  static const Color primaryLight = Color(0xFFE8F5EC);
+
+  static const Color accent = Color(0xFF2ECC71);
+  static const Color accentSoft = Color(0xFFD9F7E7);
+
+  static const Color background = Color(0xFFF6FAF7);
+  static const Color surface = Colors.white;
+  static const Color surfaceAlt = Color(0xFFF2F7F3);
+
+  static const Color border = Color(0xFFDDE7DF);
+  static const Color divider = Color(0xFFE3EBE5);
+
+  static const Color textPrimary = Color(0xFF1E2A22);
+  static const Color textSecondary = Color(0xFF66756B);
+
+  static const Color success = Color(0xFF2E7D32);
+  static const Color warning = Color(0xFFED8B00);
+  static const Color info = Color(0xFF1565C0);
+  static const Color error = Color(0xFFC62828);
+}
+
+class AppSpacing {
+  const AppSpacing._();
+
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+}
+
+class AppRadii {
+  const AppRadii._();
+
+  static const double sm = 10;
+  static const double md = 14;
+  static const double lg = 18;
+  static const double xl = 24;
+}
+
+class AppTheme {
+  const AppTheme._();
+
+  static ThemeData get lightTheme {
+    final ColorScheme colorScheme = ColorScheme.fromSeed(
+      seedColor: AppColors.primary,
+      brightness: Brightness.light,
+    ).copyWith(
+      primary: AppColors.primary,
+      secondary: AppColors.accent,
+      surface: AppColors.surface,
+      error: AppColors.error,
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: AppColors.background,
+      canvasColor: AppColors.background,
+      splashFactory: InkRipple.splashFactory,
+      visualDensity: VisualDensity.adaptivePlatformDensity,
+
+      appBarTheme: const AppBarTheme(
+        centerTitle: false,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.textPrimary,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.lg),
+          side: const BorderSide(
+            color: AppColors.border,
+            width: 1,
+          ),
+        ),
+        margin: const EdgeInsets.all(0),
+      ),
+
+      dividerTheme: const DividerThemeData(
+        color: AppColors.divider,
+        thickness: 1,
+        space: 1,
+      ),
+
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.surface,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        labelStyle: const TextStyle(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.w500,
+        ),
+        hintStyle: const TextStyle(
+          color: AppColors.textSecondary,
+        ),
+        errorStyle: const TextStyle(
+          color: AppColors.error,
+          fontWeight: FontWeight.w500,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          borderSide: const BorderSide(
+            color: AppColors.primary,
+            width: 1.4,
+          ),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          borderSide: const BorderSide(
+            color: AppColors.error,
+            width: 1.2,
+          ),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          borderSide: const BorderSide(
+            color: AppColors.error,
+            width: 1.4,
+          ),
+        ),
+      ),
+
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.border,
+          disabledForegroundColor: AppColors.textSecondary,
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          minimumSize: const Size.fromHeight(48),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          side: const BorderSide(
+            color: AppColors.border,
+            width: 1,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.primary,
+          textStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+
+      chipTheme: ChipThemeData(
+        backgroundColor: AppColors.surfaceAlt,
+        selectedColor: AppColors.primaryLight,
+        disabledColor: AppColors.border,
+        side: const BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.xl),
+        ),
+        labelStyle: const TextStyle(
+          color: AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
+        ),
+        secondaryLabelStyle: const TextStyle(
+          color: AppColors.primary,
+          fontWeight: FontWeight.w700,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 6,
+        ),
+      ),
+
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.textPrimary,
+        contentTextStyle: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.md),
+        ),
+      ),
+
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: AppColors.primary,
+      ),
+
+      textTheme: const TextTheme(
+        displayLarge: TextStyle(
+          fontSize: 34,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        displayMedium: TextStyle(
+          fontSize: 30,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        headlineLarge: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+        ),
+        headlineMedium: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        titleLarge: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        titleMedium: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        titleSmall: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+        bodyLarge: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+        bodySmall: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textSecondary,
+        ),
+        labelLarge: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+        ),
+      ),
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/shared/screens/notifications_screen.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import '../../employee/screens/event_invitation_detail_screen.dart';
+import '../../services/notification_service.dart';
+
+class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({
+    super.key,
+    required this.userUid,
+    this.isAdminView = false,
+  });
+
+  final String userUid;
+  final bool isAdminView;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isAdminView) {
+      return _AdminNotificationsScreen(userUid: userUid);
+    }
+
+    return _EmployeeNotificationsScreen(userUid: userUid);
+  }
+}
+
+class _EmployeeNotificationsScreen extends StatefulWidget {
+  const _EmployeeNotificationsScreen({
+    required this.userUid,
+  });
+
+  final String userUid;
+
+  @override
+  State<_EmployeeNotificationsScreen> createState() =>
+      _EmployeeNotificationsScreenState();
+}
+
+class _EmployeeNotificationsScreenState
+    extends State<_EmployeeNotificationsScreen> {
+  final NotificationService _notificationService = NotificationService();
+  bool _markingAll = false;
+
+  Future<void> _markAllAsRead() async {
+    setState(() {
+      _markingAll = true;
+    });
+
+    try {
+      await _notificationService.markAllVisibleAsRead(
+        userUid: widget.userUid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('All visible notifications marked as read.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to mark all as read: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _markingAll = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _markSingleAsRead(String deliveryId) async {
+    try {
+      await _notificationService.markDeliveryAsRead(deliveryId: deliveryId);
+    } catch (_) {}
+  }
+
+  Future<void> _handleNotificationTap(
+    Map<String, dynamic> data,
+    String deliveryId,
+  ) async {
+    final type = (data['type'] ?? '').toString().trim();
+    final status =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+    final isUnread = status == 'pending' || status == 'visible';
+
+    if (isUnread) {
+      await _markSingleAsRead(deliveryId);
+    }
+
+    if (!mounted) return;
+
+    if (type == 'event_invitation') {
+      final eventId = (data['context_id'] ?? data['reference_id'] ?? '')
+          .toString()
+          .trim();
+      final employeeNumber =
+          (data['employee_number'] ?? '').toString().trim();
+      final employeeName = (data['employee_name'] ?? '').toString().trim();
+
+      if (eventId.isEmpty || employeeNumber.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Event details are incomplete for this notification.'),
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventInvitationDetailScreen(
+            eventId: eventId,
+            userUid: widget.userUid,
+            employeeNumber: employeeNumber,
+            employeeName:
+                employeeName.isEmpty ? employeeNumber : employeeName,
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('This notification does not have a linked screen yet.'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        actions: [
+          TextButton.icon(
+            onPressed: _markingAll ? null : _markAllAsRead,
+            icon: _markingAll
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.done_all),
+            label: const Text('Mark all read'),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _notificationService.userDeliveriesStream(
+          userUid: widget.userUid,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text('Failed to load notifications: ${snapshot.error}'),
+              ),
+            );
+          }
+
+          final docs = snapshot.data?.docs ?? const [];
+
+          if (docs.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No notifications available yet.'),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            itemCount: docs.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final doc = docs[index];
+              final data = doc.data();
+
+              final title = (data['title_snapshot'] ?? '').toString().trim();
+              final body = (data['body_snapshot'] ?? '').toString().trim();
+              final type = (data['type'] ?? '').toString().trim();
+              final status =
+                  (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+              final isUnread = status == 'pending' || status == 'visible';
+              final createdAt = data['created_at'];
+              final createdAtLabel = _formatTimestamp(createdAt);
+
+              return ListTile(
+                tileColor: isUnread
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : null,
+                leading: CircleAvatar(
+                  child: Icon(_iconForType(type)),
+                ),
+                title: Text(
+                  title.isEmpty ? 'Notification' : title,
+                  style: TextStyle(
+                    fontWeight: isUnread ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(body),
+                    ],
+                    const SizedBox(height: 6),
+                    Text(
+                      createdAtLabel,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                trailing: isUnread
+                    ? const Icon(Icons.mark_email_unread_outlined)
+                    : const Icon(Icons.done),
+                onTap: () => _handleNotificationTap(data, doc.id),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatTimestamp(dynamic value) {
+    if (value is Timestamp) {
+      final dt = value.toDate();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year.toString();
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day-$month-$year $hour:$minute';
+    }
+    return 'Unknown time';
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'meal_booking_confirmed':
+        return Icons.check_circle_outline;
+      case 'meal_booking_cancelled':
+        return Icons.cancel_outlined;
+      case 'meal_issued':
+        return Icons.restaurant_outlined;
+      case 'menu_item_announcement':
+        return Icons.restaurant_menu_outlined;
+      case 'menu_cycle_announcement':
+        return Icons.calendar_month_outlined;
+      case 'special_event_announcement':
+        return Icons.event_outlined;
+      case 'club_announcement':
+        return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+}
+
+class _AdminNotificationsScreen extends StatelessWidget {
+  const _AdminNotificationsScreen({
+    required this.userUid,
+  });
+
+  final String userUid;
+
+  @override
+  Widget build(BuildContext context) {
+    final NotificationService notificationService = NotificationService();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Notification History'),
+      ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: notificationService.adminNotificationsStream(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load notification history: ${snapshot.error}',
+                ),
+              ),
+            );
+          }
+
+          final docs = snapshot.data?.docs ?? const [];
+
+          if (docs.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No notifications available yet.'),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            itemCount: docs.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final data = docs[index].data();
+              final title = (data['title'] ?? '').toString().trim();
+              final body = (data['body'] ?? '').toString().trim();
+              final type = (data['type'] ?? '').toString().trim();
+              final layer =
+                  (data['notification_layer'] ?? '').toString().trim();
+              final status = (data['status'] ?? '').toString().trim();
+              final createdAtLabel = _formatTimestamp(data['created_at']);
+
+              return ListTile(
+                leading: CircleAvatar(
+                  child: Icon(_iconForType(type)),
+                ),
+                title: Text(title.isEmpty ? 'Notification' : title),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(body),
+                    ],
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        _pill(context, layer.isEmpty ? 'unknown' : layer),
+                        _pill(context, status.isEmpty ? 'unknown' : status),
+                        _pill(context, createdAtLabel),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatTimestamp(dynamic value) {
+    if (value is Timestamp) {
+      final dt = value.toDate();
+      final day = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final year = dt.year.toString();
+      final hour = dt.hour.toString().padLeft(2, '0');
+      final minute = dt.minute.toString().padLeft(2, '0');
+      return '$day-$month-$year $hour:$minute';
+    }
+    return 'Unknown time';
+  }
+
+  Widget _pill(BuildContext context, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label),
+    );
+  }
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'meal_booking_confirmed':
+        return Icons.check_circle_outline;
+      case 'meal_booking_cancelled':
+        return Icons.cancel_outlined;
+      case 'meal_issued':
+        return Icons.restaurant_outlined;
+      case 'menu_item_announcement':
+        return Icons.restaurant_menu_outlined;
+      case 'menu_cycle_announcement':
+        return Icons.calendar_month_outlined;
+      case 'special_event_announcement':
+        return Icons.event_outlined;
+      case 'club_announcement':
+        return Icons.campaign_outlined;
+      case 'event_invitation':
+        return Icons.event_available_outlined;
+      default:
+        return Icons.notifications_outlined;
+    }
+  }
+}
+
+
+
+==================================================
+FILE: lib/shared/widgets/notification_badge.dart
+==================================================
+import 'package:flutter/material.dart';
+
+class NotificationBadge extends StatelessWidget {
+  const NotificationBadge({
+    super.key,
+    required this.count,
+    this.child,
+  });
+
+  final int count;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final display = count > 99 ? '99+' : count.toString();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child ?? const Icon(Icons.notifications_outlined),
+        if (count > 0)
+          Positioned(
+            right: -6,
+            top: -6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              constraints: const BoxConstraints(minWidth: 18),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                display,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onError,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+
+

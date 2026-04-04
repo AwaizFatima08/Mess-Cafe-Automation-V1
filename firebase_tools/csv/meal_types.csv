@@ -1,0 +1,8 @@
+docId,meal_type_code,display_name,sort_order,is_active,is_bookable,is_visible,supports_feedback,supports_rate,supports_issue_flow,service_window_start,service_window_end,booking_cutoff_time,cancellation_cutoff_time,allow_real_time_booking,created_at,updated_at
+breakfast,breakfast,breakfast,1,true,true,true,true,true,true,07:00:00 AM,10:00:00 AM,04:00:00 AM,04:00:00 AM,false,,
+lunch,lunch,lunch,2,true,true,true,true,true,true,01:00:00 PM,03:00:00 PM,10:00:00 AM,10:00:00 AM,false,,
+dinner,dinner,dinner,3,true,true,true,true,true,true,08:00:00 PM,10:00:00 PM,05:00:00 PM,05:00:00 PM,false,,
+bbq,bbq,bbq,4,true,true,true,true,true,true,07:00:00 PM,10:00:00 PM,05:00:00 PM,05:00:00 PM,true,,
+cafe,cafe,cafe,5,true,true,true,true,true,true,07:00:00 PM,11:00:00 PM,07:00:00 PM,07:00:00 PM,true,,
+bakery,bakery,bakery,6,true,true,true,true,true,true,05:00:00 PM,11:00:00 PM,05:00:00 PM,05:00:00 PM,true,,
+snacks,snacks,snacks,7,true,true,true,true,true,true,05:00:00 PM,11:00:00 PM,05:00:00 PM,05:00:00 PM,true,,

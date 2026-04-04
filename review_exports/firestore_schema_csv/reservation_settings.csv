@@ -1,0 +1,2 @@
+docId,booking_window_days,cutoff_hours_before_meal,breakfast_start_time,breakfast_end_time,lunch_start_time,lunch_end_time,dinner_start_time,dinner_end_time,allow_manager_override,allow_supervisor_override,allow_guest_booking,created_at,updated_at,allow_proxy_employee_booking,allow_guest_booking_without_host,require_override_reason,max_guest_quantity_per_booking
+1,7,3,06:00:00 AM,09:00:00 AM,01:00:00 PM,03:00:00 PM,07:00:00 PM,10:00:00 PM,yes,yes,yes,,,,,,

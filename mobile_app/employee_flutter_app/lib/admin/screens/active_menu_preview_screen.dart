@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../services/menu_resolver_service.dart';
+
+import '../services/menu_resolver_service.dart';
 
 class ActiveMenuPreviewScreen extends StatefulWidget {
   final String userEmail;
@@ -7,59 +8,121 @@ class ActiveMenuPreviewScreen extends StatefulWidget {
   const ActiveMenuPreviewScreen({super.key, required this.userEmail});
 
   @override
-  State<ActiveMenuPreviewScreen> createState() => _ActiveMenuPreviewScreenState();
+  State<ActiveMenuPreviewScreen> createState() =>
+      _ActiveMenuPreviewScreenState();
 }
 
 class _ActiveMenuPreviewScreenState extends State<ActiveMenuPreviewScreen> {
   final MenuResolverService _resolverService = MenuResolverService();
+
   DateTime selectedDate = DateTime.now();
+  Future<Map<String, dynamic>?>? _menuFuture;
 
   @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("Menu Preview"),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.calendar_month),
-              onPressed: _pickDate,
-            ),
-          ],
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: "Breakfast"),
-              Tab(text: "Lunch"),
-              Tab(text: "Dinner"),
-            ],
-          ),
-        ),
-        body: Column(
+  void initState() {
+    super.initState();
+    _loadMenu();
+  }
+
+  void _loadMenu() {
+    setState(() {
+      _menuFuture = _resolverService.getMenuForDate(selectedDate);
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked == null) return;
+
+    setState(() {
+      selectedDate = picked;
+    });
+    _loadMenu();
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '$day ${months[date.month - 1]} ${date.year}';
+  }
+
+  Widget _buildHeaderCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              color: Colors.blueGrey[50],
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.event, size: 20, color: Colors.blueGrey),
-                  const SizedBox(width: 8),
-                  Text(
-                    _formatFullDate(selectedDate),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            Text(
+              'Active Menu Preview',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
-              ),
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildMealTab("breakfast"),
-                  _buildMealTab("lunch"),
-                  _buildMealTab("dinner"),
-                ],
-              ),
+            const SizedBox(height: 8),
+            Text('Logged in as: ${widget.userEmail}'),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Selected Date',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: Text(_formatDate(selectedDate)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text('Pick Date'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        selectedDate = DateTime.now();
+                      });
+                      _loadMenu();
+                    },
+                    icon: const Icon(Icons.today),
+                    label: const Text('Today'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _loadMenu,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -67,81 +130,164 @@ class _ActiveMenuPreviewScreenState extends State<ActiveMenuPreviewScreen> {
     );
   }
 
-  Widget _buildMealTab(String mealType) {
-    return FutureBuilder<Map<String, dynamic>?>(
-      // FIX: Use the new filtered method from MenuResolverService
-      future: _resolverService.getMenuForDate(selectedDate, mealType: mealType),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final data = snapshot.data;
-        // FIX: Handle cases where the menu key doesn't exist or is empty
-        if (data == null || data[mealType] == null || (data[mealType] as List).isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.set_meal_outlined, size: 64, color: Colors.grey[300]),
-                const SizedBox(height: 16),
-                Text(
-                  "No $mealType menu defined for this date.",
-                  style: TextStyle(color: Colors.grey[500], fontSize: 16),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final List<dynamic> items = data[mealType];
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: items.length,
-          separatorBuilder: (context, index) => const Divider(),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return ListTile(
-              leading: const Icon(Icons.restaurant, color: Colors.orange),
-              title: Text(
-                item['menu_item_name'] ?? "Unnamed Item",
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text("ID: ${item['menu_item_id']}"),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
+  Widget _buildMealCard({
+    required String title,
+    required List<dynamic> items,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: items.isEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Rs. ${item['unit_rate']?.toStringAsFixed(2) ?? '0.00'}",
-                    style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  const Text("per meal", style: TextStyle(fontSize: 10)),
+                  const SizedBox(height: 10),
+                  const Text('No items resolved.'),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...items.map((item) {
+                    final data = Map<String, dynamic>.from(item as Map);
+                    final itemName =
+                        (data['item_name'] ?? data['item_id'] ?? 'Unknown item')
+                            .toString();
+                    final itemId = (data['item_id'] ?? '').toString();
+                    final category = (data['category'] ?? 'other').toString();
+                    final estimatedPrice = data['estimated_price'] ?? 0;
+
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.restaurant_menu),
+                      title: Text(itemName),
+                      subtitle: Text(
+                        '$itemId • $category • Rs $estimatedPrice',
+                      ),
+                    );
+                  }),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(Icons.info_outline, size: 42),
+            SizedBox(height: 12),
+            Text(
+              'No active resolved menu found for the selected date.',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Check that an active menu cycle exists and that the selected date falls within its date range.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResolvedMenu(Map<String, dynamic> menu) {
+    final breakfast = (menu['breakfast'] as List?) ?? const [];
+    final lunch1 = (menu['lunch_template_1'] as List?) ?? const [];
+    final lunch2 = (menu['lunch_template_2'] as List?) ?? const [];
+    final dinner1 = (menu['dinner_template_1'] as List?) ?? const [];
+    final dinner2 = (menu['dinner_template_2'] as List?) ?? const [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                Text(
+                  'Cycle: ${(menu['cycle_name'] ?? '').toString().isEmpty ? menu['cycle_id'] : menu['cycle_name']}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text('Weekday: ${(menu['weekday'] ?? '').toString()}'),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildMealCard(title: 'Breakfast', items: breakfast),
+        _buildMealCard(title: 'Lunch Template 1', items: lunch1),
+        _buildMealCard(title: 'Lunch Template 2', items: lunch2),
+        _buildMealCard(title: 'Dinner Template 1', items: dinner1),
+        _buildMealCard(title: 'Dinner Template 2', items: dinner2),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Active Menu Preview'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: FutureBuilder<Map<String, dynamic>?>(
+          future: _menuFuture,
+          builder: (context, snapshot) {
+            return ListView(
+              children: [
+                _buildHeaderCard(),
+                const SizedBox(height: 16),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  )
+                else if (snapshot.hasError)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Failed to load active menu: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                else if (snapshot.data == null)
+                  _buildEmptyState()
+                else
+                  _buildResolvedMenu(snapshot.data!),
+              ],
             );
           },
-        );
-      },
+        ),
+      ),
     );
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-
-    if (picked != null) {
-      setState(() => selectedDate = picked);
-    }
-  }
-
-  String _formatFullDate(DateTime date) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return "${date.day} ${months[date.month - 1]} ${date.year}";
   }
 }

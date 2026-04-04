@@ -1,0 +1,94 @@
+lib
+├── admin
+│   ├── screens
+│   │   ├── active_menu_preview_screen.dart
+│   │   ├── admin_dashboard_shell.dart
+│   │   ├── bulk_upload_screen.dart
+│   │   ├── dashboard_screen.dart
+│   │   ├── employee_master_management_screen.dart
+│   │   ├── event_management_screen.dart
+│   │   ├── guest_meal_booking_screen.dart
+│   │   ├── meal_cost_dashboard_screen.dart
+│   │   ├── meal_feedback_dashboard_screen.dart
+│   │   ├── meal_rate_management_screen.dart
+│   │   ├── menu_cycle_management_screen.dart
+│   │   ├── menu_management_screen.dart
+│   │   ├── monthly_menu_builder_screen.dart
+│   │   ├── reports_screen.dart
+│   │   ├── user_management_screen.dart
+│   │   └── weekly_menu_template_screen.dart
+│   ├── services
+│   │   └── menu_resolver_service.dart
+│   └── widgets
+│       ├── add_menu_item_dialog.dart
+│       ├── admin_section_placeholder_card.dart
+│       ├── edit_menu_item_dialog.dart
+│       └── pending_approvals_card.dart
+├── analytics
+│   ├── models
+│   │   ├── analytics_filter_model.dart
+│   │   ├── analytics_kpi_model.dart
+│   │   ├── attendance_analytics_result.dart
+│   │   ├── cost_analytics_result.dart
+│   │   └── feedback_analytics_result.dart
+│   ├── screens
+│   │   └── analytics_dashboard_screen.dart
+│   ├── services
+│   │   ├── attendance_analytics_service.dart
+│   │   ├── cost_analytics_service.dart
+│   │   └── feedback_analytics_service.dart
+│   └── widgets
+│       ├── analytics_filter_bar.dart
+│       ├── analytics_summary_card.dart
+│       ├── attendance_trend_chart.dart
+│       ├── cost_trend_chart.dart
+│       ├── feedback_distribution_chart.dart
+│       └── meal_distribution_chart.dart
+├── core
+│   ├── constants
+│   │   ├── app_constants.dart
+│   │   └── reservation_constants.dart
+│   └── theme
+│       └── app_theme.dart
+├── employee
+│   ├── screens
+│   │   ├── employee_dashboard_screen.dart
+│   │   ├── employee_dashboard_shell.dart
+│   │   ├── employee_signup_screen.dart
+│   │   ├── event_invitation_detail_screen.dart
+│   │   ├── meal_feedback_submission_screen.dart
+│   │   ├── my_meal_history_screen.dart
+│   │   └── today_menu_screen.dart
+│   └── widgets
+│       └── employee_event_invitations_section.dart
+├── main.dart
+├── models
+│   ├── daily_resolved_menu.dart
+│   ├── event_attendance_response_model.dart
+│   ├── event_attendance_summary_model.dart
+│   ├── event_model.dart
+│   ├── event_note_template_model.dart
+│   ├── meal_booking_request.dart
+│   ├── meal_option_selection.dart
+│   ├── meal_reservation.dart
+│   ├── reservation_settings.dart
+│   └── resolved_meal_option.dart
+├── services
+│   ├── employee_identity_service.dart
+│   ├── employee_registration_service.dart
+│   ├── event_attendance_service.dart
+│   ├── meal_cost_reporting_service.dart
+│   ├── meal_feedback_service.dart
+│   ├── meal_rate_service.dart
+│   ├── meal_reservation_service.dart
+│   ├── my_meal_history_service.dart
+│   ├── notification_service.dart
+│   ├── user_profile_service.dart
+│   └── user_role_service.dart
+└── shared
+    ├── screens
+    │   └── notifications_screen.dart
+    └── widgets
+        └── notification_badge.dart
+
+21 directories, 71 files

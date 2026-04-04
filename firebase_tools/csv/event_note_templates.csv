@@ -1,7 +1,7 @@
-docId,title,body,created_at,is_active,display_order,updated_at
-Note_001,Permanent Resident Guest Definition,Permanent resident guests include family members who have been registered as permanent resident guests in company record with resident cards issued.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,1,"{""_seconds"":1774638000,""_nanoseconds"":0}"
-Note_002,Visiting Guest Charges,Visiting guests will be charged as per actual cost.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,2,"{""_seconds"":1774642810,""_nanoseconds"":0}"
-Note_003,Maid / Servant Seating,Maids are not allowed in the event arena. Separate sitting arrangements will be made for maids and servants.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,3,"{""_seconds"":1774638000,""_nanoseconds"":0}"
-Note_004,Dress Code,Please follow the given dress code.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,4,"{""_seconds"":1774638000,""_nanoseconds"":0}"
-Note_005,Arrival Timing,Please arrive 10 minutes before starting time of event and be seated before arrival of chief guest.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,5,"{""_seconds"":1774638000,""_nanoseconds"":0}"
-Note_006,Entry Subject to Attendance,Guests without attendance may be returned from the reception.,"{""_seconds"":1774638000,""_nanoseconds"":0}",true,6,"{""_seconds"":1774638000,""_nanoseconds"":0}"
+docId,template_id,title,body,created_at,is_active,is_visible,updated_at
+Note_001,Note_001,Permanent Resident Guest Definition,Permanent resident guests include family members who have been registered as permanent resident guests in company record with resident cards issued.,,true,true,
+Note_002,Note_002,Visiting Guest Charges,Visiting guests will be charged as per actual cost.,,true,true,
+Note_003,Note_003,Maid / Servant Seating,Maids are not allowed in the event arena. Separate sitting arrangements will be made for maids and servants.,,true,true,
+Note_004,Note_004,Dress Code,Please follow the given dress code.,,true,true,
+Note_005,Note_005,Arrival Timing,Please arrive 10 minutes before starting time of event and be seated before arrival of chief guest.,,true,true,
+Note_006,Note_006,Entry Subject to Attendance,Guests without attendance may be returned from the reception.,,true,true,

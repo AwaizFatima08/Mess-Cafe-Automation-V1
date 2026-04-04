@@ -1,0 +1,5763 @@
+==================================================
+FILE: lib/services/employee_identity_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class EmployeeIdentityResult {
+  final bool found;
+  final String reason;
+
+  final String? uid;
+  final String? userDocumentId;
+  final String? employeeNumber;
+  final String? employeeDocumentId;
+
+  final Map<String, dynamic>? userData;
+  final Map<String, dynamic>? employeeData;
+
+  final bool userExists;
+  final bool employeeExists;
+  final bool userIsActive;
+  final bool employeeIsActive;
+  final bool emailMatches;
+  final bool isBookingEligible;
+  final String blockingReason;
+
+  const EmployeeIdentityResult({
+    required this.found,
+    required this.reason,
+    this.uid,
+    this.userDocumentId,
+    this.employeeNumber,
+    this.employeeDocumentId,
+    this.userData,
+    this.employeeData,
+    required this.userExists,
+    required this.employeeExists,
+    required this.userIsActive,
+    required this.employeeIsActive,
+    required this.emailMatches,
+    required this.isBookingEligible,
+    required this.blockingReason,
+  });
+
+  bool get hasUser => userData != null;
+
+  bool get hasEmployeeLink =>
+      employeeNumber != null && employeeNumber!.trim().isNotEmpty;
+
+  bool get hasEmployee => employeeData != null;
+
+  String get linkageStatusLabel {
+    if (isBookingEligible) {
+      return 'Eligible';
+    }
+
+    if (!userExists) {
+      return 'User Missing';
+    }
+
+    if (!hasEmployeeLink) {
+      return 'Employee Number Missing';
+    }
+
+    if (!employeeExists) {
+      return 'Employee Record Missing';
+    }
+
+    if (!userIsActive) {
+      return 'User Inactive';
+    }
+
+    if (!employeeIsActive) {
+      return 'Employee Inactive';
+    }
+
+    if (!emailMatches) {
+      return 'Email Mismatch';
+    }
+
+    return 'Blocked';
+  }
+}
+
+class EmployeeIdentityService {
+  EmployeeIdentityService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  CollectionReference<Map<String, dynamic>> get _employeesRef =>
+      _firestore.collection('employees');
+
+  Future<EmployeeIdentityResult> resolveByAuthUid(String authUid) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return const EmployeeIdentityResult(
+        found: false,
+        reason: 'missing_auth_uid',
+        userExists: false,
+        employeeExists: false,
+        userIsActive: false,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason: 'Authentication UID is missing.',
+      );
+    }
+
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (userQuery.docs.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.uid_not_found',
+        uid: normalizedUid,
+        userExists: false,
+        employeeExists: false,
+        userIsActive: false,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason: 'User profile record was not found.',
+      );
+    }
+
+    final userDoc = userQuery.docs.first;
+    final userData = userDoc.data();
+
+    final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
+    final userIsActive = userData['is_active'] == true;
+
+    if (employeeNumber.isEmpty) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'users.employee_number_missing',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        userData: userData,
+        userExists: true,
+        employeeExists: false,
+        userIsActive: userIsActive,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason:
+            'User profile exists but employee number is missing.',
+      );
+    }
+
+    final employeeDoc = await _employeesRef.doc(employeeNumber).get();
+
+    if (!employeeDoc.exists || employeeDoc.data() == null) {
+      return EmployeeIdentityResult(
+        found: false,
+        reason: 'employees.doc_not_found',
+        uid: normalizedUid,
+        userDocumentId: userDoc.id,
+        employeeNumber: employeeNumber,
+        userData: userData,
+        userExists: true,
+        employeeExists: false,
+        userIsActive: userIsActive,
+        employeeIsActive: false,
+        emailMatches: false,
+        isBookingEligible: false,
+        blockingReason:
+            'Employee master record was not found for this employee number.',
+      );
+    }
+
+    final employeeData = employeeDoc.data()!;
+    final employeeIsActive = employeeData['is_active'] == true;
+    final emailMatches = _emailsMatch(
+      userData['email'],
+      employeeData['email'],
+    );
+
+    final blockingReason = _resolveBlockingReason(
+      userIsActive: userIsActive,
+      employeeIsActive: employeeIsActive,
+      emailMatches: emailMatches,
+    );
+
+    final isBookingEligible = blockingReason.isEmpty;
+
+    return EmployeeIdentityResult(
+      found: isBookingEligible,
+      reason: isBookingEligible ? 'resolved' : 'resolved_but_blocked',
+      uid: normalizedUid,
+      userDocumentId: userDoc.id,
+      employeeNumber: employeeNumber,
+      employeeDocumentId: employeeDoc.id,
+      userData: userData,
+      employeeData: employeeData,
+      userExists: true,
+      employeeExists: true,
+      userIsActive: userIsActive,
+      employeeIsActive: employeeIsActive,
+      emailMatches: emailMatches,
+      isBookingEligible: isBookingEligible,
+      blockingReason: blockingReason,
+    );
+  }
+
+  Future<Map<String, dynamic>?> getEmployeeByEmployeeNumber(
+    String employeeNumber,
+  ) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      return null;
+    }
+
+    final employeeDoc = await _employeesRef.doc(normalizedEmployeeNumber).get();
+
+    if (!employeeDoc.exists) {
+      return null;
+    }
+
+    return employeeDoc.data();
+  }
+
+  Future<Map<String, dynamic>?> getUserByUid(String authUid) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return null;
+    }
+
+    final userQuery =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (userQuery.docs.isEmpty) {
+      return null;
+    }
+
+    return userQuery.docs.first.data();
+  }
+
+  Future<bool> isBookingEligibleForAuthUid(String authUid) async {
+    final result = await resolveByAuthUid(authUid);
+    return result.isBookingEligible;
+  }
+
+  bool _emailsMatch(dynamic userEmailRaw, dynamic employeeEmailRaw) {
+    final userEmail = (userEmailRaw ?? '').toString().trim().toLowerCase();
+    final employeeEmail =
+        (employeeEmailRaw ?? '').toString().trim().toLowerCase();
+
+    if (userEmail.isEmpty || employeeEmail.isEmpty) {
+      return false;
+    }
+
+    return userEmail == employeeEmail;
+  }
+
+  String _resolveBlockingReason({
+    required bool userIsActive,
+    required bool employeeIsActive,
+    required bool emailMatches,
+  }) {
+    if (!userIsActive) {
+      return 'User account is inactive.';
+    }
+
+    if (!employeeIsActive) {
+      return 'Employee master record is inactive.';
+    }
+
+    if (!emailMatches) {
+      return 'User email does not match employee master email.';
+    }
+
+    return '';
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/employee_registration_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class RegistrationResult {
+  final bool success;
+  final String message;
+  final String? uid;
+  final String? employeeNumber;
+  final String? requestId;
+
+  const RegistrationResult({
+    required this.success,
+    required this.message,
+    this.uid,
+    this.employeeNumber,
+    this.requestId,
+  });
+}
+
+class EmployeeRegistrationService {
+  EmployeeRegistrationService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
+
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+
+  CollectionReference<Map<String, dynamic>> get _employeesRef =>
+      _firestore.collection('employees');
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  CollectionReference<Map<String, dynamic>> get _registrationRequestsRef =>
+      _firestore.collection('registration_requests');
+
+  Future<RegistrationResult> registerEmployee({
+    required String employeeNumber,
+    required String email,
+    required String password,
+    required String fullName,
+    required String cnicLast4,
+    String role = 'employee',
+    bool requireApproval = true,
+    bool selfRegistrationEnabled = true,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim().toUpperCase();
+    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedPassword = password.trim();
+    final normalizedFullName = fullName.trim();
+    final normalizedCnicLast4 = cnicLast4.trim();
+    final normalizedRole = role.trim().toLowerCase();
+
+    if (!selfRegistrationEnabled) {
+      return const RegistrationResult(
+        success: false,
+        message:
+            'Self-registration is currently disabled. Please contact admin.',
+      );
+    }
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Employee number is required.',
+      );
+    }
+
+    if (normalizedEmail.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Email is required.',
+      );
+    }
+
+    if (normalizedPassword.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Password is required.',
+      );
+    }
+
+    if (normalizedPassword.length < 6) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Password must be at least 6 characters long.',
+      );
+    }
+
+    if (normalizedFullName.isEmpty) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Full name is required.',
+      );
+    }
+
+    if (normalizedCnicLast4.isEmpty || normalizedCnicLast4.length != 4) {
+      return const RegistrationResult(
+        success: false,
+        message: 'CNIC last 4 digits are required.',
+      );
+    }
+
+    if (!_isAllowedSelfRegistrationRole(normalizedRole)) {
+      return const RegistrationResult(
+        success: false,
+        message: 'Invalid role for self-registration.',
+      );
+    }
+
+    try {
+      final employeeDoc =
+          await _employeesRef.doc(normalizedEmployeeNumber).get();
+
+      if (!employeeDoc.exists || employeeDoc.data() == null) {
+        return const RegistrationResult(
+          success: false,
+          message: 'Employee master record not found.',
+        );
+      }
+
+      final employeeData = employeeDoc.data()!;
+
+      final employeeName =
+          (employeeData['name'] ?? employeeData['employee_name'] ?? '')
+              .toString()
+              .trim();
+
+      final employeeEmail =
+          (employeeData['email'] ?? '').toString().trim().toLowerCase();
+
+      final employeeCnicLast4 =
+          (employeeData['cnic_last_4'] ?? '').toString().trim();
+
+      final employeeIsActive = employeeData['is_active'] == true;
+
+      if (!employeeIsActive) {
+        return const RegistrationResult(
+          success: false,
+          message: 'Employee master record is inactive.',
+        );
+      }
+
+      if (employeeEmail.isEmpty) {
+        return const RegistrationResult(
+          success: false,
+          message:
+              'Official email is missing in employee master record. Contact admin.',
+        );
+      }
+
+      if (employeeEmail != normalizedEmail) {
+        return const RegistrationResult(
+          success: false,
+          message: 'Email does not match official employee master record.',
+        );
+      }
+
+      if (employeeCnicLast4.isEmpty) {
+        return const RegistrationResult(
+          success: false,
+          message:
+              'CNIC last 4 digits are missing in employee master record. Contact admin.',
+        );
+      }
+
+      if (employeeCnicLast4 != normalizedCnicLast4) {
+        return const RegistrationResult(
+          success: false,
+          message: 'CNIC last 4 digits do not match employee master record.',
+        );
+      }
+
+      final existingUserByEmployee = await _usersRef
+          .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+          .limit(1)
+          .get();
+
+      if (existingUserByEmployee.docs.isNotEmpty) {
+        final existingData = existingUserByEmployee.docs.first.data();
+        final existingIsActive = existingData['is_active'] == true;
+        final existingStatus =
+            (existingData['status'] ?? '').toString().trim().toLowerCase();
+
+        if (existingIsActive || existingStatus == 'approved') {
+          return const RegistrationResult(
+            success: false,
+            message: 'An approved user account already exists for this employee.',
+          );
+        }
+
+        return const RegistrationResult(
+          success: false,
+          message:
+              'A user account already exists for this employee and is awaiting admin action.',
+        );
+      }
+
+      final existingUserByEmail = await _usersRef
+          .where('email', isEqualTo: normalizedEmail)
+          .limit(1)
+          .get();
+
+      if (existingUserByEmail.docs.isNotEmpty) {
+        return const RegistrationResult(
+          success: false,
+          message: 'A user account already exists for this email.',
+        );
+      }
+
+      final existingPendingRequest = await _registrationRequestsRef
+          .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+
+      if (existingPendingRequest.docs.isNotEmpty) {
+        return const RegistrationResult(
+          success: false,
+          message: 'A registration request is already pending approval.',
+        );
+      }
+
+      UserCredential userCredential;
+      try {
+        userCredential = await _auth.createUserWithEmailAndPassword(
+          email: normalizedEmail,
+          password: normalizedPassword,
+        );
+      } on FirebaseAuthException catch (e) {
+        return RegistrationResult(
+          success: false,
+          message: _firebaseAuthErrorMessage(e),
+        );
+      }
+
+      final uid = userCredential.user?.uid;
+      if (uid == null || uid.trim().isEmpty) {
+        await _safeDeleteCurrentAuthUser();
+        return const RegistrationResult(
+          success: false,
+          message: 'User account created but UID is missing.',
+        );
+      }
+
+      final effectiveEmployeeName =
+          employeeName.isNotEmpty ? employeeName : normalizedFullName;
+
+      final now = FieldValue.serverTimestamp();
+      final effectiveStatus = requireApproval ? 'pending' : 'approved';
+      final isActive = !requireApproval;
+
+      try {
+        await _usersRef.doc(uid).set({
+          'uid': uid,
+          'email': normalizedEmail,
+          'employee_number': normalizedEmployeeNumber,
+          'employee_name': effectiveEmployeeName,
+          'role': normalizedRole,
+          'is_active': isActive,
+          'status': effectiveStatus,
+          'created_at': now,
+          'updated_at': now,
+        });
+
+        String? requestId;
+        if (requireApproval) {
+          final requestRef = _registrationRequestsRef.doc();
+          requestId = requestRef.id;
+
+          await requestRef.set({
+            'request_id': requestId,
+            'uid': uid,
+            'employee_number': normalizedEmployeeNumber,
+            'employee_name': effectiveEmployeeName,
+            'email': normalizedEmail,
+            'role': normalizedRole,
+            'status': 'pending',
+            'requested_at': now,
+            'created_at': now,
+            'updated_at': now,
+          });
+
+          await _auth.signOut();
+
+          return RegistrationResult(
+            success: true,
+            message:
+                'Registration submitted successfully and is pending admin approval.',
+            uid: uid,
+            employeeNumber: normalizedEmployeeNumber,
+            requestId: requestId,
+          );
+        }
+
+        await _auth.signOut();
+
+        return RegistrationResult(
+          success: true,
+          message: 'Registration completed successfully.',
+          uid: uid,
+          employeeNumber: normalizedEmployeeNumber,
+        );
+      } catch (e) {
+        await _safeDeleteCurrentAuthUser();
+
+        return RegistrationResult(
+          success: false,
+          message:
+              'Registration could not be completed because profile records failed to save: $e',
+        );
+      }
+    } catch (e) {
+      return RegistrationResult(
+        success: false,
+        message: 'Registration failed: $e',
+      );
+    }
+  }
+
+  bool _isAllowedSelfRegistrationRole(String role) {
+    return role == 'employee';
+  }
+
+  String _firebaseAuthErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'This email is already in use.';
+      case 'invalid-email':
+        return 'Email address is invalid.';
+      case 'weak-password':
+        return 'Password is too weak.';
+      case 'operation-not-allowed':
+        return 'Email/password sign-up is not enabled.';
+      case 'network-request-failed':
+        return 'Network error occurred during registration.';
+      default:
+        return e.message ?? 'Authentication error occurred during registration.';
+    }
+  }
+
+  Future<void> _safeDeleteCurrentAuthUser() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser != null) {
+        await currentUser.delete();
+      }
+    } catch (_) {
+      // Intentionally ignored to avoid masking the primary failure.
+    } finally {
+      try {
+        await _auth.signOut();
+      } catch (_) {
+        // Intentionally ignored.
+      }
+    }
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/event_attendance_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../models/event_attendance_response_model.dart';
+import '../models/event_attendance_summary_model.dart';
+import '../models/event_model.dart';
+import '../models/event_note_template_model.dart';
+
+class EventAttendanceService {
+  EventAttendanceService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
+
+  final FirebaseFirestore _firestore;
+  final FirebaseAuth _auth;
+
+  CollectionReference<Map<String, dynamic>> get _eventsRef =>
+      _firestore.collection(EventModel.collectionName);
+
+  CollectionReference<Map<String, dynamic>> get _notesRef =>
+      _firestore.collection(EventNoteTemplateModel.collectionName);
+
+  CollectionReference<Map<String, dynamic>> get _responsesRef =>
+      _firestore.collection(EventAttendanceResponseModel.collectionName);
+
+  CollectionReference<Map<String, dynamic>> get _summariesRef =>
+      _firestore.collection(EventAttendanceSummaryModel.collectionName);
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  CollectionReference<Map<String, dynamic>> get _notificationsRef =>
+      _firestore.collection('notifications');
+
+  CollectionReference<Map<String, dynamic>> get _notificationDeliveriesRef =>
+      _firestore.collection('notification_deliveries');
+
+  // ---------------------------------------------------------------------------
+  // EVENT CRUD
+  // ---------------------------------------------------------------------------
+
+  Future<String> createEvent(EventModel event) async {
+    final String documentId = event.documentId.trim().isNotEmpty
+        ? event.documentId.trim()
+        : EventModel.buildEventDocumentId(
+            slug: EventModel.buildSuggestedSlug(
+              title: event.title,
+              eventDate: event.startDateTime ?? event.eventDateTime,
+            ),
+          );
+
+    final Timestamp now = Timestamp.now();
+
+    final EventModel normalizedEvent = event.copyWith(
+      documentId: documentId,
+      eventId: documentId,
+      status: EventModel.statusDraft,
+      createdAt: event.createdAt ?? now,
+      updatedAt: now,
+      publishedAt: null,
+      closedAt: null,
+      cancelledAt: null,
+      householdsResponded: event.householdsResponded,
+      householdsPending: event.householdsPending,
+      grandTotalAttendees: event.grandTotalAttendees,
+    );
+
+    await _eventsRef.doc(documentId).set(normalizedEvent.toMap());
+    return documentId;
+  }
+
+  Future<void> updateEvent(EventModel event) async {
+    _validateEventDocumentId(event.documentId);
+
+    final Timestamp now = Timestamp.now();
+
+    final EventModel existing = await getEventById(event.documentId) ??
+        (throw Exception('Event not found: ${event.documentId}'));
+
+    if (existing.isClosed || existing.isCancelled) {
+      throw Exception('Closed or cancelled events cannot be edited.');
+    }
+
+    final EventModel normalizedEvent = event.copyWith(
+      documentId: existing.documentId,
+      eventId: existing.eventId,
+      createdAt: existing.createdAt,
+      publishedAt: existing.publishedAt,
+      closedAt: existing.closedAt,
+      cancelledAt: existing.cancelledAt,
+      updatedAt: now,
+    );
+
+    await _eventsRef.doc(existing.documentId).update(normalizedEvent.toMap());
+  }
+
+  Future<void> publishEvent(String eventId) async {
+    _validateEventDocumentId(eventId);
+
+    final DocumentReference<Map<String, dynamic>> eventDoc =
+        _eventsRef.doc(eventId);
+    final DocumentSnapshot<Map<String, dynamic>> eventSnapshot =
+        await eventDoc.get();
+
+    if (!eventSnapshot.exists) {
+      throw Exception('Event not found: $eventId');
+    }
+
+    final EventModel event = EventModel.fromDocument(eventSnapshot);
+
+    if (event.isCancelled) {
+      throw Exception('Cancelled event cannot be published.');
+    }
+
+    if (event.isClosed) {
+      throw Exception('Closed event cannot be published.');
+    }
+
+    final Timestamp now = Timestamp.now();
+    final List<EventNoteSnapshot> notesSnapshot = event.notesSnapshot.isNotEmpty
+        ? event.notesSnapshot
+        : await _buildNotesSnapshot(event.selectedNoteIds);
+
+    final int householdsPending = event.targetCountEstimate > 0
+        ? event.targetCountEstimate - event.householdsResponded
+        : 0;
+
+    await eventDoc.update(<String, dynamic>{
+      'status': EventModel.statusPublished,
+      'updated_at': now,
+      'published_at': now,
+      'notes_snapshot': notesSnapshot.map((e) => e.toMap()).toList(),
+      'households_pending': householdsPending < 0 ? 0 : householdsPending,
+    });
+
+    final EventModel publishedEvent = event.copyWith(
+      status: EventModel.statusPublished,
+      updatedAt: now,
+      publishedAt: now,
+      notesSnapshot: notesSnapshot,
+      householdsPending: householdsPending < 0 ? 0 : householdsPending,
+    );
+
+    await _createEventInvitationNotifications(publishedEvent);
+    await rebuildEventSummary(eventId);
+  }
+
+  Future<void> closeEvent(String eventId) async {
+    _validateEventDocumentId(eventId);
+
+    final DocumentReference<Map<String, dynamic>> eventDoc =
+        _eventsRef.doc(eventId);
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await eventDoc.get();
+
+    if (!snapshot.exists) {
+      throw Exception('Event not found: $eventId');
+    }
+
+    final EventModel event = EventModel.fromDocument(snapshot);
+
+    if (event.isCancelled) {
+      throw Exception('Cancelled event cannot be closed.');
+    }
+
+    final Timestamp now = Timestamp.now();
+
+    await eventDoc.update(<String, dynamic>{
+      'status': EventModel.statusClosed,
+      'updated_at': now,
+      'closed_at': now,
+      'report_locked': true,
+    });
+
+    await _lockAllResponsesForEvent(eventId);
+    await rebuildEventSummary(eventId);
+  }
+
+  Future<void> cancelEvent(String eventId) async {
+    _validateEventDocumentId(eventId);
+
+    final DocumentReference<Map<String, dynamic>> eventDoc =
+        _eventsRef.doc(eventId);
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await eventDoc.get();
+
+    if (!snapshot.exists) {
+      throw Exception('Event not found: $eventId');
+    }
+
+    final EventModel event = EventModel.fromDocument(snapshot);
+
+    if (event.isClosed) {
+      throw Exception('Closed event cannot be cancelled.');
+    }
+
+    final Timestamp now = Timestamp.now();
+
+    await eventDoc.update(<String, dynamic>{
+      'status': EventModel.statusCancelled,
+      'updated_at': now,
+      'cancelled_at': now,
+      'report_locked': true,
+    });
+
+    await _lockAllResponsesForEvent(eventId);
+  }
+
+  Future<EventModel?> getEventById(String eventId) async {
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await _eventsRef.doc(eventId).get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return EventModel.fromDocument(snapshot);
+  }
+
+  Stream<List<EventModel>> watchAdminEvents() {
+    return _eventsRef.orderBy('created_at', descending: true).snapshots().map(
+      (snapshot) {
+        final List<EventModel> items =
+            snapshot.docs.map(EventModel.fromDocument).toList();
+        items.sort(_sortEventsForAdmin);
+        return items;
+      },
+    );
+  }
+
+  Stream<List<EventModel>> watchEmployeeVisibleEvents() {
+    return _eventsRef
+        .where('show_on_employee_dashboard', isEqualTo: true)
+        .where('is_deleted_soft', isEqualTo: false)
+        .snapshots()
+        .map(
+      (snapshot) {
+        final List<EventModel> items = snapshot.docs
+            .map(EventModel.fromDocument)
+            .where(
+              (event) =>
+                  event.status == EventModel.statusPublished ||
+                  event.status == EventModel.statusClosed,
+            )
+            .toList();
+
+        items.sort(_sortEventsForEmployee);
+        return items;
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // NOTE TEMPLATES
+  // ---------------------------------------------------------------------------
+
+  Future<List<EventNoteTemplateModel>> getActiveNoteTemplates() async {
+    final QuerySnapshot<Map<String, dynamic>> query =
+        await _notesRef.orderBy('display_order').get();
+
+    return query.docs
+        .map(EventNoteTemplateModel.fromDocument)
+        .where((note) => note.isActive)
+        .toList(growable: false);
+  }
+
+  Future<void> seedDefaultEventNotes() async {
+    final QuerySnapshot<Map<String, dynamic>> existing =
+        await _notesRef.limit(1).get();
+
+    if (existing.docs.isNotEmpty) {
+      return;
+    }
+
+    final Timestamp now = Timestamp.now();
+
+    final List<Map<String, dynamic>> defaultNotes = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'document_id': 'note_001',
+        'title': 'Permanent Resident Guest Definition',
+        'body':
+            'Permanent resident guests include family members who have been registered as permanent resident guests in company record with resident cards issued.',
+        'display_order': 1,
+      },
+      <String, dynamic>{
+        'document_id': 'note_002',
+        'title': 'Visiting Guest Charges',
+        'body': 'Visiting guests will be charged as per actual cost.',
+        'display_order': 2,
+      },
+      <String, dynamic>{
+        'document_id': 'note_003',
+        'title': 'Maid / Servant Seating',
+        'body':
+            'Maids are not allowed in the event arena. Separate sitting arrangements will be made for maids and servants.',
+        'display_order': 3,
+      },
+      <String, dynamic>{
+        'document_id': 'note_004',
+        'title': 'Dress Code',
+        'body': 'Please follow the given dress code.',
+        'display_order': 4,
+      },
+      <String, dynamic>{
+        'document_id': 'note_005',
+        'title': 'Arrival Timing',
+        'body':
+            'Please arrive 10 minutes before starting time of event and be seated before arrival of chief guest.',
+        'display_order': 5,
+      },
+      <String, dynamic>{
+        'document_id': 'note_006',
+        'title': 'Entry Subject to Attendance',
+        'body': 'Guests without attendance may be returned from the reception.',
+        'display_order': 6,
+      },
+    ];
+
+    final WriteBatch batch = _firestore.batch();
+
+    for (final Map<String, dynamic> item in defaultNotes) {
+      final String docId = item['document_id'] as String;
+      batch.set(_notesRef.doc(docId), <String, dynamic>{
+        'title': item['title'],
+        'body': item['body'],
+        'is_active': true,
+        'display_order': item['display_order'],
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // RESPONSES
+  // ---------------------------------------------------------------------------
+
+  Future<void> submitAttendanceResponse(
+    EventAttendanceResponseModel response,
+  ) async {
+    final String currentUid = _auth.currentUser?.uid.trim() ?? '';
+    if (currentUid.isEmpty) {
+      throw Exception('No authenticated user found.');
+    }
+
+    if (response.userUid.trim().isNotEmpty &&
+        response.userUid.trim() != currentUid) {
+      throw Exception('Response UID does not match authenticated user.');
+    }
+
+    final String documentId = EventAttendanceResponseModel.buildDocumentId(
+      eventId: response.eventId,
+      employeeNumber: response.employeeNumber,
+    );
+
+    final DocumentReference<Map<String, dynamic>> eventRef =
+        _eventsRef.doc(response.eventId);
+    final DocumentReference<Map<String, dynamic>> responseRef =
+        _responsesRef.doc(documentId);
+    final DocumentReference<Map<String, dynamic>> summaryRef =
+        _summariesRef.doc(response.eventId);
+
+    bool requiresRebuild = false;
+
+    await _firestore.runTransaction((transaction) async {
+      final DocumentSnapshot<Map<String, dynamic>> eventSnapshot =
+          await transaction.get(eventRef);
+      final DocumentSnapshot<Map<String, dynamic>> existingResponseSnapshot =
+          await transaction.get(responseRef);
+      final DocumentSnapshot<Map<String, dynamic>> summarySnapshot =
+          await transaction.get(summaryRef);
+
+      if (!eventSnapshot.exists) {
+        throw Exception('Event not found: ${response.eventId}');
+      }
+
+      final EventModel event = EventModel.fromDocument(eventSnapshot);
+
+      if (!event.isResponseWindowOpen()) {
+        throw Exception('Attendance response window is closed.');
+      }
+
+      EventAttendanceResponseModel? oldResponse;
+      if (existingResponseSnapshot.exists) {
+        oldResponse =
+            EventAttendanceResponseModel.fromDocument(existingResponseSnapshot);
+
+        if (oldResponse.submissionLocked) {
+          throw Exception('This attendance response is locked.');
+        }
+      }
+
+      final Map<String, int> normalizedCounts =
+          _normalizeResponseCounts(response);
+
+      final int computedTotal =
+          EventAttendanceResponseModel.calculateTotal(normalizedCounts);
+
+      final Timestamp now = Timestamp.now();
+
+      final EventAttendanceResponseModel newResponse =
+          EventAttendanceResponseModel(
+        documentId: documentId,
+        eventId: response.eventId,
+        userUid: currentUid,
+        employeeNumber: response.employeeNumber,
+        employeeName: response.employeeName,
+        department: response.department,
+        designation: response.designation,
+        attendanceStatus: response.attendanceStatus,
+        submittedAt: oldResponse?.submittedAt ?? now,
+        updatedAt: now,
+        submissionLocked: false,
+        counts: normalizedCounts,
+        totalAttendees: computedTotal,
+        employeeNote: response.employeeNote,
+        responseVersion: (oldResponse?.responseVersion ?? 0) + 1,
+        source: response.source.trim().isEmpty
+            ? 'mobile_app'
+            : response.source.trim(),
+        rawData: response.rawData,
+      );
+
+      if (!summarySnapshot.exists) {
+        requiresRebuild = true;
+
+        transaction.set(
+          responseRef,
+          newResponse.toMap(),
+          SetOptions(merge: true),
+        );
+
+        return;
+      }
+
+      final EventAttendanceSummaryModel summary =
+          EventAttendanceSummaryModel.fromDocument(summarySnapshot);
+
+      final _SummaryComputation updated = _applyResponseDeltaToSummary(
+        summary: summary,
+        event: event,
+        oldResponse: oldResponse,
+        newResponse: newResponse,
+      );
+
+      transaction.set(
+        responseRef,
+        newResponse.toMap(),
+        SetOptions(merge: true),
+      );
+
+      transaction.set(
+        summaryRef,
+        updated.summary.toMap(),
+        SetOptions(merge: true),
+      );
+
+      transaction.update(eventRef, <String, dynamic>{
+        'households_responded': updated.summary.householdsResponded,
+        'households_pending': updated.summary.householdsPending < 0
+            ? 0
+            : updated.summary.householdsPending,
+        'grand_total_attendees': updated.summary.grandTotal,
+        'updated_at': updated.summary.lastAggregatedAt,
+      });
+    });
+
+    if (requiresRebuild) {
+      await rebuildEventSummary(response.eventId);
+    }
+  }
+
+  Future<EventAttendanceResponseModel?> getEmployeeResponse(
+    String eventId,
+    String employeeNumber,
+  ) async {
+    final String documentId = EventAttendanceResponseModel.buildDocumentId(
+      eventId: eventId,
+      employeeNumber: employeeNumber,
+    );
+
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await _responsesRef.doc(documentId).get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return EventAttendanceResponseModel.fromDocument(snapshot);
+  }
+
+  Stream<EventAttendanceResponseModel?> watchEmployeeResponse(
+    String eventId,
+    String employeeNumber,
+  ) {
+    final String documentId = EventAttendanceResponseModel.buildDocumentId(
+      eventId: eventId,
+      employeeNumber: employeeNumber,
+    );
+
+    return _responsesRef.doc(documentId).snapshots().map((snapshot) {
+      if (!snapshot.exists) {
+        return null;
+      }
+
+      return EventAttendanceResponseModel.fromDocument(snapshot);
+    });
+  }
+
+  Stream<List<EventAttendanceResponseModel>> watchEventResponses(
+    String eventId,
+  ) {
+    return _responsesRef
+        .where('event_id', isEqualTo: eventId)
+        .snapshots()
+        .map((snapshot) {
+      final List<EventAttendanceResponseModel> items = snapshot.docs
+          .map(EventAttendanceResponseModel.fromDocument)
+          .toList(growable: false);
+
+      items.sort((a, b) => a.employeeNumber.compareTo(b.employeeNumber));
+      return items;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // SUMMARIES
+  // ---------------------------------------------------------------------------
+
+  Future<EventAttendanceSummaryModel> rebuildEventSummary(String eventId) async {
+    final EventModel event = await getEventById(eventId) ??
+        (throw Exception('Event not found: $eventId'));
+
+    final QuerySnapshot<Map<String, dynamic>> query =
+        await _responsesRef.where('event_id', isEqualTo: eventId).get();
+
+    int householdsResponded = 0;
+    int householdsAttending = 0;
+    int householdsNotAttending = 0;
+
+    final Map<String, int> categoryTotals = <String, int>{
+      for (final String key in EventAttendanceSummaryModel.categoryKeys) key: 0,
+    };
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in query.docs) {
+      final EventAttendanceResponseModel response =
+          EventAttendanceResponseModel.fromDocument(doc);
+
+      householdsResponded++;
+
+      if (response.attendanceStatus ==
+          EventAttendanceResponseModel.statusAttending) {
+        householdsAttending++;
+      } else {
+        householdsNotAttending++;
+      }
+
+      for (final String key in EventAttendanceSummaryModel.categoryKeys) {
+        categoryTotals[key] =
+            (categoryTotals[key] ?? 0) + (response.counts[key] ?? 0);
+      }
+    }
+
+    final int householdsPending = event.targetCountEstimate > 0
+        ? event.targetCountEstimate - householdsResponded
+        : 0;
+
+    int grandTotal = 0;
+    for (final String key in EventAttendanceSummaryModel.categoryKeys) {
+      grandTotal += categoryTotals[key] ?? 0;
+    }
+
+    final Timestamp now = Timestamp.now();
+
+    final EventAttendanceSummaryModel summary = EventAttendanceSummaryModel(
+      documentId: eventId,
+      eventId: eventId,
+      lastAggregatedAt: now,
+      householdsResponded: householdsResponded,
+      householdsPending: householdsPending < 0 ? 0 : householdsPending,
+      householdsAttending: householdsAttending,
+      householdsNotAttending: householdsNotAttending,
+      categoryTotals: categoryTotals,
+      grandTotal: grandTotal,
+      rawData: const <String, dynamic>{},
+    );
+
+    final WriteBatch batch = _firestore.batch();
+
+    batch.set(
+      _summariesRef.doc(eventId),
+      summary.toMap(),
+      SetOptions(merge: true),
+    );
+
+    batch.update(_eventsRef.doc(eventId), <String, dynamic>{
+      'households_responded': householdsResponded,
+      'households_pending': householdsPending < 0 ? 0 : householdsPending,
+      'grand_total_attendees': grandTotal,
+      'updated_at': now,
+    });
+
+    await batch.commit();
+
+    return summary;
+  }
+
+  Future<EventAttendanceSummaryModel?> getEventSummary(String eventId) async {
+    final DocumentSnapshot<Map<String, dynamic>> snapshot =
+        await _summariesRef.doc(eventId).get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return EventAttendanceSummaryModel.fromDocument(snapshot);
+  }
+
+  Stream<EventAttendanceSummaryModel?> watchEventSummary(String eventId) {
+    return _summariesRef.doc(eventId).snapshots().map((snapshot) {
+      if (!snapshot.exists) {
+        return null;
+      }
+
+      return EventAttendanceSummaryModel.fromDocument(snapshot);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // REPORT HELPERS
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>> getPendingEmployees(String eventId) async {
+    final EventModel event = await getEventById(eventId) ??
+        (throw Exception('Event not found: $eventId'));
+
+    if (event.targetScope.trim() != 'all_active_employees') {
+      return <Map<String, dynamic>>[];
+    }
+
+    final List<_NotificationTarget> activeUsers = await _loadActiveUserTargets();
+    final QuerySnapshot<Map<String, dynamic>> responses =
+        await _responsesRef.where('event_id', isEqualTo: eventId).get();
+
+    final Set<String> respondedEmployeeNumbers = responses.docs
+        .map(EventAttendanceResponseModel.fromDocument)
+        .map((response) => response.employeeNumber.trim().toLowerCase())
+        .where((value) => value.isNotEmpty)
+        .toSet();
+
+    final List<Map<String, dynamic>> pending = activeUsers
+        .where((user) {
+          return !respondedEmployeeNumbers
+              .contains(user.employeeNumber.trim().toLowerCase());
+        })
+        .map((user) {
+          return <String, dynamic>{
+            'user_uid': user.userUid,
+            'employee_number': user.employeeNumber,
+            'employee_name': user.employeeName,
+          };
+        })
+        .toList(growable: false);
+
+    pending.sort((a, b) {
+      final String left = (a['employee_number'] ?? '').toString();
+      final String right = (b['employee_number'] ?? '').toString();
+      return left.compareTo(right);
+    });
+
+    return pending;
+  }
+
+  // ---------------------------------------------------------------------------
+  // INTERNAL HELPERS
+  // ---------------------------------------------------------------------------
+
+  Map<String, int> _normalizeResponseCounts(
+    EventAttendanceResponseModel response,
+  ) {
+    final Map<String, int> normalizedCounts = <String, int>{
+      for (final String key in EventAttendanceResponseModel.categoryKeys)
+        key: 0,
+    };
+
+    for (final String key in EventAttendanceResponseModel.categoryKeys) {
+      normalizedCounts[key] = response.counts[key] ?? 0;
+    }
+
+    if (response.attendanceStatus ==
+        EventAttendanceResponseModel.statusAttending) {
+      normalizedCounts['employee'] = 1;
+    } else {
+      for (final String key in EventAttendanceResponseModel.categoryKeys) {
+        normalizedCounts[key] = 0;
+      }
+    }
+
+    return normalizedCounts;
+  }
+
+  _SummaryComputation _applyResponseDeltaToSummary({
+    required EventAttendanceSummaryModel summary,
+    required EventModel event,
+    required EventAttendanceResponseModel? oldResponse,
+    required EventAttendanceResponseModel newResponse,
+  }) {
+    int householdsResponded = summary.householdsResponded;
+    int householdsAttending = summary.householdsAttending;
+    int householdsNotAttending = summary.householdsNotAttending;
+
+    final Map<String, int> categoryTotals = <String, int>{
+      for (final String key in EventAttendanceSummaryModel.categoryKeys)
+        key: summary.categoryTotals[key] ?? 0,
+    };
+
+    if (oldResponse == null) {
+      householdsResponded += 1;
+    } else {
+      if (oldResponse.attendanceStatus ==
+          EventAttendanceResponseModel.statusAttending) {
+        householdsAttending -= 1;
+      } else {
+        householdsNotAttending -= 1;
+      }
+
+      for (final String key in EventAttendanceSummaryModel.categoryKeys) {
+        categoryTotals[key] =
+            (categoryTotals[key] ?? 0) - (oldResponse.counts[key] ?? 0);
+      }
+    }
+
+    if (newResponse.attendanceStatus ==
+        EventAttendanceResponseModel.statusAttending) {
+      householdsAttending += 1;
+    } else {
+      householdsNotAttending += 1;
+    }
+
+    for (final String key in EventAttendanceSummaryModel.categoryKeys) {
+      categoryTotals[key] =
+          (categoryTotals[key] ?? 0) + (newResponse.counts[key] ?? 0);
+
+      if ((categoryTotals[key] ?? 0) < 0) {
+        categoryTotals[key] = 0;
+      }
+    }
+
+    if (householdsResponded < 0) {
+      householdsResponded = 0;
+    }
+    if (householdsAttending < 0) {
+      householdsAttending = 0;
+    }
+    if (householdsNotAttending < 0) {
+      householdsNotAttending = 0;
+    }
+
+    int grandTotal = 0;
+    for (final String key in EventAttendanceSummaryModel.categoryKeys) {
+      grandTotal += categoryTotals[key] ?? 0;
+    }
+
+    final int householdsPending = event.targetCountEstimate > 0
+        ? event.targetCountEstimate - householdsResponded
+        : 0;
+
+    final Timestamp now = Timestamp.now();
+
+    final EventAttendanceSummaryModel updatedSummary =
+        EventAttendanceSummaryModel(
+      documentId: summary.documentId,
+      eventId: summary.eventId,
+      lastAggregatedAt: now,
+      householdsResponded: householdsResponded,
+      householdsPending: householdsPending < 0 ? 0 : householdsPending,
+      householdsAttending: householdsAttending,
+      householdsNotAttending: householdsNotAttending,
+      categoryTotals: categoryTotals,
+      grandTotal: grandTotal,
+      rawData: summary.rawData,
+    );
+
+    return _SummaryComputation(
+      summary: updatedSummary,
+    );
+  }
+
+  Future<List<EventNoteSnapshot>> _buildNotesSnapshot(
+    List<String> noteIds,
+  ) async {
+    if (noteIds.isEmpty) {
+      return const <EventNoteSnapshot>[];
+    }
+
+    final List<EventNoteSnapshot> snapshots = <EventNoteSnapshot>[];
+
+    for (final String rawId in noteIds) {
+      final String noteId = rawId.trim();
+      if (noteId.isEmpty) {
+        continue;
+      }
+
+      final DocumentSnapshot<Map<String, dynamic>> noteDoc =
+          await _notesRef.doc(noteId).get();
+
+      if (!noteDoc.exists) {
+        continue;
+      }
+
+      final EventNoteTemplateModel note =
+          EventNoteTemplateModel.fromDocument(noteDoc);
+
+      snapshots.add(
+        EventNoteSnapshot(
+          noteId: note.documentId,
+          title: note.title,
+          body: note.body,
+        ),
+      );
+    }
+
+    return snapshots;
+  }
+
+  Future<void> _lockAllResponsesForEvent(String eventId) async {
+    final QuerySnapshot<Map<String, dynamic>> query =
+        await _responsesRef.where('event_id', isEqualTo: eventId).get();
+
+    if (query.docs.isEmpty) {
+      return;
+    }
+
+    final WriteBatch batch = _firestore.batch();
+    final Timestamp now = Timestamp.now();
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in query.docs) {
+      batch.update(doc.reference, <String, dynamic>{
+        'submission_locked': true,
+        'updated_at': now,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> _createEventInvitationNotifications(EventModel event) async {
+    final List<_NotificationTarget> targets = await _loadActiveUserTargets();
+
+    if (targets.isEmpty) {
+      return;
+    }
+
+    final DocumentReference<Map<String, dynamic>> notificationDoc =
+        _notificationsRef.doc();
+    final Timestamp now = Timestamp.now();
+
+    final String title = event.title.trim().isEmpty
+        ? 'New Event Invitation'
+        : event.title.trim();
+
+    final String body = _buildNotificationBody(event);
+
+    final WriteBatch batch = _firestore.batch();
+
+    batch.set(notificationDoc, <String, dynamic>{
+      'notification_layer': 'administrative',
+      'type': 'event_invitation',
+      'title': title,
+      'body': body,
+      'reference_type': 'event',
+      'reference_id': event.eventId,
+      'target_scope': event.targetScope,
+      'show_popup_on_publish': event.showPopupOnPublish,
+      'status': 'active',
+      'created_at': now,
+      'updated_at': now,
+      'published_at': now,
+    });
+
+    for (final _NotificationTarget target in targets) {
+      final DocumentReference<Map<String, dynamic>> deliveryDoc =
+          _notificationDeliveriesRef.doc();
+
+      batch.set(deliveryDoc, <String, dynamic>{
+        'notification_id': notificationDoc.id,
+        'user_uid': target.userUid,
+        'employee_number': target.employeeNumber,
+        'in_app_status': 'unread',
+        'is_read': false,
+        'email_status': 'not_applicable',
+        'push_status': 'not_applicable',
+        'reference_type': 'event',
+        'reference_id': event.eventId,
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  String _buildNotificationBody(EventModel event) {
+    final String cutoffText = event.responseCutoffDateTime == null
+        ? 'Please mark attendance.'
+        : 'Please mark attendance before ${event.responseCutoffDateTime}.';
+
+    if (event.venue.trim().isEmpty) {
+      return cutoffText;
+    }
+
+    return '${event.venue.trim()} — $cutoffText';
+  }
+
+  Future<List<_NotificationTarget>> _loadActiveUserTargets() async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _usersRef.get();
+
+    final List<_NotificationTarget> targets = <_NotificationTarget>[];
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+        in snapshot.docs) {
+      final Map<String, dynamic> data = doc.data();
+
+      final String userUid = _readString(
+        data['uid'],
+        fallback: doc.id,
+      );
+
+      final String employeeNumber = _readString(data['employee_number']);
+      final String employeeName = _readString(data['name']);
+
+      if (userUid.isEmpty || employeeNumber.isEmpty) {
+        continue;
+      }
+
+      final bool approved = _looksApproved(data);
+      final bool active = _looksActive(data);
+
+      if (!approved || !active) {
+        continue;
+      }
+
+      targets.add(
+        _NotificationTarget(
+          userUid: userUid,
+          employeeNumber: employeeNumber,
+          employeeName: employeeName,
+        ),
+      );
+    }
+
+    targets.sort((a, b) => a.employeeNumber.compareTo(b.employeeNumber));
+    return targets;
+  }
+
+  bool _looksApproved(Map<String, dynamic> data) {
+    final String approvalStatus =
+        _readString(data['approval_status']).toLowerCase();
+    final String reviewStatus =
+        _readString(data['review_status']).toLowerCase();
+
+    if (approvalStatus.isNotEmpty) {
+      return approvalStatus == 'approved' ||
+          approvalStatus == 'active' ||
+          approvalStatus == 'accepted';
+    }
+
+    if (reviewStatus.isNotEmpty) {
+      return reviewStatus == 'approved' ||
+          reviewStatus == 'active' ||
+          reviewStatus == 'accepted';
+    }
+
+    return true;
+  }
+
+  bool _looksActive(Map<String, dynamic> data) {
+    final String status = _readString(data['status']).toLowerCase();
+
+    if (status.isEmpty) {
+      return true;
+    }
+
+    return status == 'active' ||
+        status == 'approved' ||
+        status == 'enabled';
+  }
+
+  int _sortEventsForAdmin(EventModel a, EventModel b) {
+    final Map<String, int> order = <String, int>{
+      EventModel.statusPublished: 0,
+      EventModel.statusDraft: 1,
+      EventModel.statusClosed: 2,
+      EventModel.statusCancelled: 3,
+    };
+
+    final int left = order[a.status] ?? 99;
+    final int right = order[b.status] ?? 99;
+
+    if (left != right) {
+      return left.compareTo(right);
+    }
+
+    final DateTime aTime = a.startDateTime ??
+        a.eventDateTime ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final DateTime bTime = b.startDateTime ??
+        b.eventDateTime ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+
+    return bTime.compareTo(aTime);
+  }
+
+  int _sortEventsForEmployee(EventModel a, EventModel b) {
+    final int priorityA = a.isPublished ? 0 : 1;
+    final int priorityB = b.isPublished ? 0 : 1;
+
+    if (priorityA != priorityB) {
+      return priorityA.compareTo(priorityB);
+    }
+
+    final DateTime aTime = a.startDateTime ??
+        a.eventDateTime ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+    final DateTime bTime = b.startDateTime ??
+        b.eventDateTime ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+
+    return aTime.compareTo(bTime);
+  }
+
+  void _validateEventDocumentId(String eventId) {
+    if (eventId.trim().isEmpty) {
+      throw Exception('Event ID cannot be empty.');
+    }
+  }
+
+  String _readString(dynamic value, {String fallback = ''}) {
+    return (value?.toString() ?? fallback).trim();
+  }
+}
+
+class _NotificationTarget {
+  const _NotificationTarget({
+    required this.userUid,
+    required this.employeeNumber,
+    required this.employeeName,
+  });
+
+  final String userUid;
+  final String employeeNumber;
+  final String employeeName;
+}
+
+class _SummaryComputation {
+  const _SummaryComputation({
+    required this.summary,
+  });
+
+  final EventAttendanceSummaryModel summary;
+}
+
+
+
+==================================================
+FILE: lib/services/meal_cost_reporting_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealCostReportingService {
+  MealCostReportingService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  Timestamp _startOfDay(DateTime date) {
+    return Timestamp.fromDate(_normalizeDate(date));
+  }
+
+  Timestamp _startOfNextDay(DateTime date) {
+    return Timestamp.fromDate(_normalizeDate(date).add(const Duration(days: 1)));
+  }
+
+  int _readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double _readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  String _readText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  double _resolveAmount({
+    required dynamic explicitAmount,
+    required dynamic unitRate,
+    required int quantity,
+  }) {
+    final amount = _readDouble(explicitAmount);
+    if (amount > 0) {
+      return amount;
+    }
+
+    final rate = _readDouble(unitRate);
+    if (rate > 0 && quantity > 0) {
+      return rate * quantity;
+    }
+
+    return 0.0;
+  }
+
+  String _extractItemName(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_name']),
+      _readText(data['option_label']),
+      _readText(data['item_name']),
+      _readText(data['menu_option_key']),
+    ]);
+  }
+
+  String _extractMenuItemId(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_id']),
+      _readText(data['menu_item_id']),
+      _readText(data['menu_option_key']),
+      _readText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  String _extractCategory(Map<String, dynamic> data) {
+    final menuSnapshot = _asMap(data['menu_snapshot']);
+    return _firstNonEmpty([
+      _readText(menuSnapshot['item_category']),
+      _readText(data['category']),
+      _readText(data['meal_type']),
+    ]);
+  }
+
+  String _extractSubjectType(Map<String, dynamic> data) {
+    final reservationCategory =
+        _readText(data['reservation_category']).toLowerCase();
+    final bookingSubjectType =
+        _readText(data['booking_subject_type']).toLowerCase();
+
+    if (reservationCategory == 'official_guest' ||
+        bookingSubjectType == 'official_guest') {
+      return 'guest';
+    }
+    return 'employee';
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
+  }
+
+  Future<MealCostDashboardData> getDailyDashboard(DateTime date) async {
+    final normalizedDate = _normalizeDate(date);
+
+    final snapshot = await _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: _startOfDay(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: _startOfNextDay(normalizedDate),
+        )
+        .get();
+
+    final mealTypeSummary = <String, MealTypeCostSummaryBuilder>{
+      'breakfast': MealTypeCostSummaryBuilder(mealType: 'breakfast'),
+      'lunch': MealTypeCostSummaryBuilder(mealType: 'lunch'),
+      'dinner': MealTypeCostSummaryBuilder(mealType: 'dinner'),
+    };
+
+    final subjectSummary = <String, SubjectCostSummaryBuilder>{
+      'employee': SubjectCostSummaryBuilder(subjectType: 'employee'),
+      'guest': SubjectCostSummaryBuilder(subjectType: 'guest'),
+    };
+
+    final itemSummaryMap = <String, ItemCostSummaryBuilder>{};
+
+    int totalLines = 0;
+    int activeLines = 0;
+    int cancelledLines = 0;
+    int totalQuantity = 0;
+    double totalAmount = 0;
+    int ratedLines = 0;
+    int unratedLines = 0;
+
+    for (final doc in snapshot.docs) {
+      totalLines += 1;
+
+      final data = doc.data();
+      final status = _readText(data['status']).toLowerCase();
+      final quantity = _readInt(data['quantity']);
+      final unitRate = _readDouble(data['unit_rate']);
+      final amount = _resolveAmount(
+        explicitAmount: data['amount'],
+        unitRate: data['unit_rate'],
+        quantity: quantity,
+      );
+      final mealType = _readText(data['meal_type']).toLowerCase();
+      final itemName = _extractItemName(data);
+      final menuItemId = _extractMenuItemId(data);
+      final category = _extractCategory(data);
+      final subjectType = _extractSubjectType(data);
+
+      if (status == 'cancelled') {
+        cancelledLines += 1;
+        continue;
+      }
+
+      activeLines += 1;
+      totalQuantity += quantity;
+      totalAmount += amount;
+
+      final hasRate = unitRate > 0 || amount > 0;
+      if (hasRate) {
+        ratedLines += 1;
+      } else {
+        unratedLines += 1;
+      }
+
+      final mealBuilder = mealTypeSummary.putIfAbsent(
+        mealType,
+        () => MealTypeCostSummaryBuilder(mealType: mealType),
+      );
+      mealBuilder.lineCount += 1;
+      mealBuilder.totalQuantity += quantity;
+      mealBuilder.totalAmount += amount;
+
+      final subjectBuilder = subjectSummary.putIfAbsent(
+        subjectType,
+        () => SubjectCostSummaryBuilder(subjectType: subjectType),
+      );
+      subjectBuilder.lineCount += 1;
+      subjectBuilder.totalQuantity += quantity;
+      subjectBuilder.totalAmount += amount;
+
+      final itemKey = menuItemId.isNotEmpty
+          ? menuItemId.toLowerCase()
+          : itemName.toLowerCase();
+
+      final itemBuilder = itemSummaryMap.putIfAbsent(
+        itemKey,
+        () => ItemCostSummaryBuilder(
+          menuItemId: menuItemId,
+          itemName: itemName,
+          category: category,
+        ),
+      );
+      itemBuilder.lineCount += 1;
+      itemBuilder.totalQuantity += quantity;
+      itemBuilder.totalAmount += amount;
+      if (unitRate > 0) {
+        itemBuilder.lastUnitRate = unitRate;
+      }
+      if (mealType.isNotEmpty) {
+        itemBuilder.mealTypes.add(mealType);
+      }
+    }
+
+    final mealSummaries = mealTypeSummary.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+
+    final subjectSummaries = subjectSummary.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.subjectType.compareTo(b.subjectType));
+
+    final itemSummaries = itemSummaryMap.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+
+    final averageCostPerMeal =
+        totalQuantity > 0 ? (totalAmount / totalQuantity) : 0.0;
+
+    return MealCostDashboardData(
+      date: normalizedDate,
+      totalLines: totalLines,
+      activeLines: activeLines,
+      cancelledLines: cancelledLines,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      averageCostPerMeal: averageCostPerMeal,
+      ratedLines: ratedLines,
+      unratedLines: unratedLines,
+      mealTypeSummaries: mealSummaries,
+      subjectSummaries: subjectSummaries,
+      itemSummaries: itemSummaries,
+    );
+  }
+}
+
+class MealCostDashboardData {
+  final DateTime date;
+  final int totalLines;
+  final int activeLines;
+  final int cancelledLines;
+  final int totalQuantity;
+  final double totalAmount;
+  final double averageCostPerMeal;
+  final int ratedLines;
+  final int unratedLines;
+  final List<MealTypeCostSummary> mealTypeSummaries;
+  final List<SubjectCostSummary> subjectSummaries;
+  final List<ItemCostSummary> itemSummaries;
+
+  const MealCostDashboardData({
+    required this.date,
+    required this.totalLines,
+    required this.activeLines,
+    required this.cancelledLines,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.averageCostPerMeal,
+    required this.ratedLines,
+    required this.unratedLines,
+    required this.mealTypeSummaries,
+    required this.subjectSummaries,
+    required this.itemSummaries,
+  });
+}
+
+class MealTypeCostSummary {
+  final String mealType;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+
+  const MealTypeCostSummary({
+    required this.mealType,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+
+  int get displayOrder {
+    switch (mealType) {
+      case 'breakfast':
+        return 1;
+      case 'lunch':
+        return 2;
+      case 'dinner':
+        return 3;
+      default:
+        return 99;
+    }
+  }
+}
+
+class SubjectCostSummary {
+  final String subjectType;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+
+  const SubjectCostSummary({
+    required this.subjectType,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+}
+
+class ItemCostSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int lineCount;
+  final int totalQuantity;
+  final double totalAmount;
+  final double lastUnitRate;
+  final List<String> mealTypes;
+
+  const ItemCostSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.lineCount,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.lastUnitRate,
+    required this.mealTypes,
+  });
+
+  double get averageCostPerUnit =>
+      totalQuantity > 0 ? totalAmount / totalQuantity : 0.0;
+}
+
+class MealTypeCostSummaryBuilder {
+  final String mealType;
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+
+  MealTypeCostSummaryBuilder({required this.mealType});
+
+  MealTypeCostSummary build() {
+    return MealTypeCostSummary(
+      mealType: mealType,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+    );
+  }
+}
+
+class SubjectCostSummaryBuilder {
+  final String subjectType;
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+
+  SubjectCostSummaryBuilder({required this.subjectType});
+
+  SubjectCostSummary build() {
+    return SubjectCostSummary(
+      subjectType: subjectType,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+    );
+  }
+}
+
+class ItemCostSummaryBuilder {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+
+  int lineCount = 0;
+  int totalQuantity = 0;
+  double totalAmount = 0;
+  double lastUnitRate = 0;
+  final Set<String> mealTypes = <String>{};
+
+  ItemCostSummaryBuilder({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+  });
+
+  ItemCostSummary build() {
+    final sortedMealTypes = mealTypes.toList()..sort();
+
+    return ItemCostSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      lineCount: lineCount,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      lastUnitRate: lastUnitRate,
+      mealTypes: sortedMealTypes,
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/meal_feedback_service.dart
+==================================================
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealFeedbackService {
+  MealFeedbackService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _feedbackRef =>
+      _firestore.collection('meal_feedback');
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  Timestamp startOfDay(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
+  Timestamp startOfNextDay(DateTime value) {
+    return Timestamp.fromDate(
+      normalizeDate(value).add(const Duration(days: 1)),
+    );
+  }
+
+  String normalizeMealType(String mealType) {
+    return mealType.trim().toLowerCase();
+  }
+
+  String normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  int readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
+  }
+
+  Map<String, dynamic> asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String extractMenuItemId(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_id']),
+      normalizeText(reservationData['menu_item_id']),
+      normalizeText(reservationData['menu_option_key']),
+      normalizeText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  String extractItemName(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_name']),
+      normalizeText(reservationData['item_name']),
+      normalizeText(reservationData['option_label']),
+      normalizeText(menuSnapshot['option_label']),
+      extractMenuItemId(reservationData),
+    ]);
+  }
+
+  String extractCategory(Map<String, dynamic> reservationData) {
+    final menuSnapshot = asMap(reservationData['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_category']),
+      normalizeText(reservationData['category']),
+      normalizeText(reservationData['meal_type']),
+    ]);
+  }
+
+  String buildFeedbackDocumentId({
+    required String reservationId,
+    required String submittedByUid,
+  }) {
+    final safeReservationId = reservationId.trim().replaceAll('/', '_');
+    final safeUid = submittedByUid.trim().replaceAll('/', '_');
+    return '${safeReservationId}__$safeUid';
+  }
+
+  Future<bool> hasFeedbackForReservation({
+    required String reservationId,
+    required String submittedByUid,
+  }) async {
+    final docId = buildFeedbackDocumentId(
+      reservationId: reservationId,
+      submittedByUid: submittedByUid,
+    );
+
+    final doc = await _feedbackRef.doc(docId).get();
+    return doc.exists;
+  }
+
+  Future<void> submitFeedback({
+    required String reservationId,
+    required String submittedByUid,
+    required String submittedByName,
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required String menuItemId,
+    required String itemName,
+    required String category,
+    required int rating,
+    required String feedbackText,
+    String issueType = '',
+    bool isAnonymous = false,
+    Map<String, dynamic>? extraFields,
+  }) async {
+    final normalizedReservationId = reservationId.trim();
+    final normalizedSubmittedByUid = submittedByUid.trim();
+    final normalizedSubmittedByName = submittedByName.trim();
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedEmployeeName = employeeName.trim();
+    final normalizedMealType = normalizeMealType(mealType);
+    final normalizedMenuItemId = menuItemId.trim();
+    final normalizedItemName = itemName.trim();
+    final normalizedCategory = category.trim();
+    final normalizedFeedbackText = feedbackText.trim();
+    final normalizedIssueType = issueType.trim().toLowerCase();
+    final normalizedDate = normalizeDate(reservationDate);
+
+    if (normalizedReservationId.isEmpty) {
+      throw ArgumentError('reservationId is required.');
+    }
+    if (normalizedSubmittedByUid.isEmpty) {
+      throw ArgumentError('submittedByUid is required.');
+    }
+    if (normalizedMealType.isEmpty) {
+      throw ArgumentError('mealType is required.');
+    }
+    if (normalizedMenuItemId.isEmpty) {
+      throw ArgumentError('menuItemId is required.');
+    }
+    if (normalizedItemName.isEmpty) {
+      throw ArgumentError('itemName is required.');
+    }
+    if (rating < 1 || rating > 5) {
+      throw ArgumentError('rating must be between 1 and 5.');
+    }
+
+    final docId = buildFeedbackDocumentId(
+      reservationId: normalizedReservationId,
+      submittedByUid: normalizedSubmittedByUid,
+    );
+
+    final existing = await _feedbackRef.doc(docId).get();
+    if (existing.exists) {
+      throw Exception('Feedback already submitted for this meal.');
+    }
+
+    final now = Timestamp.now();
+
+    final payload = <String, dynamic>{
+      'reservation_id': normalizedReservationId,
+      'submitted_by_uid': normalizedSubmittedByUid,
+      'submitted_by_name': isAnonymous ? '' : normalizedSubmittedByName,
+      'employee_number': isAnonymous ? '' : normalizedEmployeeNumber,
+      'employee_name': isAnonymous ? '' : normalizedEmployeeName,
+      'is_anonymous': isAnonymous,
+      'reservation_date': Timestamp.fromDate(normalizedDate),
+      'meal_type': normalizedMealType,
+      'menu_item_id': normalizedMenuItemId,
+      'item_name': normalizedItemName,
+      'category': normalizedCategory,
+      'rating': rating,
+      'feedback_text': normalizedFeedbackText,
+      'issue_type': normalizedIssueType,
+      'status': 'open',
+      'submitted_at': now,
+      'created_at': now,
+      'updated_at': now,
+    };
+
+    if (extraFields != null && extraFields.isNotEmpty) {
+      payload.addAll(extraFields);
+    }
+
+    await _feedbackRef.doc(docId).set(payload, SetOptions(merge: true));
+  }
+
+  Future<void> closeFeedback({
+    required String feedbackId,
+    required String closedByUid,
+    required String closedByName,
+    String resolutionNote = '',
+  }) async {
+    await _feedbackRef.doc(feedbackId).update({
+      'status': 'closed',
+      'closed_by_uid': closedByUid.trim(),
+      'closed_by_name': closedByName.trim(),
+      'resolution_note': resolutionNote.trim(),
+      'closed_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+    });
+  }
+
+  Future<List<MealFeedbackEntry>> getFeedbackForDate(DateTime date) async {
+    final snapshot = await _feedbackRef
+        .where('reservation_date', isGreaterThanOrEqualTo: startOfDay(date))
+        .where('reservation_date', isLessThan: startOfNextDay(date))
+        .get();
+
+    final items = snapshot.docs
+        .map((doc) => MealFeedbackEntry.fromDocument(doc))
+        .toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    return items;
+  }
+
+  Future<List<MealFeedbackEntry>> getOpenFeedback({DateTime? forDate}) async {
+    Query<Map<String, dynamic>> query =
+        _feedbackRef.where('status', isEqualTo: 'open');
+
+    if (forDate != null) {
+      query = query
+          .where(
+            'reservation_date',
+            isGreaterThanOrEqualTo: startOfDay(forDate),
+          )
+          .where(
+            'reservation_date',
+            isLessThan: startOfNextDay(forDate),
+          );
+    }
+
+    final snapshot = await query.get();
+
+    final items = snapshot.docs
+        .map((doc) => MealFeedbackEntry.fromDocument(doc))
+        .toList()
+      ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+
+    return items;
+  }
+
+  Future<List<FeedbackEligibleReservation>> getFeedbackEligibleReservations({
+    required String employeeNumber,
+    required DateTime reservationDate,
+    String? mealType,
+    String? submittedByUid,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    Query<Map<String, dynamic>> query = _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: startOfDay(reservationDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: startOfNextDay(reservationDate),
+        );
+
+    if (mealType != null && mealType.trim().isNotEmpty) {
+      query = query.where('meal_type', isEqualTo: normalizeMealType(mealType));
+    }
+
+    final reservationSnapshot = await query.get();
+
+    if (reservationSnapshot.docs.isEmpty) {
+      return <FeedbackEligibleReservation>[];
+    }
+
+    final result = <FeedbackEligibleReservation>[];
+
+    for (final doc in reservationSnapshot.docs) {
+      final data = doc.data();
+
+      final status = normalizeText(data['status']).toLowerCase();
+      final isIssued = data['is_issued'] == true || status == 'issued';
+
+      if (status == 'cancelled') {
+        continue;
+      }
+
+      final alreadySubmitted = submittedByUid == null || submittedByUid.trim().isEmpty
+          ? false
+          : await hasFeedbackForReservation(
+              reservationId: doc.id,
+              submittedByUid: submittedByUid.trim(),
+            );
+
+      result.add(
+        FeedbackEligibleReservation(
+          reservationId: doc.id,
+          reservationDate: _toDate(data['reservation_date']) ?? reservationDate,
+          mealType: normalizeMealType(data['meal_type']),
+          menuItemId: extractMenuItemId(data),
+          itemName: extractItemName(data),
+          category: extractCategory(data),
+          diningMode: normalizeText(data['dining_mode']),
+          quantity: readInt(data['quantity']),
+          status: status,
+          isIssued: isIssued,
+          alreadySubmitted: alreadySubmitted,
+        ),
+      );
+    }
+
+    result.sort((a, b) => a.itemName.toLowerCase().compareTo(
+          b.itemName.toLowerCase(),
+        ));
+
+    return result;
+  }
+
+  Future<MealFeedbackSummary> getFeedbackSummaryForDate(DateTime date) async {
+    final items = await getFeedbackForDate(date);
+
+    if (items.isEmpty) {
+      return MealFeedbackSummary.empty(date: normalizeDate(date));
+    }
+
+    int totalCount = 0;
+    double ratingSum = 0.0;
+    int openCount = 0;
+    int closedCount = 0;
+
+    final ratingBuckets = <int, int>{1: 0, 2: 0, 3: 0, 4: 0, 5: 0};
+    final itemSummaryMap = <String, FeedbackItemSummaryBuilder>{};
+
+    for (final item in items) {
+      totalCount += 1;
+      ratingSum += item.rating;
+
+      if (item.status == 'closed') {
+        closedCount += 1;
+      } else {
+        openCount += 1;
+      }
+
+      ratingBuckets[item.rating] = (ratingBuckets[item.rating] ?? 0) + 1;
+
+      final key = item.menuItemId.isNotEmpty
+          ? item.menuItemId.toLowerCase()
+          : item.itemName.toLowerCase();
+
+      final builder = itemSummaryMap.putIfAbsent(
+        key,
+        () => FeedbackItemSummaryBuilder(
+          menuItemId: item.menuItemId,
+          itemName: item.itemName,
+          category: item.category,
+        ),
+      );
+
+      builder.totalCount += 1;
+      builder.ratingSum += item.rating.toDouble();
+      builder.issueTypes.add(item.issueType);
+    }
+
+    final itemSummaries = itemSummaryMap.values
+        .map((e) => e.build())
+        .toList()
+      ..sort((a, b) => a.averageRating.compareTo(b.averageRating));
+
+    return MealFeedbackSummary(
+      date: normalizeDate(date),
+      totalCount: totalCount,
+      averageRating: totalCount > 0 ? ratingSum / totalCount : 0.0,
+      openCount: openCount,
+      closedCount: closedCount,
+      ratingBuckets: ratingBuckets,
+      itemSummaries: itemSummaries,
+    );
+  }
+
+  DateTime? _toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+}
+
+class MealFeedbackEntry {
+  final String id;
+  final String reservationId;
+  final String submittedByUid;
+  final String submittedByName;
+  final String employeeNumber;
+  final String employeeName;
+  final bool isAnonymous;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int rating;
+  final String feedbackText;
+  final String issueType;
+  final String status;
+  final DateTime submittedAt;
+  final DateTime? closedAt;
+  final String closedByUid;
+  final String closedByName;
+  final String resolutionNote;
+
+  const MealFeedbackEntry({
+    required this.id,
+    required this.reservationId,
+    required this.submittedByUid,
+    required this.submittedByName,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.isAnonymous,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.rating,
+    required this.feedbackText,
+    required this.issueType,
+    required this.status,
+    required this.submittedAt,
+    this.closedAt,
+    required this.closedByUid,
+    required this.closedByName,
+    required this.resolutionNote,
+  });
+
+  factory MealFeedbackEntry.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? <String, dynamic>{};
+
+    return MealFeedbackEntry(
+      id: doc.id,
+      reservationId: (data['reservation_id'] ?? '').toString().trim(),
+      submittedByUid: (data['submitted_by_uid'] ?? '').toString().trim(),
+      submittedByName: (data['submitted_by_name'] ?? '').toString().trim(),
+      employeeNumber: (data['employee_number'] ?? '').toString().trim(),
+      employeeName: (data['employee_name'] ?? '').toString().trim(),
+      isAnonymous: data['is_anonymous'] == true,
+      reservationDate: _toDate(data['reservation_date']) ?? DateTime.now(),
+      mealType: (data['meal_type'] ?? '').toString().trim().toLowerCase(),
+      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      itemName: (data['item_name'] ?? '').toString().trim(),
+      category: (data['category'] ?? '').toString().trim(),
+      rating: _toInt(data['rating']),
+      feedbackText: (data['feedback_text'] ?? '').toString().trim(),
+      issueType: (data['issue_type'] ?? '').toString().trim(),
+      status: (data['status'] ?? 'open').toString().trim().toLowerCase(),
+      submittedAt: _toDate(data['submitted_at']) ?? DateTime.now(),
+      closedAt: _toDate(data['closed_at']),
+      closedByUid: (data['closed_by_uid'] ?? '').toString().trim(),
+      closedByName: (data['closed_by_name'] ?? '').toString().trim(),
+      resolutionNote: (data['resolution_note'] ?? '').toString().trim(),
+    );
+  }
+
+  static DateTime? _toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+}
+
+class FeedbackEligibleReservation {
+  final String reservationId;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String diningMode;
+  final int quantity;
+  final String status;
+  final bool isIssued;
+  final bool alreadySubmitted;
+
+  const FeedbackEligibleReservation({
+    required this.reservationId,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.diningMode,
+    required this.quantity,
+    required this.status,
+    required this.isIssued,
+    required this.alreadySubmitted,
+  });
+}
+
+class MealFeedbackSummary {
+  final DateTime date;
+  final int totalCount;
+  final double averageRating;
+  final int openCount;
+  final int closedCount;
+  final Map<int, int> ratingBuckets;
+  final List<FeedbackItemSummary> itemSummaries;
+
+  const MealFeedbackSummary({
+    required this.date,
+    required this.totalCount,
+    required this.averageRating,
+    required this.openCount,
+    required this.closedCount,
+    required this.ratingBuckets,
+    required this.itemSummaries,
+  });
+
+  factory MealFeedbackSummary.empty({required DateTime date}) {
+    return MealFeedbackSummary(
+      date: date,
+      totalCount: 0,
+      averageRating: 0.0,
+      openCount: 0,
+      closedCount: 0,
+      ratingBuckets: const {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+      itemSummaries: const [],
+    );
+  }
+}
+
+class FeedbackItemSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final int totalCount;
+  final double averageRating;
+  final List<String> issueTypes;
+
+  const FeedbackItemSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.totalCount,
+    required this.averageRating,
+    required this.issueTypes,
+  });
+}
+
+class FeedbackItemSummaryBuilder {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+
+  int totalCount = 0;
+  double ratingSum = 0.0;
+  final Set<String> issueTypes = <String>{};
+
+  FeedbackItemSummaryBuilder({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+  });
+
+  FeedbackItemSummary build() {
+    final cleanedIssues = issueTypes
+        .where((e) => e.trim().isNotEmpty)
+        .toList()
+      ..sort();
+
+    return FeedbackItemSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      totalCount: totalCount,
+      averageRating: totalCount > 0 ? ratingSum / totalCount : 0.0,
+      issueTypes: cleanedIssues,
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/meal_rate_service.dart
+==================================================
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MealRateService {
+  MealRateService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _mealRatesRef =>
+      _firestore.collection('meal_rates');
+
+  CollectionReference<Map<String, dynamic>> get _mealReservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  static const String statusActive = 'active';
+  static const String statusCancelled = 'cancelled';
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime nextDate(DateTime value) {
+    final normalized = normalizeDate(value);
+    return normalized.add(const Duration(days: 1));
+  }
+
+  Timestamp normalizeTimestamp(DateTime value) {
+    return Timestamp.fromDate(normalizeDate(value));
+  }
+
+  String buildDateKey(DateTime value) {
+    final normalized = normalizeDate(value);
+    final year = normalized.year.toString().padLeft(4, '0');
+    final month = normalized.month.toString().padLeft(2, '0');
+    final day = normalized.day.toString().padLeft(2, '0');
+    return '$year$month$day';
+  }
+
+  String buildRateDocumentId({
+    required DateTime rateDate,
+    required String menuItemId,
+  }) {
+    final dateKey = buildDateKey(rateDate);
+    final normalizedMenuItemId = _sanitizeDocKeyComponent(menuItemId);
+    return '${dateKey}__$normalizedMenuItemId';
+  }
+
+  Stream<List<MealRateEntry>> watchRatesForDate(DateTime rateDate) {
+    final start = Timestamp.fromDate(normalizeDate(rateDate));
+    final end = Timestamp.fromDate(nextDate(rateDate));
+
+    return _mealRatesRef
+        .where('rate_date', isGreaterThanOrEqualTo: start)
+        .where('rate_date', isLessThan: end)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => MealRateEntry.fromDocument(doc))
+              .toList()
+            ..sort(
+              (a, b) => a.itemName.toLowerCase().compareTo(
+                    b.itemName.toLowerCase(),
+                  ),
+            ),
+        );
+  }
+
+  Future<List<MealRateEntry>> getRatesForDate(DateTime rateDate) async {
+    final start = Timestamp.fromDate(normalizeDate(rateDate));
+    final end = Timestamp.fromDate(nextDate(rateDate));
+
+    final query = await _mealRatesRef
+        .where('rate_date', isGreaterThanOrEqualTo: start)
+        .where('rate_date', isLessThan: end)
+        .get();
+
+    final entries = query.docs
+        .map((doc) => MealRateEntry.fromDocument(doc))
+        .toList();
+
+    entries.sort(
+      (a, b) => a.itemName.toLowerCase().compareTo(
+            b.itemName.toLowerCase(),
+          ),
+    );
+
+    return entries;
+  }
+
+  Future<MealRateEntry?> getRateForDateAndMenuItem({
+    required DateTime rateDate,
+    required String menuItemId,
+  }) async {
+    final normalizedMenuItemId = menuItemId.trim();
+    if (normalizedMenuItemId.isEmpty) {
+      return null;
+    }
+
+    final docId = buildRateDocumentId(
+      rateDate: rateDate,
+      menuItemId: normalizedMenuItemId,
+    );
+
+    final doc = await _mealRatesRef.doc(docId).get();
+    if (!doc.exists || doc.data() == null) {
+      return null;
+    }
+
+    return MealRateEntry.fromDocument(doc);
+  }
+
+  Future<void> upsertRate({
+    required DateTime rateDate,
+    required String menuItemId,
+    required String itemName,
+    required num unitRate,
+    String? category,
+    bool isActive = true,
+    String? enteredByUid,
+    String? enteredByName,
+  }) async {
+    final normalizedMenuItemId = menuItemId.trim();
+    final normalizedItemName = itemName.trim();
+    final normalizedCategory = (category ?? '').trim();
+
+    if (normalizedMenuItemId.isEmpty) {
+      throw ArgumentError('menuItemId is required.');
+    }
+    if (normalizedItemName.isEmpty) {
+      throw ArgumentError('itemName is required.');
+    }
+
+    final parsedRate = unitRate.toDouble();
+    if (parsedRate < 0) {
+      throw ArgumentError('unitRate cannot be negative.');
+    }
+
+    final normalizedRateDate = normalizeDate(rateDate);
+    final docId = buildRateDocumentId(
+      rateDate: normalizedRateDate,
+      menuItemId: normalizedMenuItemId,
+    );
+
+    final docRef = _mealRatesRef.doc(docId);
+    final existing = await docRef.get();
+    final now = Timestamp.now();
+
+    final payload = <String, dynamic>{
+      'menu_item_id': normalizedMenuItemId,
+      'item_name': normalizedItemName,
+      'category': normalizedCategory,
+      'rate_date': Timestamp.fromDate(normalizedRateDate),
+      'unit_rate': parsedRate,
+      'is_active': isActive,
+      'entered_by_uid': (enteredByUid ?? '').trim(),
+      'entered_by_name': (enteredByName ?? '').trim(),
+      'updated_at': now,
+    };
+
+    if (!existing.exists) {
+      payload['created_at'] = now;
+    }
+
+    await docRef.set(payload, SetOptions(merge: true));
+  }
+
+  Future<void> saveRatesBatch({
+    required DateTime rateDate,
+    required List<MealRateDraft> drafts,
+    String? enteredByUid,
+    String? enteredByName,
+    bool skipZeroRates = false,
+  }) async {
+    if (drafts.isEmpty) return;
+
+    final normalizedRateDate = normalizeDate(rateDate);
+    final now = Timestamp.now();
+    final batch = _firestore.batch();
+
+    for (final draft in drafts) {
+      final normalizedMenuItemId = draft.menuItemId.trim();
+      final normalizedItemName = draft.itemName.trim();
+      final normalizedCategory = draft.category.trim();
+
+      if (normalizedMenuItemId.isEmpty || normalizedItemName.isEmpty) {
+        continue;
+      }
+
+      final parsedRate = draft.unitRate;
+      if (parsedRate < 0) {
+        throw ArgumentError(
+          'Negative rate is not allowed for ${draft.itemName}.',
+        );
+      }
+
+      if (skipZeroRates && parsedRate == 0) {
+        continue;
+      }
+
+      final docId = buildRateDocumentId(
+        rateDate: normalizedRateDate,
+        menuItemId: normalizedMenuItemId,
+      );
+
+      final docRef = _mealRatesRef.doc(docId);
+
+      batch.set(
+        docRef,
+        <String, dynamic>{
+          'menu_item_id': normalizedMenuItemId,
+          'item_name': normalizedItemName,
+          'category': normalizedCategory,
+          'rate_date': Timestamp.fromDate(normalizedRateDate),
+          'unit_rate': parsedRate,
+          'is_active': draft.isActive,
+          'entered_by_uid': (enteredByUid ?? '').trim(),
+          'entered_by_name': (enteredByName ?? '').trim(),
+          'updated_at': now,
+          'created_at': now,
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<List<ConsumedItemSummary>> getConsumedItemSummaryForDate(
+    DateTime reservationDate,
+  ) async {
+    final normalizedDate = normalizeDate(reservationDate);
+    final start = Timestamp.fromDate(normalizedDate);
+    final end = Timestamp.fromDate(nextDate(normalizedDate));
+
+    final query = await _mealReservationsRef
+        .where('reservation_date', isGreaterThanOrEqualTo: start)
+        .where('reservation_date', isLessThan: end)
+        .get();
+
+    final summaryByKey = <String, _ConsumedItemAccumulator>{};
+
+    for (final doc in query.docs) {
+      final data = doc.data();
+
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      if (status == statusCancelled) {
+        continue;
+      }
+
+      final quantity = _asInt(data['quantity']);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      final menuSnapshot = _asMap(data['menu_snapshot']);
+      final mealType = _normalizeText(data['meal_type']);
+      final optionKey = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_id']),
+        _normalizeText(data['menu_item_id']),
+        _normalizeText(data['menu_option_key']),
+        _normalizeText(menuSnapshot['option_key']),
+      ]);
+
+      final optionLabel = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_name']),
+        _normalizeText(data['item_name']),
+        _normalizeText(data['option_label']),
+        _normalizeText(menuSnapshot['option_label']),
+      ]);
+
+      final itemCategory = _firstNonEmpty([
+        _normalizeText(menuSnapshot['item_category']),
+        _normalizeText(data['category']),
+        mealType,
+      ]);
+
+      if (optionKey.isEmpty) {
+        continue;
+      }
+
+      final items = _asListOfMaps(menuSnapshot['items']);
+      final bool treatAsComboSingleItem =
+          items.isNotEmpty && !_looksLikeDirectManualItem(menuSnapshot);
+
+      final effectiveMenuItemId = optionKey;
+      final effectiveItemName = optionLabel.isNotEmpty ? optionLabel : optionKey;
+      final effectiveCategory =
+          itemCategory.isNotEmpty ? itemCategory : mealType;
+
+      final lookupKey = effectiveMenuItemId.trim().toLowerCase();
+
+      final accumulator = summaryByKey.putIfAbsent(
+        lookupKey,
+        () => _ConsumedItemAccumulator(
+          menuItemId: effectiveMenuItemId,
+          itemName: effectiveItemName,
+          category: effectiveCategory,
+          mealType: mealType,
+          selectionType: treatAsComboSingleItem
+              ? MealRateSelectionType.comboOption
+              : MealRateSelectionType.manualItem,
+        ),
+      );
+
+      accumulator.totalQuantity += quantity;
+      accumulator.reservationLineCount += 1;
+      accumulator.optionLabels.add(effectiveItemName);
+
+      if (doc.id.isNotEmpty) {
+        accumulator.sampleReservationIds.add(doc.id);
+      }
+    }
+
+    final result = summaryByKey.values
+        .map((item) => item.toSummary())
+        .toList()
+      ..sort(
+        (a, b) => a.itemName.toLowerCase().compareTo(
+              b.itemName.toLowerCase(),
+            ),
+      );
+
+    return result;
+  }
+
+  Future<List<MealRateEntryRow>> getRateEntryRowsForDate(DateTime rateDate) async {
+    final summaries = await getConsumedItemSummaryForDate(rateDate);
+    final rates = await getRatesForDate(rateDate);
+
+    final rateMap = <String, MealRateEntry>{
+      for (final rate in rates) rate.menuItemId.trim().toLowerCase(): rate,
+    };
+
+    final rows = summaries
+        .map(
+          (summary) => MealRateEntryRow(
+            summary: summary,
+            existingRate: rateMap[summary.menuItemId.trim().toLowerCase()],
+          ),
+        )
+        .toList();
+
+    return rows;
+  }
+
+  Future<int> applyRatesToReservationsForDate(DateTime reservationDate) async {
+    final normalizedDate = normalizeDate(reservationDate);
+    final start = Timestamp.fromDate(normalizedDate);
+    final end = Timestamp.fromDate(nextDate(normalizedDate));
+
+    final rates = await getRatesForDate(normalizedDate);
+    final rateMap = <String, MealRateEntry>{
+      for (final rate in rates)
+        rate.menuItemId.trim().toLowerCase(): rate,
+    };
+
+    final reservationQuery = await _mealReservationsRef
+        .where('reservation_date', isGreaterThanOrEqualTo: start)
+        .where('reservation_date', isLessThan: end)
+        .get();
+
+    if (reservationQuery.docs.isEmpty || rateMap.isEmpty) {
+      return 0;
+    }
+
+    final batch = _firestore.batch();
+    var updatedCount = 0;
+
+    for (final doc in reservationQuery.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      if (status == statusCancelled) {
+        continue;
+      }
+
+      final quantity = _asInt(data['quantity']);
+      if (quantity <= 0) {
+        continue;
+      }
+
+      final menuItemId = _extractReservationMenuItemId(data);
+      if (menuItemId.isEmpty) {
+        continue;
+      }
+
+      final rate = rateMap[menuItemId.trim().toLowerCase()];
+      if (rate == null || !rate.isActive) {
+        continue;
+      }
+
+      final amount = rate.unitRate * quantity;
+
+      batch.update(doc.reference, <String, dynamic>{
+        'unit_rate': rate.unitRate,
+        'amount': amount,
+        'updated_at': Timestamp.now(),
+      });
+
+      updatedCount += 1;
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+    }
+
+    return updatedCount;
+  }
+
+  String extractReservationMenuItemId(Map<String, dynamic> reservationData) {
+    return _extractReservationMenuItemId(reservationData);
+  }
+
+  String extractReservationItemName(Map<String, dynamic> reservationData) {
+    final menuSnapshot = _asMap(reservationData['menu_snapshot']);
+
+    return _firstNonEmpty([
+      _normalizeText(menuSnapshot['item_name']),
+      _normalizeText(reservationData['item_name']),
+      _normalizeText(reservationData['option_label']),
+      _normalizeText(menuSnapshot['option_label']),
+      _extractReservationMenuItemId(reservationData),
+    ]);
+  }
+
+  String _extractReservationMenuItemId(Map<String, dynamic> reservationData) {
+    final menuSnapshot = _asMap(reservationData['menu_snapshot']);
+
+    return _firstNonEmpty([
+      _normalizeText(menuSnapshot['item_id']),
+      _normalizeText(reservationData['menu_item_id']),
+      _normalizeText(reservationData['menu_option_key']),
+      _normalizeText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  bool _looksLikeDirectManualItem(Map<String, dynamic> menuSnapshot) {
+    final selectionType = _normalizeText(menuSnapshot['selection_type']);
+    return selectionType == 'manual_item';
+  }
+
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return <String, dynamic>{};
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '').toString()) ?? 0;
+  }
+
+  String _normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String _sanitizeDocKeyComponent(String input) {
+    final value = input.trim();
+    if (value.isEmpty) return 'unknown_item';
+
+    return value
+        .replaceAll('/', '_')
+        .replaceAll('\\', '_')
+        .replaceAll(' ', '_')
+        .replaceAll(':', '_')
+        .replaceAll('#', '_');
+  }
+}
+
+class MealRateEntry {
+  final String documentId;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final DateTime rateDate;
+  final double unitRate;
+  final bool isActive;
+  final String enteredByUid;
+  final String enteredByName;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+
+  const MealRateEntry({
+    required this.documentId,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.rateDate,
+    required this.unitRate,
+    required this.isActive,
+    required this.enteredByUid,
+    required this.enteredByName,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  factory MealRateEntry.fromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? <String, dynamic>{};
+
+    return MealRateEntry(
+      documentId: doc.id,
+      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      itemName: (data['item_name'] ?? '').toString().trim(),
+      category: (data['category'] ?? '').toString().trim(),
+      rateDate: _toDate(data['rate_date']) ?? DateTime.now(),
+      unitRate: _toDouble(data['unit_rate']),
+      isActive: data['is_active'] != false,
+      enteredByUid: (data['entered_by_uid'] ?? '').toString().trim(),
+      enteredByName: (data['entered_by_name'] ?? '').toString().trim(),
+      createdAt: _toDate(data['created_at']),
+      updatedAt: _toDate(data['updated_at']),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'menu_item_id': menuItemId,
+      'item_name': itemName,
+      'category': category,
+      'rate_date': Timestamp.fromDate(
+        DateTime(rateDate.year, rateDate.month, rateDate.day),
+      ),
+      'unit_rate': unitRate,
+      'is_active': isActive,
+      'entered_by_uid': enteredByUid,
+      'entered_by_name': enteredByName,
+      'created_at': createdAt == null ? null : Timestamp.fromDate(createdAt!),
+      'updated_at': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
+    };
+  }
+
+  static DateTime? _toDate(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '').toString()) ?? 0;
+  }
+}
+
+class MealRateDraft {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final double unitRate;
+  final bool isActive;
+
+  const MealRateDraft({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.unitRate,
+    this.isActive = true,
+  });
+
+  MealRateDraft copyWith({
+    String? menuItemId,
+    String? itemName,
+    String? category,
+    double? unitRate,
+    bool? isActive,
+  }) {
+    return MealRateDraft(
+      menuItemId: menuItemId ?? this.menuItemId,
+      itemName: itemName ?? this.itemName,
+      category: category ?? this.category,
+      unitRate: unitRate ?? this.unitRate,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+}
+
+class MealRateEntryRow {
+  final ConsumedItemSummary summary;
+  final MealRateEntry? existingRate;
+
+  const MealRateEntryRow({
+    required this.summary,
+    this.existingRate,
+  });
+
+  double get initialRate => existingRate?.unitRate ?? 0;
+  bool get hasSavedRate => existingRate != null;
+}
+
+class ConsumedItemSummary {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String mealType;
+  final int totalQuantity;
+  final int reservationLineCount;
+  final MealRateSelectionType selectionType;
+  final List<String> optionLabels;
+  final List<String> sampleReservationIds;
+
+  const ConsumedItemSummary({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.mealType,
+    required this.totalQuantity,
+    required this.reservationLineCount,
+    required this.selectionType,
+    required this.optionLabels,
+    required this.sampleReservationIds,
+  });
+}
+
+enum MealRateSelectionType {
+  comboOption,
+  manualItem,
+}
+
+class _ConsumedItemAccumulator {
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String mealType;
+  final MealRateSelectionType selectionType;
+
+  int totalQuantity = 0;
+  int reservationLineCount = 0;
+  final Set<String> optionLabels = <String>{};
+  final Set<String> sampleReservationIds = <String>{};
+
+  _ConsumedItemAccumulator({
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.mealType,
+    required this.selectionType,
+  });
+
+  ConsumedItemSummary toSummary() {
+    return ConsumedItemSummary(
+      menuItemId: menuItemId,
+      itemName: itemName,
+      category: category,
+      mealType: mealType,
+      totalQuantity: totalQuantity,
+      reservationLineCount: reservationLineCount,
+      selectionType: selectionType,
+      optionLabels: optionLabels.toList()..sort(),
+      sampleReservationIds: sampleReservationIds.toList()..sort(),
+    );
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/meal_reservation_service.dart
+==================================================
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'meal_rate_service.dart';
+import 'notification_service.dart';
+
+class MealReservationService {
+  MealReservationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+  final MealRateService _mealRateService = MealRateService();
+  final NotificationService _notificationService = NotificationService();
+
+  static const Map<String, _MealCutoffTime> _defaultCutoffTimes = {
+    'breakfast': _MealCutoffTime(hour: 4, minute: 0),
+    'lunch': _MealCutoffTime(hour: 10, minute: 0),
+    'dinner': _MealCutoffTime(hour: 16, minute: 0),
+  };
+
+  static const String categoryEmployee = 'employee';
+  static const String categoryOfficialGuest = 'official_guest';
+
+  static const String bookingSourceEmployeeApp = 'employee_app';
+  static const String bookingSourceSupervisorConsole = 'supervisor_console';
+  static const String bookingSourceAdminConsole = 'admin_console';
+
+  static const String subjectEmployeeSelf = 'employee_self';
+  static const String subjectEmployeeProxy = 'employee_proxy';
+  static const String subjectOfficialGuest = 'official_guest';
+
+  static const String bookingModeSelf = 'self';
+  static const String bookingModeProxy = 'proxy';
+  static const String bookingModeGuest = 'guest';
+
+  static const String selectionModeCycleCombo = 'cycle_combo';
+  static const String selectionModeManualItem = 'manual_item';
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<String> createReservationGroup({
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required List<ReservationLineInput> lines,
+    required String createdByUid,
+    required String createdByRole,
+    String? createdByEmployeeNumber,
+    String? createdByName,
+    String? notes,
+    String? bookingGroupId,
+    bool skipValidation = false,
+    String bookingSource = bookingSourceEmployeeApp,
+    String bookingSubjectType = subjectEmployeeSelf,
+    String reservationCategory = categoryEmployee,
+    String? overrideReason,
+    Map<String, dynamic>? extraFields,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedEmployeeName = employeeName.trim();
+    final normalizedMealType = _normalizeMealType(mealType);
+    final normalizedDate = _normalizeDate(reservationDate);
+    final normalizedCreatedByUid = createdByUid.trim();
+    final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+    if (normalizedEmployeeName.isEmpty) {
+      throw ArgumentError('employeeName is required.');
+    }
+    if (!_isValidMealType(normalizedMealType)) {
+      throw ArgumentError('Unsupported meal type: $mealType');
+    }
+    if (normalizedCreatedByUid.isEmpty) {
+      throw ArgumentError('createdByUid is required.');
+    }
+    if (normalizedCreatedByRole.isEmpty) {
+      throw ArgumentError('createdByRole is required.');
+    }
+
+    final sanitizedLines = lines
+        .where((line) => line.quantity > 0)
+        .map((line) => line.normalized())
+        .where(
+          (line) =>
+              line.optionKey.isNotEmpty &&
+              line.optionLabel.isNotEmpty &&
+              line.diningMode.isNotEmpty,
+        )
+        .toList();
+
+    if (sanitizedLines.isEmpty) {
+      throw ArgumentError('At least one valid reservation line is required.');
+    }
+
+    if (!skipValidation) {
+      final validation = validateReservationRequest(
+        reservationDate: normalizedDate,
+        mealType: normalizedMealType,
+        overrideReason:
+            normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
+      );
+
+      if (!validation.isAllowed) {
+        throw StateError(validation.message);
+      }
+    }
+
+    final now = Timestamp.now();
+    final effectiveBookingGroupId =
+        bookingGroupId?.trim().isNotEmpty == true
+            ? bookingGroupId!.trim()
+            : _reservationsRef.doc().id;
+
+    final batch = _firestore.batch();
+
+    for (final line in sanitizedLines) {
+      final docRef = _reservationsRef.doc();
+
+      final payload = <String, dynamic>{
+        'booking_group_id': effectiveBookingGroupId,
+        'reservation_category': reservationCategory,
+        'booking_source': bookingSource,
+        'booking_subject_type': bookingSubjectType,
+        'employee_number': normalizedEmployeeNumber,
+        'employee_name': normalizedEmployeeName,
+        'guest_name': '',
+        'host_employee_number': '',
+        'host_employee_name': '',
+        'reservation_date': Timestamp.fromDate(normalizedDate),
+        'meal_type': normalizedMealType,
+        'menu_option_key': line.optionKey,
+        'option_label': line.optionLabel,
+        'dining_mode': line.diningMode,
+        'quantity': line.quantity,
+        'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
+        'unit_rate': null,
+        'amount': null,
+        'notes': notes?.trim() ?? '',
+        'created_at': now,
+        'booking_time': now,
+        'created_by_uid': normalizedCreatedByUid,
+        'created_by_role': normalizedCreatedByRole,
+        'created_by_employee_number': createdByEmployeeNumber?.trim() ?? '',
+        'created_by_name': createdByName?.trim() ?? '',
+        'status': 'active',
+        'is_issued': false,
+        'override_reason':
+            normalizedOverrideReason.isEmpty ? '' : normalizedOverrideReason,
+      };
+
+      if (extraFields != null && extraFields.isNotEmpty) {
+        payload.addAll(extraFields);
+      }
+
+      batch.set(docRef, payload);
+    }
+
+    await batch.commit();
+
+    await _sendBookingConfirmedNotificationIfPossible(
+      employeeNumber: normalizedEmployeeNumber,
+      employeeName: normalizedEmployeeName,
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+      reservationId: effectiveBookingGroupId,
+      reservationCategory: reservationCategory,
+    );
+
+    return effectiveBookingGroupId;
+  }
+
+  Future<String> createProxyEmployeeReservationGroup({
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required List<ReservationLineInput> lines,
+    required String createdByUid,
+    required String createdByRole,
+    String? createdByEmployeeNumber,
+    String? createdByName,
+    String? notes,
+    String? bookingGroupId,
+    String? overrideReason,
+    bool skipValidation = false,
+    String? bookingSource,
+    String selectionMode = selectionModeCycleCombo,
+    String requestContext = 'proxy_request',
+    bool isSpecialMeal = false,
+    bool allowAnyMenuItem = false,
+    Map<String, dynamic>? extraFields,
+  }) async {
+    final normalizedRole = createdByRole.trim().toLowerCase();
+    final roleCanWaiveCutoff = canWaiveCutoffForRole(normalizedRole);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+    final effectiveSkipValidation = skipValidation || roleCanWaiveCutoff;
+
+    final effectiveExtraFields = <String, dynamic>{
+      'booking_mode': bookingModeProxy,
+      'selection_mode': selectionMode.trim().isEmpty
+          ? selectionModeCycleCombo
+          : selectionMode.trim().toLowerCase(),
+      'request_context':
+          requestContext.trim().isEmpty ? 'proxy_request' : requestContext.trim(),
+      'is_special_meal': isSpecialMeal,
+      'allow_any_menu_item': allowAnyMenuItem,
+      'cutoff_waived': roleCanWaiveCutoff,
+      'proxy_override_used':
+          roleCanWaiveCutoff || normalizedOverrideReason.isNotEmpty,
+    };
+
+    if (extraFields != null && extraFields.isNotEmpty) {
+      effectiveExtraFields.addAll(extraFields);
+    }
+
+    return createReservationGroup(
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      reservationDate: reservationDate,
+      mealType: mealType,
+      lines: lines,
+      createdByUid: createdByUid,
+      createdByRole: normalizedRole,
+      createdByEmployeeNumber: createdByEmployeeNumber,
+      createdByName: createdByName,
+      notes: notes,
+      bookingGroupId: bookingGroupId,
+      skipValidation: effectiveSkipValidation,
+      bookingSource:
+          bookingSource ??
+          _resolveOperatorBookingSource(createdByRole: normalizedRole),
+      bookingSubjectType: subjectEmployeeProxy,
+      reservationCategory: categoryEmployee,
+      overrideReason:
+          normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
+      extraFields: effectiveExtraFields,
+    );
+  }
+
+  Future<String> createGuestReservationGroup({
+    required String guestName,
+    required String hostEmployeeNumber,
+    required DateTime reservationDate,
+    required String mealType,
+    required List<ReservationLineInput> lines,
+    required String createdByUid,
+    required String createdByRole,
+    String? createdByEmployeeNumber,
+    String? createdByName,
+    String? hostEmployeeName,
+    String? notes,
+    String? bookingGroupId,
+    String? overrideReason,
+    bool skipValidation = false,
+    String? bookingSource,
+  }) async {
+    final normalizedGuestName = guestName.trim();
+    final normalizedHostEmployeeNumber = hostEmployeeNumber.trim();
+    final normalizedMealType = _normalizeMealType(mealType);
+    final normalizedDate = _normalizeDate(reservationDate);
+    final normalizedCreatedByUid = createdByUid.trim();
+    final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedGuestName.isEmpty) {
+      throw ArgumentError('guestName is required.');
+    }
+    if (normalizedHostEmployeeNumber.isEmpty) {
+      throw ArgumentError('hostEmployeeNumber is required.');
+    }
+    if (!_isValidMealType(normalizedMealType)) {
+      throw ArgumentError('Unsupported meal type: $mealType');
+    }
+    if (normalizedCreatedByUid.isEmpty) {
+      throw ArgumentError('createdByUid is required.');
+    }
+    if (normalizedCreatedByRole.isEmpty) {
+      throw ArgumentError('createdByRole is required.');
+    }
+
+    final sanitizedLines = lines
+        .where((line) => line.quantity > 0)
+        .map((line) => line.normalized())
+        .where(
+          (line) =>
+              line.optionKey.isNotEmpty &&
+              line.optionLabel.isNotEmpty &&
+              line.diningMode.isNotEmpty,
+        )
+        .toList();
+
+    if (sanitizedLines.isEmpty) {
+      throw ArgumentError('At least one valid reservation line is required.');
+    }
+
+    if (!skipValidation) {
+      final validation = validateReservationRequest(
+        reservationDate: normalizedDate,
+        mealType: normalizedMealType,
+        overrideReason:
+            normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
+      );
+
+      if (!validation.isAllowed) {
+        throw StateError(validation.message);
+      }
+    }
+
+    final now = Timestamp.now();
+    final effectiveBookingGroupId =
+        bookingGroupId?.trim().isNotEmpty == true
+            ? bookingGroupId!.trim()
+            : _reservationsRef.doc().id;
+
+    final effectiveBookingSource =
+        bookingSource ??
+        _resolveOperatorBookingSource(createdByRole: normalizedCreatedByRole);
+
+    final batch = _firestore.batch();
+
+    for (final line in sanitizedLines) {
+      final docRef = _reservationsRef.doc();
+
+      batch.set(docRef, {
+        'booking_group_id': effectiveBookingGroupId,
+        'reservation_category': categoryOfficialGuest,
+        'booking_source': effectiveBookingSource,
+        'booking_subject_type': subjectOfficialGuest,
+        'booking_mode': bookingModeGuest,
+        'selection_mode': selectionModeCycleCombo,
+        'employee_number': '',
+        'employee_name': '',
+        'guest_name': normalizedGuestName,
+        'host_employee_number': normalizedHostEmployeeNumber,
+        'host_employee_name': hostEmployeeName?.trim() ?? '',
+        'reservation_date': Timestamp.fromDate(normalizedDate),
+        'meal_type': normalizedMealType,
+        'menu_option_key': line.optionKey,
+        'option_label': line.optionLabel,
+        'dining_mode': line.diningMode,
+        'quantity': line.quantity,
+        'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
+        'unit_rate': null,
+        'amount': null,
+        'notes': notes?.trim() ?? '',
+        'created_at': now,
+        'booking_time': now,
+        'created_by_uid': normalizedCreatedByUid,
+        'created_by_role': normalizedCreatedByRole,
+        'created_by_employee_number': createdByEmployeeNumber?.trim() ?? '',
+        'created_by_name': createdByName?.trim() ?? '',
+        'status': 'active',
+        'is_issued': false,
+        'override_reason':
+            normalizedOverrideReason.isEmpty ? '' : normalizedOverrideReason,
+      });
+    }
+
+    await batch.commit();
+    return effectiveBookingGroupId;
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForDate({
+    required DateTime reservationDate,
+  }) async {
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+
+    return _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getPendingReservationsForDate({
+    required DateTime reservationDate,
+  }) async {
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+
+    return _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .where('status', isEqualTo: 'active')
+        .where('is_issued', isEqualTo: false)
+        .get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForEmployee({
+    required String employeeNumber,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    return _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForEmployeeDate({
+    required String employeeNumber,
+    required DateTime reservationDate,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    return _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>>
+      getActiveReservationsForEmployeeDateMeal({
+    required String employeeNumber,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedMealType = _normalizeMealType(mealType);
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    return _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .where('meal_type', isEqualTo: normalizedMealType)
+        .where('status', isEqualTo: 'active')
+        .get();
+  }
+
+  Future<QuerySnapshot<Map<String, dynamic>>> getReservationsForDateAndMealType({
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final normalizedDate = _normalizeDate(reservationDate);
+    final nextDate = normalizedDate.add(const Duration(days: 1));
+    final normalizedMealType = _normalizeMealType(mealType);
+
+    return _reservationsRef
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizedDate),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(nextDate),
+        )
+        .where('meal_type', isEqualTo: normalizedMealType)
+        .get();
+  }
+
+  Future<void> cancelReservation({
+    required String reservationId,
+    required String cancelledByUid,
+    required String cancelledByRole,
+    String? overrideReason,
+  }) async {
+    final docRef = _reservationsRef.doc(reservationId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      throw Exception('Reservation not found.');
+    }
+
+    final data = snapshot.data()!;
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isIssued = data['is_issued'] == true;
+
+    if (status == 'cancelled') {
+      throw Exception('Reservation already cancelled.');
+    }
+    if (isIssued || status == 'issued') {
+      throw Exception('Issued reservation cannot be cancelled.');
+    }
+
+    final employeeNumber = (data['employee_number'] ?? '').toString().trim();
+    final employeeName = (data['employee_name'] ?? '').toString().trim();
+    final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
+    final reservationDate = _readReservationDate(data['reservation_date']);
+
+    await docRef.update({
+      'status': 'cancelled',
+      'cancelled_at': Timestamp.now(),
+      'cancelled_by_uid': cancelledByUid.trim(),
+      'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
+      'override_reason': overrideReason?.trim() ?? '',
+    });
+
+    await _sendBookingCancelledNotificationIfPossible(
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      reservationDate: reservationDate,
+      mealType: mealType,
+      reservationId: reservationId,
+      reservationCategory:
+          (data['reservation_category'] ?? '').toString().trim(),
+    );
+  }
+
+  Future<void> cancelReservationGroup({
+    required String bookingGroupId,
+    required String cancelledByUid,
+    required String cancelledByRole,
+    String? overrideReason,
+  }) async {
+    final snapshot = await _reservationsRef
+        .where('booking_group_id', isEqualTo: bookingGroupId.trim())
+        .where('status', isEqualTo: 'active')
+        .where('is_issued', isEqualTo: false)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      throw Exception('No active reservations found in booking group.');
+    }
+
+    final firstData = snapshot.docs.first.data();
+    final employeeNumber =
+        (firstData['employee_number'] ?? '').toString().trim();
+    final employeeName = (firstData['employee_name'] ?? '').toString().trim();
+    final mealType = _normalizeMealType((firstData['meal_type'] ?? '').toString());
+    final reservationDate = _readReservationDate(firstData['reservation_date']);
+    final reservationCategory =
+        (firstData['reservation_category'] ?? '').toString().trim();
+
+    final batch = _firestore.batch();
+    final now = Timestamp.now();
+
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'status': 'cancelled',
+        'cancelled_at': now,
+        'cancelled_by_uid': cancelledByUid.trim(),
+        'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
+        'override_reason': overrideReason?.trim() ?? '',
+      });
+    }
+
+    await batch.commit();
+
+    await _sendBookingCancelledNotificationIfPossible(
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      reservationDate: reservationDate,
+      mealType: mealType,
+      reservationId: bookingGroupId.trim(),
+      reservationCategory: reservationCategory,
+    );
+  }
+
+  Future<void> markReservationIssued({
+    required String reservationId,
+    required String issuedByUid,
+    String issuedByRole = 'mess_dashboard_operator',
+  }) async {
+    final docRef = _reservationsRef.doc(reservationId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      throw Exception('Reservation not found.');
+    }
+
+    final data = snapshot.data()!;
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isIssued = data['is_issued'] == true;
+
+    if (status == 'cancelled') {
+      throw Exception('Cancelled reservation cannot be issued.');
+    }
+    if (isIssued || status == 'issued') {
+      throw Exception('Reservation already issued.');
+    }
+
+    final employeeNumber = (data['employee_number'] ?? '').toString().trim();
+    final employeeName = (data['employee_name'] ?? '').toString().trim();
+    final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
+    final reservationDate = _readReservationDate(data['reservation_date']);
+    final reservationCategory =
+        (data['reservation_category'] ?? '').toString().trim();
+
+    await docRef.update({
+      'is_issued': true,
+      'status': 'issued',
+      'issued_at': Timestamp.now(),
+      'issued_by_uid': issuedByUid.trim(),
+      'issued_by_role': issuedByRole.trim().toLowerCase(),
+    });
+
+    await _sendMealIssuedNotificationIfPossible(
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      reservationDate: reservationDate,
+      mealType: mealType,
+      reservationId: reservationId,
+      reservationCategory: reservationCategory,
+    );
+  }
+
+  Future<Map<String, int>> getMealCountsForDate(DateTime reservationDate) async {
+    final snapshot = await getReservationsForDate(
+      reservationDate: reservationDate,
+    );
+
+    final counts = <String, int>{
+      'breakfast': 0,
+      'lunch': 0,
+      'dinner': 0,
+      'total': 0,
+    };
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
+      final qty = _readInt(data['quantity']);
+
+      if (status == 'cancelled' || qty <= 0) {
+        continue;
+      }
+
+      if (counts.containsKey(mealType)) {
+        counts[mealType] = (counts[mealType] ?? 0) + qty;
+      }
+      counts['total'] = (counts['total'] ?? 0) + qty;
+    }
+
+    return counts;
+  }
+
+  Future<Map<String, int>> getIssuedMealCountsForDate(
+    DateTime reservationDate,
+  ) async {
+    final snapshot = await getReservationsForDate(
+      reservationDate: reservationDate,
+    );
+
+    final counts = <String, int>{
+      'breakfast': 0,
+      'lunch': 0,
+      'dinner': 0,
+      'total': 0,
+    };
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString().trim().toLowerCase();
+      final isIssued = data['is_issued'] == true || status == 'issued';
+      final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
+      final qty = _readInt(data['quantity']);
+
+      if (!isIssued || qty <= 0) {
+        continue;
+      }
+
+      if (counts.containsKey(mealType)) {
+        counts[mealType] = (counts[mealType] ?? 0) + qty;
+      }
+      counts['total'] = (counts['total'] ?? 0) + qty;
+    }
+
+    return counts;
+  }
+
+  Future<int> applyRatesToReservationsForDate(DateTime date) async {
+    return _mealRateService.applyRatesToReservationsForDate(date);
+  }
+
+  String extractMenuItemId(Map<String, dynamic> reservationData) {
+    return _mealRateService.extractReservationMenuItemId(reservationData);
+  }
+
+  ReservationValidationResult validateReservationRequest({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+    bool isWalkIn = false,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    if (!_isValidMealType(normalizedMealType)) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Invalid meal type.',
+      );
+    }
+
+    final normalizedDate = _normalizeDate(reservationDate);
+    final current = now ?? DateTime.now();
+    final today = _normalizeDate(current);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedDate.isBefore(today)) {
+      if (normalizedOverrideReason.isNotEmpty || isWalkIn) {
+        return const ReservationValidationResult(
+          isAllowed: true,
+          message: 'Past-date reservation allowed by override.',
+        );
+      }
+
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Past-date reservations are not allowed.',
+      );
+    }
+
+    if (normalizedDate.isAfter(today)) {
+      return const ReservationValidationResult(
+        isAllowed: true,
+        message: 'Future-date reservation allowed.',
+      );
+    }
+
+    final cutoffDateTime = getMealCutoffDateTime(
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+    );
+
+    if (cutoffDateTime == null) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Cutoff configuration for meal could not be resolved.',
+      );
+    }
+
+    if (current.isAfter(cutoffDateTime)) {
+      if (normalizedOverrideReason.isNotEmpty || isWalkIn) {
+        return ReservationValidationResult(
+          isAllowed: true,
+          message:
+              '${_mealLabel(normalizedMealType)} cutoff has passed, but override is present.',
+        );
+      }
+
+      return ReservationValidationResult(
+        isAllowed: false,
+        message:
+            '${_mealLabel(normalizedMealType)} booking is closed for today. Cutoff time has passed.',
+      );
+    }
+
+    return ReservationValidationResult(
+      isAllowed: true,
+      message: '${_mealLabel(normalizedMealType)} booking is open.',
+    );
+  }
+
+  bool canBookMeal({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+    bool isWalkIn = false,
+  }) {
+    return validateReservationRequest(
+      reservationDate: reservationDate,
+      mealType: mealType,
+      now: now,
+      overrideReason: overrideReason,
+      isWalkIn: isWalkIn,
+    ).isAllowed;
+  }
+
+  ReservationValidationResult validateCancellationRequest({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    if (!_isValidMealType(normalizedMealType)) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Invalid meal type.',
+      );
+    }
+
+    final normalizedDate = _normalizeDate(reservationDate);
+    final current = now ?? DateTime.now();
+    final today = _normalizeDate(current);
+    final normalizedOverrideReason = (overrideReason ?? '').trim();
+
+    if (normalizedDate.isBefore(today)) {
+      if (normalizedOverrideReason.isNotEmpty) {
+        return const ReservationValidationResult(
+          isAllowed: true,
+          message: 'Past-date cancellation allowed by override.',
+        );
+      }
+
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Past-date reservation cannot be cancelled.',
+      );
+    }
+
+    if (normalizedDate.isAfter(today)) {
+      return const ReservationValidationResult(
+        isAllowed: true,
+        message: 'Future reservation can be cancelled.',
+      );
+    }
+
+    final cutoffDateTime = getMealCutoffDateTime(
+      reservationDate: normalizedDate,
+      mealType: normalizedMealType,
+    );
+
+    if (cutoffDateTime == null) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Cutoff configuration for meal could not be resolved.',
+      );
+    }
+
+    if (current.isAfter(cutoffDateTime)) {
+      if (normalizedOverrideReason.isNotEmpty) {
+        return ReservationValidationResult(
+          isAllowed: true,
+          message:
+              '${_mealLabel(normalizedMealType)} cancellation allowed by override after cutoff.',
+        );
+      }
+
+      return ReservationValidationResult(
+        isAllowed: false,
+        message:
+            '${_mealLabel(normalizedMealType)} reservation can no longer be cancelled. Cutoff time has passed.',
+      );
+    }
+
+    return ReservationValidationResult(
+      isAllowed: true,
+      message: '${_mealLabel(normalizedMealType)} reservation can be cancelled.',
+    );
+  }
+
+  bool canCancelMeal({
+    required DateTime reservationDate,
+    required String mealType,
+    DateTime? now,
+    String? overrideReason,
+  }) {
+    return validateCancellationRequest(
+      reservationDate: reservationDate,
+      mealType: mealType,
+      now: now,
+      overrideReason: overrideReason,
+    ).isAllowed;
+  }
+
+  BookingValidationResult validateBookingWindow({
+    required String mealType,
+    required DateTime reservationDate,
+    DateTime? now,
+  }) {
+    final result = validateReservationRequest(
+      reservationDate: reservationDate,
+      mealType: mealType,
+      now: now,
+    );
+
+    return BookingValidationResult(
+      isAllowed: result.isAllowed,
+      message: result.message,
+    );
+  }
+
+  CancellationValidationResult validateCancellationWindow({
+    required DateTime reservationDate,
+    required bool isIssued,
+    required String status,
+  }) {
+    final normalizedDate = _normalizeDate(reservationDate);
+    final today = _normalizeDate(DateTime.now());
+    final normalizedStatus = status.trim().toLowerCase();
+
+    if (normalizedStatus == 'cancelled') {
+      return const CancellationValidationResult(
+        isAllowed: false,
+        message: 'Reservation already cancelled.',
+      );
+    }
+
+    if (isIssued || normalizedStatus == 'issued') {
+      return const CancellationValidationResult(
+        isAllowed: false,
+        message: 'Issued reservation cannot be cancelled.',
+      );
+    }
+
+    if (normalizedDate.isBefore(today)) {
+      return const CancellationValidationResult(
+        isAllowed: false,
+        message: 'Past reservation cannot be cancelled.',
+      );
+    }
+
+    return const CancellationValidationResult(
+      isAllowed: true,
+      message: 'Cancellation allowed.',
+    );
+  }
+
+  DateTime? getMealCutoffDateTime({
+    required DateTime reservationDate,
+    required String mealType,
+  }) {
+    final normalizedMealType = mealType.trim().toLowerCase();
+    final normalizedDate = _normalizeDate(reservationDate);
+    final cutoff = _defaultCutoffTimes[normalizedMealType];
+
+    if (cutoff == null) {
+      return null;
+    }
+
+    return DateTime(
+      normalizedDate.year,
+      normalizedDate.month,
+      normalizedDate.day,
+      cutoff.hour,
+      cutoff.minute,
+    );
+  }
+
+  String getMealCutoffDisplay({
+    required DateTime reservationDate,
+    required String mealType,
+  }) {
+    final cutoff = getMealCutoffDateTime(
+      reservationDate: reservationDate,
+      mealType: mealType,
+    );
+
+    if (cutoff == null) {
+      return '—';
+    }
+
+    final hour = cutoff.hour.toString().padLeft(2, '0');
+    final minute = cutoff.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  bool canWaiveCutoffForRole(String role) {
+    final normalizedRole = role.trim().toLowerCase();
+    return normalizedRole == 'admin' ||
+        normalizedRole == 'developer' ||
+        normalizedRole == 'mess_manager' ||
+        normalizedRole == 'mess_supervisor';
+  }
+
+  Future<void> _sendBookingConfirmedNotificationIfPossible({
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required String reservationId,
+    required String reservationCategory,
+  }) async {
+    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
+      return;
+    }
+
+    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
+    if (recipient == null) {
+      return;
+    }
+
+    try {
+      await _notificationService.createBookingConfirmedNotification(
+        userUid: recipient.userUid,
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        email: recipient.email,
+        reservationId: reservationId,
+        reservationDate: reservationDate,
+        mealType: mealType,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _sendBookingCancelledNotificationIfPossible({
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required String reservationId,
+    required String reservationCategory,
+  }) async {
+    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
+      return;
+    }
+
+    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
+    if (recipient == null) {
+      return;
+    }
+
+    try {
+      await _notificationService.createBookingCancelledNotification(
+        userUid: recipient.userUid,
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        email: recipient.email,
+        reservationId: reservationId,
+        reservationDate: reservationDate,
+        mealType: mealType,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _sendMealIssuedNotificationIfPossible({
+    required String employeeNumber,
+    required String employeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required String reservationId,
+    required String reservationCategory,
+  }) async {
+    if (reservationCategory.trim().toLowerCase() != categoryEmployee) {
+      return;
+    }
+
+    final recipient = await _findRecipientByEmployeeNumber(employeeNumber);
+    if (recipient == null) {
+      return;
+    }
+
+    try {
+      await _notificationService.createMealIssuedNotification(
+        userUid: recipient.userUid,
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        email: recipient.email,
+        reservationId: reservationId,
+        reservationDate: reservationDate,
+        mealType: mealType,
+      );
+    } catch (_) {}
+  }
+
+  Future<_NotificationRecipient?> _findRecipientByEmployeeNumber(
+    String employeeNumber,
+  ) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    if (normalizedEmployeeNumber.isEmpty) {
+      return null;
+    }
+
+    final query = await _usersRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) {
+      return null;
+    }
+
+    final data = query.docs.first.data();
+    final userUid = (data['uid'] ?? '').toString().trim();
+    if (userUid.isEmpty) {
+      return null;
+    }
+
+    return _NotificationRecipient(
+      userUid: userUid,
+      email: (data['email'] ?? '').toString().trim(),
+    );
+  }
+
+  String _resolveOperatorBookingSource({
+    required String createdByRole,
+  }) {
+    final role = createdByRole.trim().toLowerCase();
+
+    if (role == 'mess_supervisor') {
+      return bookingSourceSupervisorConsole;
+    }
+    if (role == 'mess_manager' || role == 'admin' || role == 'developer') {
+      return bookingSourceAdminConsole;
+    }
+    return bookingSourceEmployeeApp;
+  }
+
+  bool _isValidMealType(String mealType) {
+    return mealType == 'breakfast' ||
+        mealType == 'lunch' ||
+        mealType == 'dinner';
+  }
+
+  String _normalizeMealType(String mealType) {
+    return mealType.trim().toLowerCase();
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _readReservationDate(dynamic value) {
+    if (value is Timestamp) {
+      final date = value.toDate();
+      return _normalizeDate(date);
+    }
+    if (value is DateTime) {
+      return _normalizeDate(value);
+    }
+    return _normalizeDate(DateTime.now());
+  }
+
+  int _readInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  String _mealLabel(String mealType) {
+    switch (mealType) {
+      case 'breakfast':
+        return 'Breakfast';
+      case 'lunch':
+        return 'Lunch';
+      case 'dinner':
+        return 'Dinner';
+      default:
+        return mealType;
+    }
+  }
+}
+
+class _MealCutoffTime {
+  const _MealCutoffTime({
+    required this.hour,
+    required this.minute,
+  });
+
+  final int hour;
+  final int minute;
+}
+
+class ReservationLineInput {
+  ReservationLineInput({
+    String? optionKey,
+    String? menuOptionKey,
+    String? optionLabel,
+    required this.diningMode,
+    this.quantity = 1,
+    Map<String, dynamic>? menuSnapshot,
+  })  : optionKey = (optionKey ?? menuOptionKey ?? '').trim(),
+        optionLabel = (optionLabel ?? '').trim(),
+        menuSnapshot = menuSnapshot == null
+            ? null
+            : Map<String, dynamic>.from(menuSnapshot) {
+    if (this.optionKey.isEmpty) {
+      throw ArgumentError('optionKey or menuOptionKey is required.');
+    }
+    if (this.optionLabel.isEmpty) {
+      throw ArgumentError('optionLabel is required.');
+    }
+  }
+
+  final String optionKey;
+  final String optionLabel;
+  final String diningMode;
+  final int quantity;
+  final Map<String, dynamic>? menuSnapshot;
+
+  ReservationLineInput normalized() {
+    return ReservationLineInput(
+      optionKey: optionKey.trim(),
+      optionLabel: optionLabel.trim(),
+      diningMode: diningMode.trim().toLowerCase(),
+      quantity: quantity,
+      menuSnapshot: menuSnapshot == null
+          ? null
+          : Map<String, dynamic>.from(menuSnapshot!),
+    );
+  }
+
+  factory ReservationLineInput.forCycleOption({
+    String? menuOptionKey,
+    String? optionKey,
+    required String optionLabel,
+    required String diningMode,
+    int quantity = 1,
+    Map<String, dynamic>? menuSnapshot,
+  }) {
+    return ReservationLineInput(
+      optionKey: optionKey,
+      menuOptionKey: menuOptionKey,
+      optionLabel: optionLabel,
+      diningMode: diningMode,
+      quantity: quantity,
+      menuSnapshot: menuSnapshot,
+    );
+  }
+
+  factory ReservationLineInput.forManualItem({
+    String? menuItemId,
+    String? itemId,
+    String? optionLabel,
+    String? itemName,
+    required String diningMode,
+    int quantity = 1,
+    String? mealType,
+    String? itemCategory,
+    Map<String, dynamic>? menuSnapshot,
+    Map<String, dynamic>? extraSnapshot,
+  }) {
+    final resolvedItemId = (menuItemId ?? itemId ?? '').trim();
+    final resolvedLabel = (optionLabel ?? itemName ?? '').trim();
+
+    final snapshot = <String, dynamic>{
+      if (menuSnapshot != null) ...menuSnapshot,
+      if (extraSnapshot != null) ...extraSnapshot,
+      if (mealType != null && mealType.trim().isNotEmpty)
+        'meal_type': mealType.trim().toLowerCase(),
+      if (itemCategory != null && itemCategory.trim().isNotEmpty)
+        'item_category': itemCategory.trim().toLowerCase(),
+    };
+
+    return ReservationLineInput(
+      optionKey: resolvedItemId,
+      optionLabel: resolvedLabel,
+      diningMode: diningMode,
+      quantity: quantity,
+      menuSnapshot: snapshot.isEmpty ? null : snapshot,
+    );
+  }
+}
+
+class ReservationValidationResult {
+  const ReservationValidationResult({
+    required this.isAllowed,
+    required this.message,
+  });
+
+  final bool isAllowed;
+  final String message;
+}
+
+class BookingValidationResult {
+  const BookingValidationResult({
+    required this.isAllowed,
+    required this.message,
+  });
+
+  final bool isAllowed;
+  final String message;
+}
+
+class CancellationValidationResult {
+  const CancellationValidationResult({
+    required this.isAllowed,
+    required this.message,
+  });
+
+  final bool isAllowed;
+  final String message;
+}
+
+class _NotificationRecipient {
+  const _NotificationRecipient({
+    required this.userUid,
+    required this.email,
+  });
+
+  final String userUid;
+  final String email;
+}
+
+
+
+==================================================
+FILE: lib/services/my_meal_history_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class MyMealHistoryService {
+  MyMealHistoryService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _reservationsRef =>
+      _firestore.collection('meal_reservations');
+
+  DateTime normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime startOfMonth(DateTime value) {
+    return DateTime(value.year, value.month, 1);
+  }
+
+  DateTime endOfMonth(DateTime value) {
+    return DateTime(value.year, value.month + 1, 1);
+  }
+
+  String normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
+  int readInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
+  }
+
+  Map<String, dynamic> asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
+  }
+
+  String extractMenuItemId(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_id']),
+      normalizeText(data['menu_item_id']),
+      normalizeText(data['menu_option_key']),
+      normalizeText(menuSnapshot['option_key']),
+    ]);
+  }
+
+  String extractItemName(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_name']),
+      normalizeText(data['item_name']),
+      normalizeText(data['option_label']),
+      normalizeText(menuSnapshot['option_label']),
+      extractMenuItemId(data),
+    ]);
+  }
+
+  String extractCategory(Map<String, dynamic> data) {
+    final menuSnapshot = asMap(data['menu_snapshot']);
+
+    return firstNonEmpty([
+      normalizeText(menuSnapshot['item_category']),
+      normalizeText(data['category']),
+      normalizeText(data['meal_type']),
+    ]);
+  }
+
+  DateTime? toDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String) return DateTime.tryParse(value);
+
+    if (value is Map<String, dynamic>) {
+      final seconds = value['_seconds'] ?? value['seconds'];
+      final nanoseconds = value['_nanoseconds'] ?? value['nanoseconds'];
+
+      if (seconds is int) {
+        final millis =
+            (seconds * 1000) + ((nanoseconds is int) ? (nanoseconds ~/ 1000000) : 0);
+        return DateTime.fromMillisecondsSinceEpoch(millis);
+      }
+    }
+
+    return null;
+  }
+
+  double resolveAmount({
+    required dynamic explicitAmount,
+    required dynamic unitRate,
+    required int quantity,
+  }) {
+    final amount = readDouble(explicitAmount);
+    if (amount > 0) {
+      return amount;
+    }
+
+    final rate = readDouble(unitRate);
+    if (rate > 0 && quantity > 0) {
+      return rate * quantity;
+    }
+
+    return 0.0;
+  }
+
+  Future<MyMealHistoryData> getMealHistory({
+    required String employeeNumber,
+    required DateTime fromDate,
+    required DateTime toDateExclusive,
+    bool includeCancelled = false,
+  }) async {
+    final normalizedEmployeeNumber = employeeNumber.trim();
+    if (normalizedEmployeeNumber.isEmpty) {
+      throw ArgumentError('employeeNumber is required.');
+    }
+
+    final snapshot = await _reservationsRef
+        .where('employee_number', isEqualTo: normalizedEmployeeNumber)
+        .where(
+          'reservation_date',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(normalizeDate(fromDate)),
+        )
+        .where(
+          'reservation_date',
+          isLessThan: Timestamp.fromDate(normalizeDate(toDateExclusive)),
+        )
+        .get();
+
+    final items = <MyMealHistoryEntry>[];
+
+    int totalQuantity = 0;
+    double totalAmount = 0.0;
+    int activeCount = 0;
+    int issuedCount = 0;
+    int cancelledCount = 0;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+
+      final status = normalizeText(data['status']).toLowerCase();
+      final isIssued = data['is_issued'] == true || status == 'issued';
+      final quantity = readInt(data['quantity']);
+      final unitRate = readDouble(data['unit_rate']);
+      final amount = resolveAmount(
+        explicitAmount: data['amount'],
+        unitRate: data['unit_rate'],
+        quantity: quantity,
+      );
+
+      if (!includeCancelled && status == 'cancelled') {
+        cancelledCount += 1;
+        continue;
+      }
+
+      if (status == 'cancelled') {
+        cancelledCount += 1;
+      } else {
+        activeCount += 1;
+      }
+
+      if (isIssued) {
+        issuedCount += 1;
+      }
+
+      if (status != 'cancelled') {
+        totalQuantity += quantity;
+        totalAmount += amount;
+      }
+
+      items.add(
+        MyMealHistoryEntry(
+          id: doc.id,
+          reservationDate: toDate(data['reservation_date']) ?? DateTime.now(),
+          mealType: normalizeText(data['meal_type']).toLowerCase(),
+          menuItemId: extractMenuItemId(data),
+          itemName: extractItemName(data),
+          category: extractCategory(data),
+          diningMode: normalizeText(data['dining_mode']).toLowerCase(),
+          quantity: quantity,
+          unitRate: unitRate,
+          amount: amount,
+          status: status,
+          isIssued: isIssued,
+          notes: normalizeText(data['notes']),
+        ),
+      );
+    }
+
+    items.sort((a, b) {
+      final byDate = b.reservationDate.compareTo(a.reservationDate);
+      if (byDate != 0) return byDate;
+      return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+    });
+
+    return MyMealHistoryData(
+      entries: items,
+      totalQuantity: totalQuantity,
+      totalAmount: totalAmount,
+      activeCount: activeCount,
+      issuedCount: issuedCount,
+      cancelledCount: cancelledCount,
+    );
+  }
+
+  Future<MyMealHistoryData> getCurrentMonthHistory({
+    required String employeeNumber,
+  }) async {
+    final now = DateTime.now();
+    final from = startOfMonth(now);
+    final to = endOfMonth(now);
+
+    return getMealHistory(
+      employeeNumber: employeeNumber,
+      fromDate: from,
+      toDateExclusive: to,
+    );
+  }
+}
+
+class MyMealHistoryData {
+  final List<MyMealHistoryEntry> entries;
+  final int totalQuantity;
+  final double totalAmount;
+  final int activeCount;
+  final int issuedCount;
+  final int cancelledCount;
+
+  const MyMealHistoryData({
+    required this.entries,
+    required this.totalQuantity,
+    required this.totalAmount,
+    required this.activeCount,
+    required this.issuedCount,
+    required this.cancelledCount,
+  });
+}
+
+class MyMealHistoryEntry {
+  final String id;
+  final DateTime reservationDate;
+  final String mealType;
+  final String menuItemId;
+  final String itemName;
+  final String category;
+  final String diningMode;
+  final int quantity;
+  final double unitRate;
+  final double amount;
+  final String status;
+  final bool isIssued;
+  final String notes;
+
+  const MyMealHistoryEntry({
+    required this.id,
+    required this.reservationDate,
+    required this.mealType,
+    required this.menuItemId,
+    required this.itemName,
+    required this.category,
+    required this.diningMode,
+    required this.quantity,
+    required this.unitRate,
+    required this.amount,
+    required this.status,
+    required this.isIssued,
+    required this.notes,
+  });
+}
+
+
+
+==================================================
+FILE: lib/services/notification_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class NotificationService {
+  NotificationService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _notificationsRef =>
+      _firestore.collection('notifications');
+
+  CollectionReference<Map<String, dynamic>> get _deliveriesRef =>
+      _firestore.collection('notification_deliveries');
+
+  Stream<int> unreadCountStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> userDeliveriesStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> eventInvitationPopupStream({
+    required String userUid,
+  }) {
+    return _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('type', isEqualTo: 'event_invitation')
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> adminNotificationsStream() {
+    return _notificationsRef
+        .orderBy('created_at', descending: true)
+        .snapshots();
+  }
+
+  Future<void> markDeliveryAsRead({
+    required String deliveryId,
+  }) async {
+    final docRef = _deliveriesRef.doc(deliveryId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final currentStatus =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+
+    if (currentStatus == 'read' || currentStatus == 'archived') {
+      return;
+    }
+
+    await docRef.update({
+      'in_app_status': 'read',
+      'read_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+    });
+  }
+
+  Future<void> markAllVisibleAsRead({
+    required String userUid,
+  }) async {
+    final snapshot = await _deliveriesRef
+        .where('user_uid', isEqualTo: userUid.trim())
+        .where('in_app_enabled', isEqualTo: true)
+        .where('in_app_status', whereIn: ['pending', 'visible'])
+        .get();
+
+    if (snapshot.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    final now = Timestamp.now();
+
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'in_app_status': 'read',
+        'read_at': now,
+        'updated_at': now,
+      });
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> acknowledgePopup({
+    required String deliveryId,
+  }) async {
+    final docRef = _deliveriesRef.doc(deliveryId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) {
+      return;
+    }
+
+    final data = snapshot.data()!;
+    final currentStatus =
+        (data['in_app_status'] ?? '').toString().trim().toLowerCase();
+
+    await docRef.update({
+      'popup_acknowledged_at': Timestamp.now(),
+      'updated_at': Timestamp.now(),
+      if (currentStatus == 'pending') 'in_app_status': 'visible',
+      if (currentStatus == 'pending') 'in_app_visible_at': Timestamp.now(),
+    });
+  }
+
+  Future<String> createAdministrativeNotification({
+    required String type,
+    required String title,
+    required String body,
+    required String createdByUid,
+    String? createdByName,
+    String targetType = 'all_employees',
+    List<String>? targetUserUids,
+    bool sendInApp = true,
+    bool sendPush = true,
+    bool sendEmail = true,
+    bool requiresReview = true,
+    String reviewStatus = 'approved',
+    String? reviewedByUid,
+    String? contextType,
+    String? contextId,
+    String priority = 'normal',
+    String status = 'published',
+    String triggerSource = 'admin_manual',
+    Timestamp? publishAt,
+    Timestamp? expiresAt,
+  }) async {
+    final docRef = _notificationsRef.doc();
+    final now = Timestamp.now();
+
+    final normalizedTargets = (targetUserUids ?? <String>[])
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+
+    final payload = <String, dynamic>{
+      'notification_id': docRef.id,
+      'notification_layer': 'administrative',
+      'type': type.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+      'short_message': title.trim(),
+      'status': status.trim().isEmpty ? 'published' : status.trim(),
+      'priority': priority.trim().isEmpty ? 'normal' : priority.trim(),
+      'target_type': targetType.trim().isEmpty ? 'all_employees' : targetType,
+      'target_user_uid': null,
+      'target_user_uids': normalizedTargets,
+      'send_in_app': sendInApp,
+      'send_push': sendPush,
+      'send_email': sendEmail,
+      'created_by_uid': createdByUid.trim(),
+      'created_by_name': createdByName?.trim() ?? '',
+      'trigger_source': triggerSource.trim().isEmpty
+          ? 'admin_manual'
+          : triggerSource.trim(),
+      'requires_review': requiresReview,
+      'review_status':
+          reviewStatus.trim().isEmpty ? 'approved' : reviewStatus.trim(),
+      'reviewed_by_uid': reviewedByUid?.trim() ?? '',
+      'reviewed_at':
+          requiresReview && reviewStatus.trim().toLowerCase() == 'approved'
+              ? now
+              : null,
+      'context_type': contextType?.trim() ?? '',
+      'context_id': contextId?.trim() ?? '',
+      'email_subject': title.trim(),
+      'email_body': body.trim(),
+      'push_title': title.trim(),
+      'push_body': body.trim(),
+      'publish_at': publishAt,
+      'published_at': status.trim().toLowerCase() == 'draft' ? null : now,
+      'expires_at': expiresAt,
+      'delivery_count_total': 0,
+      'delivery_count_in_app': 0,
+      'delivery_count_push_sent': 0,
+      'delivery_count_push_failed': 0,
+      'delivery_count_email_sent': 0,
+      'delivery_count_email_failed': 0,
+      'created_at': now,
+      'updated_at': now,
+    };
+
+    await docRef.set(payload);
+    return docRef.id;
+  }
+
+  Future<String> createTransactionalNotification({
+    required String type,
+    required String title,
+    required String body,
+    required String userUid,
+    String? employeeNumber,
+    String? employeeName,
+    String? email,
+    required String contextType,
+    required String contextId,
+    String triggerSource = 'reservation_service',
+    bool sendInApp = true,
+    bool sendPush = true,
+    bool sendEmail = true,
+    String priority = 'normal',
+  }) async {
+    final notificationRef = _notificationsRef.doc();
+    final deliveryRef = _deliveriesRef.doc();
+    final now = Timestamp.now();
+
+    final batch = _firestore.batch();
+
+    batch.set(notificationRef, {
+      'notification_id': notificationRef.id,
+      'notification_layer': 'transactional',
+      'type': type.trim(),
+      'title': title.trim(),
+      'body': body.trim(),
+      'short_message': title.trim(),
+      'status': 'completed',
+      'priority': priority.trim().isEmpty ? 'normal' : priority.trim(),
+      'target_type': 'single_user',
+      'target_user_uid': userUid.trim(),
+      'target_user_uids': <String>[],
+      'send_in_app': sendInApp,
+      'send_push': sendPush,
+      'send_email': sendEmail,
+      'created_by_uid': '',
+      'created_by_name': '',
+      'trigger_source': triggerSource.trim().isEmpty
+          ? 'reservation_service'
+          : triggerSource.trim(),
+      'requires_review': false,
+      'review_status': 'not_required',
+      'reviewed_by_uid': '',
+      'reviewed_at': null,
+      'context_type': contextType.trim(),
+      'context_id': contextId.trim(),
+      'email_subject': title.trim(),
+      'email_body': body.trim(),
+      'push_title': title.trim(),
+      'push_body': body.trim(),
+      'publish_at': now,
+      'published_at': now,
+      'expires_at': null,
+      'delivery_count_total': 1,
+      'delivery_count_in_app': sendInApp ? 1 : 0,
+      'delivery_count_push_sent': 0,
+      'delivery_count_push_failed': 0,
+      'delivery_count_email_sent': 0,
+      'delivery_count_email_failed': 0,
+      'created_at': now,
+      'updated_at': now,
+    });
+
+    batch.set(deliveryRef, {
+      'delivery_id': deliveryRef.id,
+      'notification_id': notificationRef.id,
+      'user_uid': userUid.trim(),
+      'employee_number': employeeNumber?.trim() ?? '',
+      'employee_name': employeeName?.trim() ?? '',
+      'email': email?.trim() ?? '',
+      'notification_layer': 'transactional',
+      'type': type.trim(),
+      'in_app_enabled': sendInApp,
+      'push_enabled': sendPush,
+      'email_enabled': sendEmail,
+      'in_app_status': sendInApp ? 'visible' : 'skipped',
+      'push_status': sendPush ? 'pending' : 'skipped',
+      'email_status': sendEmail ? 'pending' : 'skipped',
+      'push_sent_at': null,
+      'email_sent_at': null,
+      'in_app_visible_at': sendInApp ? now : null,
+      'read_at': null,
+      'archived_at': null,
+      'popup_acknowledged_at': null,
+      'failure_reason_push': '',
+      'failure_reason_email': '',
+      'title_snapshot': title.trim(),
+      'body_snapshot': body.trim(),
+      'context_type': contextType.trim(),
+      'context_id': contextId.trim(),
+      'created_at': now,
+      'updated_at': now,
+    });
+
+    await batch.commit();
+    return notificationRef.id;
+  }
+
+  Future<void> createBookingConfirmedNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_booking_confirmed',
+      title: 'Meal Booking Confirmed',
+      body: 'Your $mealLabel booking for $dateLabel has been confirmed.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'reservation',
+      contextId: reservationId,
+      triggerSource: 'reservation_service',
+    );
+  }
+
+  Future<void> createBookingCancelledNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_booking_cancelled',
+      title: 'Meal Booking Cancelled',
+      body: 'Your $mealLabel booking for $dateLabel has been cancelled.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'reservation',
+      contextId: reservationId,
+      triggerSource: 'reservation_service',
+    );
+  }
+
+  Future<void> createMealIssuedNotification({
+    required String userUid,
+    required String employeeNumber,
+    required String employeeName,
+    required String email,
+    required String reservationId,
+    required DateTime reservationDate,
+    required String mealType,
+  }) async {
+    final mealLabel = _mealLabel(mealType);
+    final dateLabel = _formatDate(reservationDate);
+
+    await createTransactionalNotification(
+      type: 'meal_issued',
+      title: 'Meal Issued',
+      body: 'Your $mealLabel booking for $dateLabel has been issued.',
+      userUid: userUid,
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      email: email,
+      contextType: 'meal_issuance',
+      contextId: reservationId,
+      triggerSource: 'meal_issuance_service',
+    );
+  }
+
+  String _mealLabel(String mealType) {
+    switch (mealType.trim().toLowerCase()) {
+      case 'breakfast':
+        return 'breakfast';
+      case 'lunch':
+        return 'lunch';
+      case 'dinner':
+        return 'dinner';
+      default:
+        return mealType.trim().toLowerCase();
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$day-$month-$year';
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/user_profile_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'user_role_service.dart';
+
+class AppUserProfile {
+  final String documentId;
+  final String authUid;
+  final String email;
+  final AppUserRole role;
+  final String employeeNumber;
+  final String employeeName;
+  final bool isActive;
+  final String status;
+  final Map<String, dynamic> rawData;
+
+  const AppUserProfile({
+    required this.documentId,
+    required this.authUid,
+    required this.email,
+    required this.role,
+    required this.employeeNumber,
+    required this.employeeName,
+    required this.isActive,
+    required this.status,
+    required this.rawData,
+  });
+
+  bool get hasEmployeeLink => employeeNumber.trim().isNotEmpty;
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+}
+
+class UserProfileService {
+  UserProfileService({
+    FirebaseFirestore? firestore,
+    UserRoleService? userRoleService,
+  })  : _firestore = firestore ?? FirebaseFirestore.instance,
+        _userRoleService = userRoleService ?? UserRoleService();
+
+  final FirebaseFirestore _firestore;
+  final UserRoleService _userRoleService;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<AppUserProfile?> resolveCurrentUserProfile({
+    required String authUid,
+  }) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return null;
+    }
+
+    final query =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (query.docs.isEmpty) {
+      return null;
+    }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+
+    final email = (data['email'] ?? '').toString().trim().toLowerCase();
+    final employeeNumber =
+        (data['employee_number'] ?? '').toString().trim();
+    final employeeName =
+        (data['employee_name'] ?? '').toString().trim();
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+    final isActive = data['is_active'] == true;
+
+    return AppUserProfile(
+      documentId: doc.id,
+      authUid: (data['uid'] ?? normalizedUid).toString().trim(),
+      email: email,
+      role: _userRoleService.parseRole(data['role']),
+      employeeNumber: employeeNumber,
+      employeeName: employeeName,
+      isActive: isActive,
+      status: status,
+      rawData: data,
+    );
+  }
+
+  Future<AppUserProfile?> getUserProfileByUid(String authUid) {
+    return resolveCurrentUserProfile(authUid: authUid);
+  }
+}
+
+
+
+==================================================
+FILE: lib/services/user_role_service.dart
+==================================================
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum AppUserRole {
+  developer,
+  admin,
+  messManager,
+  messSupervisor,
+  employee,
+  unknown,
+}
+
+class ResolvedUserRole {
+  final AppUserRole role;
+  final String source;
+  final String? documentId;
+  final Map<String, dynamic>? rawData;
+
+  const ResolvedUserRole({
+    required this.role,
+    required this.source,
+    this.documentId,
+    this.rawData,
+  });
+
+  String get roleLabel {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool get isAdminFamily {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canManageMenus {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canConfirmIssuance {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool get canEnterRates {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool get canManageUsers {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
+  }
+}
+
+class UserRoleService {
+  UserRoleService({FirebaseFirestore? firestore})
+      : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _firestore.collection('users');
+
+  Future<ResolvedUserRole> resolveRole({
+    required String authUid,
+  }) async {
+    final normalizedUid = authUid.trim();
+
+    if (normalizedUid.isEmpty) {
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'missing_auth_uid',
+      );
+    }
+
+    final query = await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+    if (query.docs.isEmpty) {
+      return const ResolvedUserRole(
+        role: AppUserRole.unknown,
+        source: 'users.uid_not_found',
+      );
+    }
+
+    final doc = query.docs.first;
+    final data = doc.data();
+
+    return ResolvedUserRole(
+      role: parseRole(data['role']),
+      source: 'users.uid',
+      documentId: doc.id,
+      rawData: data,
+    );
+  }
+
+  AppUserRole parseRole(dynamic value) {
+    final normalized = (value ?? '').toString().trim().toLowerCase();
+
+    switch (normalized) {
+      case 'developer':
+        return AppUserRole.developer;
+      case 'admin':
+        return AppUserRole.admin;
+      case 'mess_manager':
+        return AppUserRole.messManager;
+      case 'mess_supervisor':
+        return AppUserRole.messSupervisor;
+      case 'employee':
+        return AppUserRole.employee;
+      default:
+        return AppUserRole.unknown;
+    }
+  }
+
+  String roleToFirestoreValue(AppUserRole role) {
+    switch (role) {
+      case AppUserRole.developer:
+        return 'developer';
+      case AppUserRole.admin:
+        return 'admin';
+      case AppUserRole.messManager:
+        return 'mess_manager';
+      case AppUserRole.messSupervisor:
+        return 'mess_supervisor';
+      case AppUserRole.employee:
+        return 'employee';
+      case AppUserRole.unknown:
+        return 'unknown';
+    }
+  }
+
+  bool isAdminFamily(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canManageMenus(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canConfirmIssuance(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager ||
+        role == AppUserRole.messSupervisor;
+  }
+
+  bool canEnterRates(AppUserRole role) {
+    return role == AppUserRole.developer ||
+        role == AppUserRole.admin ||
+        role == AppUserRole.messManager;
+  }
+
+  bool canManageUsers(AppUserRole role) {
+    return role == AppUserRole.developer || role == AppUserRole.admin;
+  }
+}
+
+
+

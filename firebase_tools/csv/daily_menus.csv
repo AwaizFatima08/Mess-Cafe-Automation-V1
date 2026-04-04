@@ -1,2 +1,2 @@
-docId,menu_date,breakfast_item_ids,lunch_item_ids,dinner_item_ids,is_active,booking_deadline_at,created_at,updated_at
-1,,,,,true,,,
+docId,menu_date,meal_type,menu_option_key,resolved_item_ids,resolved_item_names,source_cycle_id,is_active,updated_at
+1,,,,,,,,

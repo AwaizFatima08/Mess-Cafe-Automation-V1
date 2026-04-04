@@ -1,124 +1,257 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
 import '../../services/meal_rate_service.dart';
 
 class MealRateManagementScreen extends StatefulWidget {
   const MealRateManagementScreen({super.key});
 
   @override
-  State<MealRateManagementScreen> createState() => _MealRateManagementScreenState();
+  State<MealRateManagementScreen> createState() =>
+      _MealRateManagementScreenState();
 }
 
-class _MealRateManagementScreenState extends State<MealRateManagementScreen> {
-  final MealRateService _rateService = MealRateService();
-  DateTime _selectedDate = DateTime.now();
-  String _selectedMealType = 'lunch';
+class _MealRateManagementScreenState
+    extends State<MealRateManagementScreen> {
+  final MealRateService _service = MealRateService();
+
+  late DateTime _selectedDate;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  List<MealRateEntryRow> _rows = [];
+
+  final Map<String, TextEditingController> _controllers = {};
 
   @override
-  Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      initialIndex: 1,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Rate Management'),
-          bottom: TabBar(
-            onTap: (index) {
-              setState(() {
-                _selectedMealType = index == 0 ? 'breakfast' : index == 1 ? 'lunch' : 'dinner';
-              });
-            },
-            tabs: const [Tab(text: 'Breakfast'), Tab(text: 'Lunch'), Tab(text: 'Dinner')],
+  void initState() {
+    super.initState();
+    _selectedDate = _resolveOperationalReferenceDate();
+    _loadData();
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return now.subtract(const Duration(days: 1));
+    }
+    return now;
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final rows = await _service.getRateEntryRowsForDate(_selectedDate);
+
+      for (final controller in _controllers.values) {
+        controller.dispose();
+      }
+      _controllers.clear();
+
+      for (final row in rows) {
+        _controllers[row.summary.menuItemId] = TextEditingController(
+          text: row.initialRate > 0 ? row.initialRate.toStringAsFixed(0) : '',
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _rows = rows;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _rows = [];
+        _isLoading = false;
+        _errorMessage = 'Failed to load meal rates: $e';
+      });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      await _loadData();
+    }
+  }
+
+  Future<void> _saveRates() async {
+    setState(() => _isSaving = true);
+
+    try {
+      final drafts = _rows.map((row) {
+        final controller = _controllers[row.summary.menuItemId];
+        final rate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
+
+        return MealRateDraft(
+          menuItemId: row.summary.menuItemId,
+          itemName: row.summary.itemName,
+          category: row.summary.category,
+          unitRate: rate,
+        );
+      }).toList();
+
+      await _service.saveRatesBatch(
+        rateDate: _selectedDate,
+        drafts: drafts,
+      );
+
+      await _service.applyRatesToReservationsForDate(_selectedDate);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rates saved and applied successfully')),
+      );
+
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save/apply rates: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        ElevatedButton.icon(
+          onPressed: _pickDate,
+          icon: const Icon(Icons.calendar_today),
+          label: Text(
+            DateFormat('dd MMM yyyy').format(_selectedDate),
           ),
-          actions: [IconButton(icon: const Icon(Icons.calendar_today), onPressed: _selectDate)],
         ),
-        body: _buildRateEntryList(),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Text(
+            'Enter Actual Rates',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Refresh',
+          onPressed: _loadData,
+          icon: const Icon(Icons.refresh),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: (_isSaving || _rows.isEmpty) ? null : _saveRates,
+          icon: const Icon(Icons.save),
+          label: _isSaving
+              ? const Text('Saving...')
+              : const Text('Save Rates'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTable() {
+    if (_rows.isEmpty) {
+      return Center(
+        child: Text(
+          'No consumption data found for ${DateFormat('dd MMM yyyy').format(_selectedDate)}',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.vertical,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Item')),
+          DataColumn(label: Text('Category')),
+          DataColumn(label: Text('Meal')),
+          DataColumn(label: Text('Qty')),
+          DataColumn(label: Text('Rate')),
+        ],
+        rows: _rows.map((row) {
+          final controller = _controllers[row.summary.menuItemId]!;
+
+          return DataRow(
+            cells: [
+              DataCell(Text(row.summary.itemName.isEmpty ? '—' : row.summary.itemName)),
+              DataCell(Text(row.summary.category.isEmpty ? '—' : row.summary.category)),
+              DataCell(Text(row.summary.mealType.isEmpty ? '—' : row.summary.mealType)),
+              DataCell(Text(row.summary.totalQuantity.toString())),
+              DataCell(
+                SizedBox(
+                  width: 90,
+                  child: TextField(
+                    controller: controller,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      hintText: '0',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildRateEntryList() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('menu_items').where('is_active', isEqualTo: true).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        final docs = snapshot.data!.docs;
-        return ListView.builder(
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final item = docs[index];
-            return _RateEntryTile(
-              itemId: item.id,
-              itemName: item['name'] ?? 'Unknown',
-              basePrice: (item['base_price'] ?? 0.0).toDouble(),
-              selectedDate: _selectedDate,
-              mealType: _selectedMealType,
-              rateService: _rateService,
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<void> _selectDate() async {
-    final picked = await showDatePicker(context: context, initialDate: _selectedDate, firstDate: DateTime(2024), lastDate: DateTime(2100));
-    if (picked != null) setState(() => _selectedDate = picked);
-  }
-}
-
-class _RateEntryTile extends StatefulWidget {
-  final String itemId;
-  final String itemName;
-  final double basePrice;
-  final DateTime selectedDate;
-  final String mealType;
-  final MealRateService rateService;
-
-  const _RateEntryTile({required this.itemId, required this.itemName, required this.basePrice, required this.selectedDate, required this.mealType, required this.rateService});
-
   @override
-  State<_RateEntryTile> createState() => _RateEntryTileState();
-}
-
-class _RateEntryTileState extends State<_RateEntryTile> {
-  final TextEditingController _controller = TextEditingController();
-  bool _isSaving = false;
-
-  Future<void> _saveRate() async {
-    final newRate = double.tryParse(_controller.text);
-    if (newRate == null) return;
-    setState(() => _isSaving = true);
-    try {
-      await widget.rateService.updateMealRate(
-        menuItemId: widget.itemId,
-        date: widget.selectedDate,
-        mealType: widget.mealType,
-        newRate: newRate,
-      );
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Rate updated")));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error saving rate")));
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
+  void dispose() {
+    for (final c in _controllers.values) {
+      c.dispose();
     }
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        title: Text(widget.itemName),
-        subtitle: Text("Base: Rs. ${widget.basePrice}"),
-        trailing: SizedBox(
-          width: 150,
-          child: Row(
-            children: [
-              Expanded(child: TextField(controller: _controller, keyboardType: TextInputType.number)),
-              IconButton(icon: Icon(_isSaving ? Icons.sync : Icons.save), onPressed: _isSaving ? null : _saveRate),
-            ],
-          ),
-        ),
+    final body = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _errorMessage != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 16),
+                  Expanded(child: _buildTable()),
+                ],
+              );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Meal Rate Management'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: body,
       ),
     );
   }
