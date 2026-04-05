@@ -30,6 +30,9 @@ class EmployeeRegistrationService {
   CollectionReference<Map<String, dynamic>> get _employeesRef =>
       _firestore.collection('employees');
 
+  CollectionReference<Map<String, dynamic>> get _employeeProfilesRef =>
+      _firestore.collection('employee_profiles');
+
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _firestore.collection('users');
 
@@ -111,65 +114,50 @@ class EmployeeRegistrationService {
     }
 
     try {
-      final employeeDoc =
-          await _employeesRef.doc(normalizedEmployeeNumber).get();
+      final employeeContext =
+          await _loadEmployeeContext(normalizedEmployeeNumber);
 
-      if (!employeeDoc.exists || employeeDoc.data() == null) {
+      if (!employeeContext.exists) {
         return const RegistrationResult(
           success: false,
-          message: 'Employee master record not found.',
+          message: 'Employee master/profile record not found.',
         );
       }
 
-      final employeeData = employeeDoc.data()!;
-
-      final employeeName =
-          (employeeData['name'] ?? employeeData['employee_name'] ?? '')
-              .toString()
-              .trim();
-
-      final employeeEmail =
-          (employeeData['email'] ?? '').toString().trim().toLowerCase();
-
-      final employeeCnicLast4 =
-          (employeeData['cnic_last_4'] ?? '').toString().trim();
-
-      final employeeIsActive = employeeData['is_active'] == true;
-
-      if (!employeeIsActive) {
+      if (!employeeContext.isActive) {
         return const RegistrationResult(
           success: false,
-          message: 'Employee master record is inactive.',
+          message: 'Employee master/profile record is inactive.',
         );
       }
 
-      if (employeeEmail.isEmpty) {
+      if (employeeContext.officialEmail.isEmpty) {
         return const RegistrationResult(
           success: false,
           message:
-              'Official email is missing in employee master record. Contact admin.',
+              'Official email is missing in employee master/profile record. Contact admin.',
         );
       }
 
-      if (employeeEmail != normalizedEmail) {
+      if (employeeContext.officialEmail != normalizedEmail) {
         return const RegistrationResult(
           success: false,
-          message: 'Email does not match official employee master record.',
+          message: 'Email does not match official employee record.',
         );
       }
 
-      if (employeeCnicLast4.isEmpty) {
+      if (employeeContext.officialCnicLast4.isEmpty) {
         return const RegistrationResult(
           success: false,
           message:
-              'CNIC last 4 digits are missing in employee master record. Contact admin.',
+              'CNIC last 4 digits are missing in employee master/profile record. Contact admin.',
         );
       }
 
-      if (employeeCnicLast4 != normalizedCnicLast4) {
+      if (employeeContext.officialCnicLast4 != normalizedCnicLast4) {
         return const RegistrationResult(
           success: false,
-          message: 'CNIC last 4 digits do not match employee master record.',
+          message: 'CNIC last 4 digits do not match employee record.',
         );
       }
 
@@ -181,13 +169,14 @@ class EmployeeRegistrationService {
       if (existingUserByEmployee.docs.isNotEmpty) {
         final existingData = existingUserByEmployee.docs.first.data();
         final existingIsActive = existingData['is_active'] == true;
-        final existingStatus =
-            (existingData['status'] ?? '').toString().trim().toLowerCase();
+        final existingStatus = _normalizedString(existingData['status'])
+            .toLowerCase();
 
         if (existingIsActive || existingStatus == 'approved') {
           return const RegistrationResult(
             success: false,
-            message: 'An approved user account already exists for this employee.',
+            message:
+                'An approved user account already exists for this employee.',
           );
         }
 
@@ -245,8 +234,9 @@ class EmployeeRegistrationService {
         );
       }
 
-      final effectiveEmployeeName =
-          employeeName.isNotEmpty ? employeeName : normalizedFullName;
+      final effectiveEmployeeName = employeeContext.officialName.isNotEmpty
+          ? employeeContext.officialName
+          : normalizedFullName;
 
       final now = FieldValue.serverTimestamp();
       final effectiveStatus = requireApproval ? 'pending' : 'approved';
@@ -258,6 +248,7 @@ class EmployeeRegistrationService {
           'email': normalizedEmail,
           'employee_number': normalizedEmployeeNumber,
           'employee_name': effectiveEmployeeName,
+          'display_name': effectiveEmployeeName,
           'role': normalizedRole,
           'is_active': isActive,
           'status': effectiveStatus,
@@ -266,6 +257,7 @@ class EmployeeRegistrationService {
         });
 
         String? requestId;
+
         if (requireApproval) {
           final requestRef = _registrationRequestsRef.doc();
           requestId = requestRef.id;
@@ -275,6 +267,7 @@ class EmployeeRegistrationService {
             'uid': uid,
             'employee_number': normalizedEmployeeNumber,
             'employee_name': effectiveEmployeeName,
+            'display_name': effectiveEmployeeName,
             'email': normalizedEmail,
             'role': normalizedRole,
             'status': 'pending',
@@ -294,6 +287,15 @@ class EmployeeRegistrationService {
             requestId: requestId,
           );
         }
+
+        await _upsertApprovedEmployeeProfile(
+          uid: uid,
+          employeeNumber: normalizedEmployeeNumber,
+          email: normalizedEmail,
+          displayName: effectiveEmployeeName,
+          sourceProfileData: employeeContext.profileData,
+          sourceMasterData: employeeContext.masterData,
+        );
 
         await _auth.signOut();
 
@@ -322,6 +324,124 @@ class EmployeeRegistrationService {
 
   bool _isAllowedSelfRegistrationRole(String role) {
     return role == 'employee';
+  }
+
+  Future<_EmployeeRegistrationContext> _loadEmployeeContext(
+    String employeeNumber,
+  ) async {
+    final profileDoc = await _employeeProfilesRef.doc(employeeNumber).get();
+    final masterDoc = await _employeesRef.doc(employeeNumber).get();
+
+    final profileData = profileDoc.exists ? profileDoc.data() : null;
+    final masterData = masterDoc.exists ? masterDoc.data() : null;
+
+    final exists = profileData != null || masterData != null;
+
+    final officialName = _pickFirstNonEmpty([
+      profileData?['display_name'],
+      profileData?['employee_name'],
+      profileData?['name'],
+      masterData?['employee_name'],
+      masterData?['name'],
+      masterData?['full_name'],
+    ]);
+
+    final officialEmail = _pickFirstNonEmpty([
+      profileData?['email'],
+      masterData?['email'],
+    ]).toLowerCase();
+
+    final officialCnicLast4 = _pickFirstNonEmpty([
+      profileData?['cnic_last_4'],
+      masterData?['cnic_last_4'],
+    ]);
+
+    final isActive = _resolveEmployeeIsActive(profileData, masterData);
+
+    return _EmployeeRegistrationContext(
+      exists: exists,
+      isActive: isActive,
+      officialName: officialName,
+      officialEmail: officialEmail,
+      officialCnicLast4: officialCnicLast4,
+      profileData: profileData,
+      masterData: masterData,
+    );
+  }
+
+  Future<void> _upsertApprovedEmployeeProfile({
+    required String uid,
+    required String employeeNumber,
+    required String email,
+    required String displayName,
+    Map<String, dynamic>? sourceProfileData,
+    Map<String, dynamic>? sourceMasterData,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+
+    final existingProfileDoc = await _employeeProfilesRef.doc(employeeNumber).get();
+    final existingProfileData =
+        existingProfileDoc.exists ? existingProfileDoc.data() : null;
+
+    final mergedFamilyMembers =
+        existingProfileData?['family_members'] ??
+            sourceProfileData?['family_members'] ??
+            <dynamic>[];
+
+    final houseNumber = _pickFirstNonEmpty([
+      existingProfileData?['house_number'],
+      sourceProfileData?['house_number'],
+      sourceMasterData?['house_number'],
+    ]);
+
+    final phoneNumber = _pickFirstNonEmpty([
+      existingProfileData?['phone_number'],
+      sourceProfileData?['phone_number'],
+      sourceMasterData?['phone_number'],
+    ]);
+
+    await _employeeProfilesRef.doc(employeeNumber).set({
+      'employee_number': employeeNumber,
+      'uid': uid,
+      'display_name': displayName,
+      'employee_name': displayName,
+      'email': email,
+      'phone_number': phoneNumber,
+      'house_number': houseNumber,
+      'is_active': true,
+      'family_members': mergedFamilyMembers,
+      'updated_at': now,
+      if (!existingProfileDoc.exists) 'created_at': now,
+    }, SetOptions(merge: true));
+  }
+
+  bool _resolveEmployeeIsActive(
+    Map<String, dynamic>? profileData,
+    Map<String, dynamic>? masterData,
+  ) {
+    if (profileData != null) {
+      return profileData['is_active'] == true;
+    }
+
+    if (masterData != null) {
+      return masterData['is_active'] == true;
+    }
+
+    return false;
+  }
+
+  String _pickFirstNonEmpty(List<dynamic> values) {
+    for (final value in values) {
+      final normalized = _normalizedString(value);
+      if (normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+    return '';
+  }
+
+  String _normalizedString(dynamic value) {
+    return (value ?? '').toString().trim();
   }
 
   String _firebaseAuthErrorMessage(FirebaseAuthException e) {
@@ -357,4 +477,24 @@ class EmployeeRegistrationService {
       }
     }
   }
+}
+
+class _EmployeeRegistrationContext {
+  final bool exists;
+  final bool isActive;
+  final String officialName;
+  final String officialEmail;
+  final String officialCnicLast4;
+  final Map<String, dynamic>? profileData;
+  final Map<String, dynamic>? masterData;
+
+  const _EmployeeRegistrationContext({
+    required this.exists,
+    required this.isActive,
+    required this.officialName,
+    required this.officialEmail,
+    required this.officialCnicLast4,
+    required this.profileData,
+    required this.masterData,
+  });
 }

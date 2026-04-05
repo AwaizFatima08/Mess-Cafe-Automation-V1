@@ -4,7 +4,11 @@ import '../../models/daily_resolved_menu.dart';
 import '../../models/resolved_meal_option.dart';
 
 class MenuResolverService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  MenuResolverService({
+    FirebaseFirestore? firestore,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _firestore;
 
   final Map<String, Map<String, dynamic>?> _rawMenuCacheByDate = {};
   final Map<String, DailyResolvedMenu?> _bookingMenuCacheByDate = {};
@@ -21,7 +25,7 @@ class MenuResolverService {
       return _rawMenuCacheByDate[cacheKey];
     }
 
-    final cycleQuery = await _firestore
+    final QuerySnapshot<Map<String, dynamic>> cycleQuery = await _firestore
         .collection('menu_cycles')
         .where('is_active', isEqualTo: true)
         .limit(20)
@@ -32,84 +36,92 @@ class MenuResolverService {
       return null;
     }
 
-    final targetDate = _startOfDay(date);
-
-    QueryDocumentSnapshot<Map<String, dynamic>>? matchedCycle;
-
-    for (final doc in cycleQuery.docs) {
-      final data = doc.data();
-
-      final startDate = _toDateTime(data['start_date']);
-      final endDate = _toDateTime(data['end_date']);
-
-      if (startDate != null && targetDate.isBefore(_startOfDay(startDate))) {
-        continue;
-      }
-
-      if (endDate != null && targetDate.isAfter(_endOfDay(endDate))) {
-        continue;
-      }
-
-      matchedCycle = doc;
-      break;
-    }
+    final DateTime targetDate = _startOfDay(date);
+    final QueryDocumentSnapshot<Map<String, dynamic>>? matchedCycle =
+        _pickBestMatchingCycle(
+      docs: cycleQuery.docs,
+      targetDate: targetDate,
+    );
 
     if (matchedCycle == null) {
       _rawMenuCacheByDate[cacheKey] = null;
       return null;
     }
 
-    final cycleData = matchedCycle.data();
-    final weekday = _weekdayKey(date.weekday);
+    final Map<String, dynamic> cycleData = matchedCycle.data();
+    final String weekday = _weekdayKey(targetDate.weekday);
 
-    final breakfastTemplateId =
-        (cycleData['breakfast_template_id'] ?? '').toString().trim();
+    final String breakfastTemplateId =
+        _readTemplateId(cycleData, const <String>[
+      'breakfast_template_id',
+      'breakfast_template',
+    ]);
 
-    final lunchTemplate1Id =
-        (cycleData['lunch_template_1_id'] ?? '').toString().trim();
+    final String lunchTemplate1Id =
+        _readTemplateId(cycleData, const <String>[
+      'lunch_template_1_id',
+      'lunch_template_1',
+    ]);
 
-    final lunchTemplate2Id =
-        (cycleData['lunch_template_2_id'] ?? '').toString().trim();
+    final String lunchTemplate2Id =
+        _readTemplateId(cycleData, const <String>[
+      'lunch_template_2_id',
+      'lunch_template_2',
+    ]);
 
-    final dinnerTemplate1Id =
-        (cycleData['dinner_template_1_id'] ?? '').toString().trim();
+    final String dinnerTemplate1Id =
+        _readTemplateId(cycleData, const <String>[
+      'dinner_template_1_id',
+      'dinner_template_1',
+    ]);
 
-    final dinnerTemplate2Id =
-        (cycleData['dinner_template_2_id'] ?? '').toString().trim();
+    final String dinnerTemplate2Id =
+        _readTemplateId(cycleData, const <String>[
+      'dinner_template_2_id',
+      'dinner_template_2',
+    ]);
 
-    final futures = await Future.wait<List<Map<String, dynamic>>>([
+    final List<List<Map<String, dynamic>>> futures =
+        await Future.wait<List<Map<String, dynamic>>>(<Future<List<Map<String, dynamic>>>>[
       _resolveTemplateItems(
-        breakfastTemplateId,
-        weekday,
+        templateId: breakfastTemplateId,
+        weekday: weekday,
+        expectedMealType: 'breakfast',
         forceRefresh: forceRefresh,
       ),
       _resolveTemplateItems(
-        lunchTemplate1Id,
-        weekday,
+        templateId: lunchTemplate1Id,
+        weekday: weekday,
+        expectedMealType: 'lunch',
         forceRefresh: forceRefresh,
       ),
       _resolveTemplateItems(
-        lunchTemplate2Id,
-        weekday,
+        templateId: lunchTemplate2Id,
+        weekday: weekday,
+        expectedMealType: 'lunch',
         forceRefresh: forceRefresh,
       ),
       _resolveTemplateItems(
-        dinnerTemplate1Id,
-        weekday,
+        templateId: dinnerTemplate1Id,
+        weekday: weekday,
+        expectedMealType: 'dinner',
         forceRefresh: forceRefresh,
       ),
       _resolveTemplateItems(
-        dinnerTemplate2Id,
-        weekday,
+        templateId: dinnerTemplate2Id,
+        weekday: weekday,
+        expectedMealType: 'dinner',
         forceRefresh: forceRefresh,
       ),
     ]);
 
-    final rawMenu = <String, dynamic>{
-      'date': date.toIso8601String(),
+    final Map<String, dynamic> rawMenu = <String, dynamic>{
+      'date': targetDate.toIso8601String(),
       'weekday': weekday,
       'cycle_id': matchedCycle.id,
-      'cycle_name': (cycleData['cycle_name'] ?? '').toString(),
+      'cycle_name': (cycleData['cycle_name'] ?? cycleData['name'] ?? '')
+          .toString()
+          .trim(),
       'breakfast': futures[0],
       'lunch_template_1': futures[1],
       'lunch_template_2': futures[2],
@@ -125,13 +137,13 @@ class MenuResolverService {
     DateTime date, {
     bool forceRefresh = false,
   }) async {
-    final cacheKey = _dateCacheKey(date);
+    final String cacheKey = _dateCacheKey(date);
 
     if (!forceRefresh && _bookingMenuCacheByDate.containsKey(cacheKey)) {
       return _bookingMenuCacheByDate[cacheKey];
     }
 
-    final rawMenu = await getMenuForDate(
+    final Map<String, dynamic>? rawMenu = await getMenuForDate(
       date,
       forceRefresh: forceRefresh,
     );
@@ -141,16 +153,21 @@ class MenuResolverService {
       return null;
     }
 
-    final weekday = (rawMenu['weekday'] ?? '').toString();
-    final cycleName = (rawMenu['cycle_name'] ?? '').toString();
+    final String weekday = (rawMenu['weekday'] ?? '').toString().trim();
+    final String cycleName = (rawMenu['cycle_name'] ?? '').toString().trim();
 
-    final breakfastItems = _castItemList(rawMenu['breakfast']);
-    final lunchTemplate1Items = _castItemList(rawMenu['lunch_template_1']);
-    final lunchTemplate2Items = _castItemList(rawMenu['lunch_template_2']);
-    final dinnerTemplate1Items = _castItemList(rawMenu['dinner_template_1']);
-    final dinnerTemplate2Items = _castItemList(rawMenu['dinner_template_2']);
+    final List<Map<String, dynamic>> breakfastItems =
+        _castItemList(rawMenu['breakfast']);
+    final List<Map<String, dynamic>> lunchTemplate1Items =
+        _castItemList(rawMenu['lunch_template_1']);
+    final List<Map<String, dynamic>> lunchTemplate2Items =
+        _castItemList(rawMenu['lunch_template_2']);
+    final List<Map<String, dynamic>> dinnerTemplate1Items =
+        _castItemList(rawMenu['dinner_template_1']);
+    final List<Map<String, dynamic>> dinnerTemplate2Items =
+        _castItemList(rawMenu['dinner_template_2']);
 
-    final breakfastOptions = <ResolvedMealOption>[];
+    final List<ResolvedMealOption> breakfastOptions = <ResolvedMealOption>[];
     if (breakfastItems.isNotEmpty) {
       breakfastOptions.add(
         _buildOption(
@@ -161,7 +178,7 @@ class MenuResolverService {
       );
     }
 
-    final lunchOptions = <ResolvedMealOption>[];
+    final List<ResolvedMealOption> lunchOptions = <ResolvedMealOption>[];
     if (lunchTemplate1Items.isNotEmpty) {
       lunchOptions.add(
         _buildOption(
@@ -181,7 +198,7 @@ class MenuResolverService {
       );
     }
 
-    final dinnerOptions = <ResolvedMealOption>[];
+    final List<ResolvedMealOption> dinnerOptions = <ResolvedMealOption>[];
     if (dinnerTemplate1Items.isNotEmpty) {
       dinnerOptions.add(
         _buildOption(
@@ -201,7 +218,7 @@ class MenuResolverService {
       );
     }
 
-    final resolvedMenu = DailyResolvedMenu(
+    final DailyResolvedMenu resolvedMenu = DailyResolvedMenu(
       weekday: weekday,
       cycleName: cycleName,
       breakfastOptions: breakfastOptions,
@@ -221,7 +238,7 @@ class MenuResolverService {
   }
 
   void clearDateCache(DateTime date) {
-    final key = _dateCacheKey(date);
+    final String key = _dateCacheKey(date);
     _rawMenuCacheByDate.remove(key);
     _bookingMenuCacheByDate.remove(key);
   }
@@ -239,28 +256,86 @@ class MenuResolverService {
   }
 
   List<Map<String, dynamic>> _castItemList(dynamic raw) {
-    return ((raw as List?) ?? const [])
+    return ((raw as List?) ?? const <dynamic>[])
         .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
+        .map((Map<dynamic, dynamic> e) => Map<String, dynamic>.from(e))
         .toList();
   }
 
-  Future<List<Map<String, dynamic>>> _resolveTemplateItems(
-    String? templateId,
-    String weekday, {
-    bool forceRefresh = false,
+  QueryDocumentSnapshot<Map<String, dynamic>>? _pickBestMatchingCycle({
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    required DateTime targetDate,
+  }) {
+    QueryDocumentSnapshot<Map<String, dynamic>>? bestDoc;
+    DateTime? bestStartDate;
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
+      final Map<String, dynamic> data = doc.data();
+
+      final DateTime? startDate = _toDateTime(data['start_date']);
+      final DateTime? endDate = _toDateTime(data['end_date']);
+
+      if (startDate != null && targetDate.isBefore(_startOfDay(startDate))) {
+        continue;
+      }
+
+      if (endDate != null && targetDate.isAfter(_endOfDay(endDate))) {
+        continue;
+      }
+
+      if (bestDoc == null) {
+        bestDoc = doc;
+        bestStartDate = startDate;
+        continue;
+      }
+
+      if (bestStartDate == null && startDate != null) {
+        bestDoc = doc;
+        bestStartDate = startDate;
+        continue;
+      }
+
+      if (startDate != null &&
+          bestStartDate != null &&
+          _startOfDay(startDate).isAfter(_startOfDay(bestStartDate))) {
+        bestDoc = doc;
+        bestStartDate = startDate;
+      }
+    }
+
+    return bestDoc;
+  }
+
+  String _readTemplateId(
+    Map<String, dynamic> source,
+    List<String> candidateKeys,
+  ) {
+    for (final String key in candidateKeys) {
+      final String value = (source[key] ?? '').toString().trim();
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  Future<List<Map<String, dynamic>>> _resolveTemplateItems({
+    required String templateId,
+    required String weekday,
+    required String expectedMealType,
+    required bool forceRefresh,
   }) async {
-    if (templateId == null || templateId.trim().isEmpty) {
+    if (templateId.trim().isEmpty) {
       return <Map<String, dynamic>>[];
     }
 
-    final trimmedTemplateId = templateId.trim();
+    final String trimmedTemplateId = templateId.trim();
 
     Map<String, dynamic>? templateData;
     if (!forceRefresh && _templateCacheById.containsKey(trimmedTemplateId)) {
       templateData = _templateCacheById[trimmedTemplateId];
     } else {
-      final templateDoc = await _firestore
+      final DocumentSnapshot<Map<String, dynamic>> templateDoc = await _firestore
           .collection('weekly_menu_templates')
           .doc(trimmedTemplateId)
           .get();
@@ -278,26 +353,25 @@ class MenuResolverService {
       return <Map<String, dynamic>>[];
     }
 
-    final rawItemIds = templateData[weekday];
+    final List<String> itemIds = _extractTemplateItemIds(
+      templateData: templateData,
+      weekday: weekday,
+    );
 
-    if (rawItemIds is! List || rawItemIds.isEmpty) {
+    if (itemIds.isEmpty) {
       return <Map<String, dynamic>>[];
     }
 
-    final itemIds = rawItemIds
-        .map((e) => e.toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    final List<Map<String, dynamic>> resolvedItems = <Map<String, dynamic>>[];
 
-    final resolvedItems = <Map<String, dynamic>>[];
-
-    for (final itemId in itemIds) {
+    for (final String itemId in itemIds) {
       Map<String, dynamic>? itemData;
 
       if (!forceRefresh && _menuItemCacheById.containsKey(itemId)) {
         itemData = _menuItemCacheById[itemId];
       } else {
-        final itemDoc = await _firestore.collection('menu_items').doc(itemId).get();
+        final DocumentSnapshot<Map<String, dynamic>> itemDoc =
+            await _firestore.collection('menu_items').doc(itemId).get();
 
         if (!itemDoc.exists || itemDoc.data() == null) {
           _menuItemCacheById[itemId] = null;
@@ -312,22 +386,139 @@ class MenuResolverService {
         continue;
       }
 
-      final isActive = itemData['is_active'] == true ||
-          (itemData['status'] ?? '').toString().trim().toLowerCase() == 'active';
-
-      if (!isActive) {
+      if (!_isMenuItemActive(itemData)) {
         continue;
       }
 
-      resolvedItems.add({
-        'item_id': itemId,
-        'item_name': (itemData['item_name'] ?? itemId).toString(),
-        'category': (itemData['category'] ?? 'other').toString(),
-        'estimated_price': itemData['estimated_price'] ?? 0,
-      });
+      final Map<String, dynamic> normalizedItem = _normalizeMenuItem(
+        itemId: itemId,
+        itemData: itemData,
+        expectedMealType: expectedMealType,
+      );
+
+      final String resolvedMealType =
+          (normalizedItem['meal_type'] ?? '').toString().trim().toLowerCase();
+
+      if (resolvedMealType.isNotEmpty &&
+          resolvedMealType != expectedMealType.toLowerCase()) {
+        continue;
+      }
+
+      resolvedItems.add(normalizedItem);
     }
 
     return resolvedItems;
+  }
+
+  List<String> _extractTemplateItemIds({
+    required Map<String, dynamic> templateData,
+    required String weekday,
+  }) {
+    final dynamic directWeekdayValue = templateData[weekday];
+    final List<String> directIds = _stringListFromDynamic(directWeekdayValue);
+    if (directIds.isNotEmpty) {
+      return directIds;
+    }
+
+    final dynamic weekdayMenus = templateData['weekday_menus'];
+    if (weekdayMenus is Map) {
+      final List<String> nestedIds =
+          _stringListFromDynamic(weekdayMenus[weekday]);
+      if (nestedIds.isNotEmpty) {
+        return nestedIds;
+      }
+    }
+
+    final dynamic days = templateData['days'];
+    if (days is Map) {
+      final List<String> nestedIds =
+          _stringListFromDynamic(days[weekday]);
+      if (nestedIds.isNotEmpty) {
+        return nestedIds;
+      }
+    }
+
+    return <String>[];
+  }
+
+  List<String> _stringListFromDynamic(dynamic raw) {
+    if (raw is! List) {
+      return <String>[];
+    }
+
+    return raw
+        .map((dynamic e) => e.toString().trim())
+        .where((String e) => e.isNotEmpty)
+        .toList();
+  }
+
+  bool _isMenuItemActive(Map<String, dynamic> itemData) {
+    final bool activeFlag = itemData['is_active'] == true;
+    final String status =
+        (itemData['status'] ?? '').toString().trim().toLowerCase();
+
+    return activeFlag || status == 'active';
+  }
+
+  Map<String, dynamic> _normalizeMenuItem({
+    required String itemId,
+    required Map<String, dynamic> itemData,
+    required String expectedMealType,
+  }) {
+    final String itemName = _readFirstNonEmptyString(itemData, const <String>[
+      'item_name',
+      'name',
+      'title',
+    ], fallback: itemId);
+
+    final String mealType = _readFirstNonEmptyString(itemData, const <String>[
+      'meal_type',
+      'mealType',
+      'category',
+    ], fallback: expectedMealType).toLowerCase();
+
+    final String foodType = _readFirstNonEmptyString(itemData, const <String>[
+      'food_type',
+      'foodType',
+      'type',
+    ], fallback: '');
+
+    return <String, dynamic>{
+      'item_id': itemId,
+      'item_name': itemName,
+      'meal_type': mealType,
+      'food_type': foodType,
+      'estimated_price': _readNumeric(itemData['estimated_price']),
+    };
+  }
+
+  String _readFirstNonEmptyString(
+    Map<String, dynamic> source,
+    List<String> candidateKeys, {
+    required String fallback,
+  }) {
+    for (final String key in candidateKeys) {
+      final String value = (source[key] ?? '').toString().trim();
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return fallback;
+  }
+
+  num _readNumeric(dynamic value) {
+    if (value is num) {
+      return value;
+    }
+
+    if (value is String) {
+      final num? parsed = num.tryParse(value.trim());
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+
+    return 0;
   }
 
   DateTime? _toDateTime(dynamic value) {
@@ -367,7 +558,7 @@ class MenuResolverService {
   }
 
   String _dateCacheKey(DateTime date) {
-    final normalized = _startOfDay(date);
+    final DateTime normalized = _startOfDay(date);
     return '${normalized.year.toString().padLeft(4, '0')}-'
         '${normalized.month.toString().padLeft(2, '0')}-'
         '${normalized.day.toString().padLeft(2, '0')}';

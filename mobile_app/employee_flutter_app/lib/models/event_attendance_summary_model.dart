@@ -3,8 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class EventAttendanceSummaryModel {
   static const String collectionName = 'event_attendance_summaries';
 
-  // 🔒 MUST match response model exactly
-  static const List<String> categoryKeys = [
+  // Must remain identical to EventAttendanceResponseModel.categoryKeys
+  static const List<String> categoryKeys = <String>[
     'employee',
     'spouse',
     'kids_above_12',
@@ -19,17 +19,13 @@ class EventAttendanceSummaryModel {
 
   final String documentId;
   final String eventId;
-
   final Timestamp? lastAggregatedAt;
-
   final int householdsResponded;
   final int householdsPending;
   final int householdsAttending;
   final int householdsNotAttending;
-
   final Map<String, int> categoryTotals;
   final int grandTotal;
-
   final Map<String, dynamic> rawData;
 
   const EventAttendanceSummaryModel({
@@ -48,7 +44,7 @@ class EventAttendanceSummaryModel {
   factory EventAttendanceSummaryModel.fromDocument(
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
-    final data = document.data() ?? {};
+    final data = document.data() ?? <String, dynamic>{};
     return EventAttendanceSummaryModel.fromMap(
       data,
       documentId: document.id,
@@ -59,9 +55,14 @@ class EventAttendanceSummaryModel {
     Map<String, dynamic> map, {
     required String documentId,
   }) {
+    final normalizedCategoryTotals =
+        _normalizeCategoryTotals(map['category_totals']);
+
+    final computedGrandTotal = calculateGrandTotal(normalizedCategoryTotals);
+
     return EventAttendanceSummaryModel(
       documentId: documentId.trim(),
-      eventId: _readString(map['event_id']),
+      eventId: _readString(map['event_id'], fallback: documentId),
       lastAggregatedAt: _readTimestamp(map['last_aggregated_at']),
       householdsResponded:
           _readInt(map['households_responded'], fallback: 0),
@@ -71,36 +72,64 @@ class EventAttendanceSummaryModel {
           _readInt(map['households_attending'], fallback: 0),
       householdsNotAttending:
           _readInt(map['households_not_attending'], fallback: 0),
-      categoryTotals: _normalizeCategoryTotals(map['category_totals']),
-      grandTotal: _readInt(map['grand_total'], fallback: 0),
+      categoryTotals: normalizedCategoryTotals,
+      grandTotal: _readInt(map['grand_total'], fallback: computedGrandTotal),
       rawData: Map<String, dynamic>.from(map),
     );
   }
 
-  Map<String, dynamic> toMap({bool includeNulls = false}) {
+  Map<String, dynamic> toMap({
+    bool includeNulls = false,
+  }) {
+    final normalizedCategoryTotals = _normalizeCategoryTotals(categoryTotals);
+    final normalizedGrandTotal = calculateGrandTotal(normalizedCategoryTotals);
+
     final map = <String, dynamic>{
-      'event_id': eventId,
+      'event_id': eventId.trim(),
       'households_responded': householdsResponded,
       'households_pending': householdsPending,
       'households_attending': householdsAttending,
       'households_not_attending': householdsNotAttending,
-      'category_totals': categoryTotals,
-      'grand_total': grandTotal,
+      'category_totals': normalizedCategoryTotals,
+      'grand_total': normalizedGrandTotal,
     };
 
     _writeTimestamp(
       map,
       'last_aggregated_at',
       lastAggregatedAt,
-      includeNulls,
+      includeNulls: includeNulls,
     );
 
     return map;
   }
 
-  // -----------------------------
-  // BUSINESS LOGIC
-  // -----------------------------
+  EventAttendanceSummaryModel copyWith({
+    String? documentId,
+    String? eventId,
+    Timestamp? lastAggregatedAt,
+    int? householdsResponded,
+    int? householdsPending,
+    int? householdsAttending,
+    int? householdsNotAttending,
+    Map<String, int>? categoryTotals,
+    int? grandTotal,
+    Map<String, dynamic>? rawData,
+  }) {
+    return EventAttendanceSummaryModel(
+      documentId: documentId ?? this.documentId,
+      eventId: eventId ?? this.eventId,
+      lastAggregatedAt: lastAggregatedAt ?? this.lastAggregatedAt,
+      householdsResponded: householdsResponded ?? this.householdsResponded,
+      householdsPending: householdsPending ?? this.householdsPending,
+      householdsAttending: householdsAttending ?? this.householdsAttending,
+      householdsNotAttending:
+          householdsNotAttending ?? this.householdsNotAttending,
+      categoryTotals: categoryTotals ?? this.categoryTotals,
+      grandTotal: grandTotal ?? this.grandTotal,
+      rawData: rawData ?? this.rawData,
+    );
+  }
 
   bool get hasData => householdsResponded > 0;
 
@@ -109,32 +138,21 @@ class EventAttendanceSummaryModel {
 
   bool get isComplete => householdsPending == 0;
 
-  int get calculatedGrandTotal {
-    int total = 0;
-    for (final key in categoryKeys) {
-      total += categoryTotals[key] ?? 0;
-    }
-    return total;
-  }
+  int get calculatedGrandTotal => calculateGrandTotal(categoryTotals);
 
   bool get isGrandTotalValid => calculatedGrandTotal == grandTotal;
 
-  // -----------------------------
-  // UTILITIES
-  // -----------------------------
-
   static Map<String, int> _normalizeCategoryTotals(dynamic value) {
-    final Map<String, int> normalized = {};
-
-    for (final key in categoryKeys) {
-      normalized[key] = 0;
-    }
+    final Map<String, int> normalized = <String, int>{
+      for (final String key in categoryKeys) key: 0,
+    };
 
     if (value is Map) {
       value.forEach((k, v) {
-        final key = k.toString();
+        final String key = k.toString().trim();
         if (categoryKeys.contains(key)) {
-          normalized[key] = _readInt(v);
+          final int parsed = _readInt(v, fallback: 0);
+          normalized[key] = parsed < 0 ? 0 : parsed;
         }
       });
     }
@@ -142,32 +160,48 @@ class EventAttendanceSummaryModel {
     return normalized;
   }
 
-  // -----------------------------
-  // HELPERS
-  // -----------------------------
+  static int calculateGrandTotal(Map<String, int> categoryTotals) {
+    int total = 0;
+    final normalized = _normalizeCategoryTotals(categoryTotals);
+
+    for (final String key in categoryKeys) {
+      total += normalized[key] ?? 0;
+    }
+
+    return total;
+  }
 
   static String _readString(dynamic value, {String fallback = ''}) {
     return (value?.toString() ?? fallback).trim();
   }
 
   static int _readInt(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value == null) return fallback;
-    return int.tryParse(value.toString()) ?? fallback;
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value == null) {
+      return fallback;
+    }
+
+    return int.tryParse(value.toString().trim()) ?? fallback;
   }
 
   static Timestamp? _readTimestamp(dynamic value) {
-    if (value is Timestamp) return value;
+    if (value is Timestamp) {
+      return value;
+    }
     return null;
   }
 
   static void _writeTimestamp(
     Map<String, dynamic> target,
     String key,
-    Timestamp? value,
-    bool includeNulls,
-  ) {
+    Timestamp? value, {
+    required bool includeNulls,
+  }) {
     if (value != null || includeNulls) {
       target[key] = value;
     }
@@ -175,6 +209,10 @@ class EventAttendanceSummaryModel {
 
   @override
   String toString() {
-    return 'EventAttendanceSummaryModel(eventId: $eventId, total: $grandTotal)';
+    return 'EventAttendanceSummaryModel('
+        'eventId: $eventId, '
+        'householdsResponded: $householdsResponded, '
+        'grandTotal: $grandTotal'
+        ')';
   }
 }

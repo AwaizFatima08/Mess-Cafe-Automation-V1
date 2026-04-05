@@ -91,7 +91,19 @@ class UserRoleService {
       );
     }
 
-    final query = await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+    final directDoc = await _usersRef.doc(normalizedUid).get();
+    if (directDoc.exists && directDoc.data() != null) {
+      final data = directDoc.data()!;
+      return ResolvedUserRole(
+        role: _resolveEffectiveRole(data),
+        source: 'users.doc_uid',
+        documentId: directDoc.id,
+        rawData: data,
+      );
+    }
+
+    final query =
+        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
 
     if (query.docs.isEmpty) {
       return const ResolvedUserRole(
@@ -104,11 +116,30 @@ class UserRoleService {
     final data = doc.data();
 
     return ResolvedUserRole(
-      role: parseRole(data['role']),
+      role: _resolveEffectiveRole(data),
       source: 'users.uid',
       documentId: doc.id,
       rawData: data,
     );
+  }
+
+  AppUserRole _resolveEffectiveRole(Map<String, dynamic>? data) {
+    if (data == null) {
+      return AppUserRole.unknown;
+    }
+
+    final isActive = data['is_active'] == true;
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+    if (!isActive) {
+      return AppUserRole.unknown;
+    }
+
+    if (status.isNotEmpty && status != 'approved' && status != 'active') {
+      return AppUserRole.unknown;
+    }
+
+    return parseRole(data['role']);
   }
 
   AppUserRole parseRole(dynamic value) {

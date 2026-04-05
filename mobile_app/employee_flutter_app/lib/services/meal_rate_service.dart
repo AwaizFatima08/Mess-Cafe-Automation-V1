@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MealRateService {
   MealRateService({FirebaseFirestore? firestore})
@@ -91,14 +91,14 @@ class MealRateService {
     required DateTime rateDate,
     required String menuItemId,
   }) async {
-    final normalizedMenuItemId = menuItemId.trim();
-    if (normalizedMenuItemId.isEmpty) {
+    final normalizedTargetKey = menuItemId.trim();
+    if (normalizedTargetKey.isEmpty) {
       return null;
     }
 
     final docId = buildRateDocumentId(
       rateDate: rateDate,
-      menuItemId: normalizedMenuItemId,
+      menuItemId: normalizedTargetKey,
     );
 
     final doc = await _mealRatesRef.doc(docId).get();
@@ -119,11 +119,11 @@ class MealRateService {
     String? enteredByUid,
     String? enteredByName,
   }) async {
-    final normalizedMenuItemId = menuItemId.trim();
+    final normalizedTargetKey = menuItemId.trim();
     final normalizedItemName = itemName.trim();
     final normalizedCategory = (category ?? '').trim();
 
-    if (normalizedMenuItemId.isEmpty) {
+    if (normalizedTargetKey.isEmpty) {
       throw ArgumentError('menuItemId is required.');
     }
     if (normalizedItemName.isEmpty) {
@@ -138,7 +138,7 @@ class MealRateService {
     final normalizedRateDate = normalizeDate(rateDate);
     final docId = buildRateDocumentId(
       rateDate: normalizedRateDate,
-      menuItemId: normalizedMenuItemId,
+      menuItemId: normalizedTargetKey,
     );
 
     final docRef = _mealRatesRef.doc(docId);
@@ -146,7 +146,8 @@ class MealRateService {
     final now = Timestamp.now();
 
     final payload = <String, dynamic>{
-      'menu_item_id': normalizedMenuItemId,
+      'menu_item_id': normalizedTargetKey,
+      'rate_target_key': normalizedTargetKey,
       'item_name': normalizedItemName,
       'category': normalizedCategory,
       'rate_date': Timestamp.fromDate(normalizedRateDate),
@@ -178,11 +179,11 @@ class MealRateService {
     final batch = _firestore.batch();
 
     for (final draft in drafts) {
-      final normalizedMenuItemId = draft.menuItemId.trim();
+      final normalizedTargetKey = draft.menuItemId.trim();
       final normalizedItemName = draft.itemName.trim();
       final normalizedCategory = draft.category.trim();
 
-      if (normalizedMenuItemId.isEmpty || normalizedItemName.isEmpty) {
+      if (normalizedTargetKey.isEmpty || normalizedItemName.isEmpty) {
         continue;
       }
 
@@ -199,7 +200,7 @@ class MealRateService {
 
       final docId = buildRateDocumentId(
         rateDate: normalizedRateDate,
-        menuItemId: normalizedMenuItemId,
+        menuItemId: normalizedTargetKey,
       );
 
       final docRef = _mealRatesRef.doc(docId);
@@ -207,7 +208,8 @@ class MealRateService {
       batch.set(
         docRef,
         <String, dynamic>{
-          'menu_item_id': normalizedMenuItemId,
+          'menu_item_id': normalizedTargetKey,
+          'rate_target_key': normalizedTargetKey,
           'item_name': normalizedItemName,
           'category': normalizedCategory,
           'rate_date': Timestamp.fromDate(normalizedRateDate),
@@ -254,47 +256,40 @@ class MealRateService {
 
       final menuSnapshot = _asMap(data['menu_snapshot']);
       final mealType = _normalizeText(data['meal_type']);
-      final optionKey = _firstNonEmpty([
-        _normalizeText(menuSnapshot['item_id']),
-        _normalizeText(data['menu_item_id']),
-        _normalizeText(data['menu_option_key']),
-        _normalizeText(menuSnapshot['option_key']),
-      ]);
+      final effectiveTargetKey = _extractReservationRateTargetKey(data);
 
-      final optionLabel = _firstNonEmpty([
-        _normalizeText(menuSnapshot['item_name']),
-        _normalizeText(data['item_name']),
-        _normalizeText(data['option_label']),
-        _normalizeText(menuSnapshot['option_label']),
-      ]);
-
-      final itemCategory = _firstNonEmpty([
-        _normalizeText(menuSnapshot['item_category']),
-        _normalizeText(data['category']),
-        mealType,
-      ]);
-
-      if (optionKey.isEmpty) {
+      if (effectiveTargetKey.isEmpty) {
         continue;
       }
 
+      final optionLabel = _firstNonEmpty([
+        _normalizeText(data['item_name']),
+        _normalizeText(menuSnapshot['item_name']),
+        _normalizeText(data['option_label']),
+        _normalizeText(menuSnapshot['option_label']),
+        effectiveTargetKey,
+      ]);
+
+      final itemCategory = _firstNonEmpty([
+        _normalizeText(data['category']),
+        _normalizeText(menuSnapshot['item_category']),
+        mealType,
+      ]);
+
       final items = _asListOfMaps(menuSnapshot['items']);
+      final selectionMode = _normalizeText(data['selection_mode']).toLowerCase();
       final bool treatAsComboSingleItem =
-          items.isNotEmpty && !_looksLikeDirectManualItem(menuSnapshot);
+          selectionMode == 'cycle_combo' ||
+          (items.isNotEmpty && !_looksLikeDirectManualItem(menuSnapshot));
 
-      final effectiveMenuItemId = optionKey;
-      final effectiveItemName = optionLabel.isNotEmpty ? optionLabel : optionKey;
-      final effectiveCategory =
-          itemCategory.isNotEmpty ? itemCategory : mealType;
-
-      final lookupKey = effectiveMenuItemId.trim().toLowerCase();
+      final lookupKey = effectiveTargetKey.trim().toLowerCase();
 
       final accumulator = summaryByKey.putIfAbsent(
         lookupKey,
         () => _ConsumedItemAccumulator(
-          menuItemId: effectiveMenuItemId,
-          itemName: effectiveItemName,
-          category: effectiveCategory,
+          menuItemId: effectiveTargetKey,
+          itemName: optionLabel,
+          category: itemCategory,
           mealType: mealType,
           selectionType: treatAsComboSingleItem
               ? MealRateSelectionType.comboOption
@@ -304,7 +299,7 @@ class MealRateService {
 
       accumulator.totalQuantity += quantity;
       accumulator.reservationLineCount += 1;
-      accumulator.optionLabels.add(effectiveItemName);
+      accumulator.optionLabels.add(optionLabel);
 
       if (doc.id.isNotEmpty) {
         accumulator.sampleReservationIds.add(doc.id);
@@ -328,7 +323,12 @@ class MealRateService {
     final rates = await getRatesForDate(rateDate);
 
     final rateMap = <String, MealRateEntry>{
-      for (final rate in rates) rate.menuItemId.trim().toLowerCase(): rate,
+      for (final rate in rates)
+        (rate.rateTargetKey.isNotEmpty
+                ? rate.rateTargetKey
+                : rate.menuItemId)
+            .trim()
+            .toLowerCase(): rate,
     };
 
     final rows = summaries
@@ -351,7 +351,11 @@ class MealRateService {
     final rates = await getRatesForDate(normalizedDate);
     final rateMap = <String, MealRateEntry>{
       for (final rate in rates)
-        rate.menuItemId.trim().toLowerCase(): rate,
+        (rate.rateTargetKey.isNotEmpty
+                ? rate.rateTargetKey
+                : rate.menuItemId)
+            .trim()
+            .toLowerCase(): rate,
     };
 
     final reservationQuery = await _mealReservationsRef
@@ -364,6 +368,7 @@ class MealRateService {
     }
 
     final batch = _firestore.batch();
+    final now = Timestamp.now();
     var updatedCount = 0;
 
     for (final doc in reservationQuery.docs) {
@@ -378,12 +383,12 @@ class MealRateService {
         continue;
       }
 
-      final menuItemId = _extractReservationMenuItemId(data);
-      if (menuItemId.isEmpty) {
+      final targetKey = _extractReservationRateTargetKey(data);
+      if (targetKey.isEmpty) {
         continue;
       }
 
-      final rate = rateMap[menuItemId.trim().toLowerCase()];
+      final rate = rateMap[targetKey.trim().toLowerCase()];
       if (rate == null || !rate.isActive) {
         continue;
       }
@@ -391,9 +396,10 @@ class MealRateService {
       final amount = rate.unitRate * quantity;
 
       batch.update(doc.reference, <String, dynamic>{
+        'rate_target_key': targetKey,
         'unit_rate': rate.unitRate,
         'amount': amount,
-        'updated_at': Timestamp.now(),
+        'updated_at': now,
       });
 
       updatedCount += 1;
@@ -407,28 +413,29 @@ class MealRateService {
   }
 
   String extractReservationMenuItemId(Map<String, dynamic> reservationData) {
-    return _extractReservationMenuItemId(reservationData);
+    return _extractReservationRateTargetKey(reservationData);
   }
 
   String extractReservationItemName(Map<String, dynamic> reservationData) {
     final menuSnapshot = _asMap(reservationData['menu_snapshot']);
 
     return _firstNonEmpty([
-      _normalizeText(menuSnapshot['item_name']),
       _normalizeText(reservationData['item_name']),
+      _normalizeText(menuSnapshot['item_name']),
       _normalizeText(reservationData['option_label']),
       _normalizeText(menuSnapshot['option_label']),
-      _extractReservationMenuItemId(reservationData),
+      _extractReservationRateTargetKey(reservationData),
     ]);
   }
 
-  String _extractReservationMenuItemId(Map<String, dynamic> reservationData) {
+  String _extractReservationRateTargetKey(Map<String, dynamic> reservationData) {
     final menuSnapshot = _asMap(reservationData['menu_snapshot']);
 
     return _firstNonEmpty([
-      _normalizeText(menuSnapshot['item_id']),
+      _normalizeText(reservationData['rate_target_key']),
       _normalizeText(reservationData['menu_item_id']),
       _normalizeText(reservationData['menu_option_key']),
+      _normalizeText(menuSnapshot['item_id']),
       _normalizeText(menuSnapshot['option_key']),
     ]);
   }
@@ -494,6 +501,7 @@ class MealRateService {
 class MealRateEntry {
   final String documentId;
   final String menuItemId;
+  final String rateTargetKey;
   final String itemName;
   final String category;
   final DateTime rateDate;
@@ -507,6 +515,7 @@ class MealRateEntry {
   const MealRateEntry({
     required this.documentId,
     required this.menuItemId,
+    required this.rateTargetKey,
     required this.itemName,
     required this.category,
     required this.rateDate,
@@ -523,9 +532,14 @@ class MealRateEntry {
   ) {
     final data = doc.data() ?? <String, dynamic>{};
 
+    final parsedMenuItemId = (data['menu_item_id'] ?? '').toString().trim();
+    final parsedRateTargetKey =
+        (data['rate_target_key'] ?? parsedMenuItemId).toString().trim();
+
     return MealRateEntry(
       documentId: doc.id,
-      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      menuItemId: parsedMenuItemId,
+      rateTargetKey: parsedRateTargetKey,
       itemName: (data['item_name'] ?? '').toString().trim(),
       category: (data['category'] ?? '').toString().trim(),
       rateDate: _toDate(data['rate_date']) ?? DateTime.now(),
@@ -541,6 +555,7 @@ class MealRateEntry {
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'menu_item_id': menuItemId,
+      'rate_target_key': rateTargetKey,
       'item_name': itemName,
       'category': category,
       'rate_date': Timestamp.fromDate(

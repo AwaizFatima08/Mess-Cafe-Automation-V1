@@ -36,24 +36,40 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
   @override
   void didUpdateWidget(covariant AnalyticsFilterBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (oldWidget.initialFilter != widget.initialFilter) {
       _hydrateFromFilter(widget.initialFilter);
     }
   }
 
   void _hydrateFromFilter(AnalyticsFilterModel filter) {
-    final mealTypes =
-        filter.mealTypes?.map((e) => e.trim().toLowerCase()).toList() ?? [];
+    final mealTypes = (filter.mealTypes ?? const <String>[])
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toList();
 
     final hasExplicitMeals = mealTypes.isNotEmpty;
 
-    _startDate = filter.startDate;
-    _endDate = filter.endDate;
+    _startDate = _normalizeDate(filter.startDate);
+    _endDate = _normalizeDate(filter.endDate);
     _includeGuests = filter.includeGuests;
 
     _breakfastSelected = !hasExplicitMeals || mealTypes.contains('breakfast');
     _lunchSelected = !hasExplicitMeals || mealTypes.contains('lunch');
     _dinnerSelected = !hasExplicitMeals || mealTypes.contains('dinner');
+
+    if (_endDate.isBefore(_startDate)) {
+      _endDate = _startDate;
+    }
+  }
+
+  DateTime _normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime _maxSelectableDate() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
   }
 
   Future<void> _pickStartDate() async {
@@ -67,7 +83,11 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
     if (picked == null) return;
 
     setState(() {
-      _startDate = DateTime(picked.year, picked.month, picked.day);
+      _startDate = _normalizeDate(picked);
+
+      if (_endDate.isBefore(_startDate)) {
+        _endDate = _startDate;
+      }
     });
   }
 
@@ -76,13 +96,17 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
       context: context,
       initialDate: _endDate,
       firstDate: _startDate,
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      lastDate: _maxSelectableDate(),
     );
 
     if (picked == null) return;
 
     setState(() {
-      _endDate = DateTime(picked.year, picked.month, picked.day);
+      _endDate = _normalizeDate(picked);
+
+      if (_endDate.isBefore(_startDate)) {
+        _endDate = _startDate;
+      }
     });
   }
 
@@ -104,10 +128,44 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
     });
   }
 
+  void _clearAllMeals() {
+    setState(() {
+      _breakfastSelected = false;
+      _lunchSelected = false;
+      _dinnerSelected = false;
+    });
+  }
+
+  void _toggleMeal(String mealType, bool selected) {
+    setState(() {
+      switch (mealType) {
+        case 'breakfast':
+          _breakfastSelected = selected;
+          break;
+        case 'lunch':
+          _lunchSelected = selected;
+          break;
+        case 'dinner':
+          _dinnerSelected = selected;
+          break;
+      }
+    });
+  }
+
   void _applyFilters() {
     final selectedMeals = _selectedMealTypes();
 
-    final resolvedMeals = selectedMeals.length == 3 ? <String>[] : selectedMeals;
+    if (selectedMeals.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select at least one meal type to apply analytics filter.'),
+        ),
+      );
+      return;
+    }
+
+    final resolvedMeals =
+        selectedMeals.length == 3 ? <String>[] : selectedMeals;
 
     final updatedFilter = widget.initialFilter.copyWith(
       startDate: _startDate,
@@ -120,8 +178,6 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
   }
 
   void _resetFilters() {
-    _hydrateFromFilter(widget.initialFilter);
-    setState(() {});
     widget.onReset();
   }
 
@@ -137,6 +193,8 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
     final theme = Theme.of(context);
     final allMealsSelected =
         _breakfastSelected && _lunchSelected && _dinnerSelected;
+    final noMealsSelected =
+        !_breakfastSelected && !_lunchSelected && !_dinnerSelected;
 
     return Card(
       elevation: 2,
@@ -192,31 +250,24 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
                   onSelected: (_) => _selectAllMeals(),
                 ),
                 FilterChip(
+                  label: const Text('None'),
+                  selected: noMealsSelected,
+                  onSelected: (_) => _clearAllMeals(),
+                ),
+                FilterChip(
                   label: const Text('Breakfast'),
                   selected: _breakfastSelected,
-                  onSelected: (value) {
-                    setState(() {
-                      _breakfastSelected = value;
-                    });
-                  },
+                  onSelected: (value) => _toggleMeal('breakfast', value),
                 ),
                 FilterChip(
                   label: const Text('Lunch'),
                   selected: _lunchSelected,
-                  onSelected: (value) {
-                    setState(() {
-                      _lunchSelected = value;
-                    });
-                  },
+                  onSelected: (value) => _toggleMeal('lunch', value),
                 ),
                 FilterChip(
                   label: const Text('Dinner'),
                   selected: _dinnerSelected,
-                  onSelected: (value) {
-                    setState(() {
-                      _dinnerSelected = value;
-                    });
-                  },
+                  onSelected: (value) => _toggleMeal('dinner', value),
                 ),
               ],
             ),
@@ -233,21 +284,46 @@ class _AnalyticsFilterBarState extends State<AnalyticsFilterBar> {
               },
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _applyFilters,
-                  icon: const Icon(Icons.filter_alt_outlined),
-                  label: const Text('Apply Filters'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _resetFilters,
-                  icon: const Icon(Icons.restart_alt),
-                  label: const Text('Reset'),
-                ),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 420;
+
+                if (compact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _applyFilters,
+                        icon: const Icon(Icons.filter_alt_outlined),
+                        label: const Text('Apply Filters'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _resetFilters,
+                        icon: const Icon(Icons.restart_alt),
+                        label: const Text('Reset'),
+                      ),
+                    ],
+                  );
+                }
+
+                return Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: _applyFilters,
+                      icon: const Icon(Icons.filter_alt_outlined),
+                      label: const Text('Apply Filters'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _resetFilters,
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('Reset'),
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),

@@ -670,8 +670,73 @@ DO NOT:
 # END OF SNAPSHOT
 # ==========================================================
 
+## 📅 Date: 04-04-2026
+
+### ✅ Completed Today:
+- Full schema hardening completed across all collections
+- Standardized naming conventions across:
+  - users
+  - employees
+  - employee_profiles
+  - meal_types
+  - food_types
+  - menu_items
+  - weekly_menu_templates
+  - menu_cycles
+  - meal_reservations
+  - meal_rates
+  - meal_feedback
+  - events
+  - notifications
+  - event_attendance_responses
+  - event_attendance_summaries
+- Removed redundant collection:
+  - meal_type_settings (merged into meal_types)
+- Converted family_members from subcollection → array inside employee_profiles
+- Finalized event attendance model using counts-based structure
+- Aligned summaries with responses (strict aggregation model)
+- Defined and locked all status vocabularies:
+  - reservation_status
+  - issue_status
+  - rate_status
+  - feedback_status
+  - response_status
+- Locked identity model:
+  - menu_item_id vs menu_option_key (mutually exclusive)
+  - rate_target_key unified across reservations, rates, feedback
+- Eliminated schema drift sources and duplicate definitions
+
+---
+
+### 🔄 Currently Ongoing:
+- Transition planning from schema → code alignment
+- Identification of service-level inconsistencies causing:
+  - blank screens
+  - incomplete writes
+  - duplicate queries
+
+---
+
+### ⏭ Next Steps:
+1. Align Dart models with locked schema
+2. Refactor `meal_reservation_service` (highest priority)
+3. Fix reservation → issuance → rate → cost → feedback pipeline
+4. Remove parallel/duplicate query patterns
+5. Standardize empty-state handling (no silent blank screens)
+6. Review Firestore indexes after query stabilization
+
+---
+
+### ⚠️ Decisions / Risks:
+- Schema is now LOCKED — no further structural changes without full review
+- All future changes must respect:
+  - controlled vocabularies
+  - single source of truth per domain
+- Risk of legacy code mismatch with new schema — to be handled module-wise
+- Event system diverges intentionally (counts-based vs per-person meals) — acceptable and locked
+
 ----------------------------------------------------------
-## Update Entry - 05-Apr-2026 00:49
+## Update Entry - 06-Apr-2026 02:07
 
 ### Completed
 - [not provided]

@@ -10,7 +10,6 @@ class EventNoteTemplateModel {
   final int displayOrder;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
-
   final Map<String, dynamic> rawData;
 
   const EventNoteTemplateModel({
@@ -28,7 +27,6 @@ class EventNoteTemplateModel {
     DocumentSnapshot<Map<String, dynamic>> document,
   ) {
     final data = document.data() ?? <String, dynamic>{};
-
     return EventNoteTemplateModel.fromMap(
       data,
       documentId: document.id,
@@ -61,8 +59,18 @@ class EventNoteTemplateModel {
       'display_order': displayOrder,
     };
 
-    _writeTimestamp(map, 'created_at', createdAt, includeNulls: includeNulls);
-    _writeTimestamp(map, 'updated_at', updatedAt, includeNulls: includeNulls);
+    _writeTimestamp(
+      map,
+      'created_at',
+      createdAt,
+      includeNulls: includeNulls,
+    );
+    _writeTimestamp(
+      map,
+      'updated_at',
+      updatedAt,
+      includeNulls: includeNulls,
+    );
 
     return map;
   }
@@ -89,42 +97,53 @@ class EventNoteTemplateModel {
     );
   }
 
-  bool get isValid => title.isNotEmpty && body.isNotEmpty;
+  bool get isValid => title.trim().isNotEmpty && body.trim().isNotEmpty;
 
   @override
   String toString() {
     return 'EventNoteTemplateModel(documentId: $documentId, title: $title)';
   }
 
-  // -------------------------
-  // Helpers
-  // -------------------------
-
   static String _readString(dynamic value, {String fallback = ''}) {
-    final parsed = value?.toString() ?? fallback;
-    return parsed.trim();
+    return (value?.toString() ?? fallback).trim();
   }
 
   static int _readInt(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value == null) return fallback;
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    if (value == null) {
+      return fallback;
+    }
     return int.tryParse(value.toString().trim()) ?? fallback;
   }
 
   static bool _readBool(dynamic value, {bool fallback = false}) {
-    if (value is bool) return value;
-    if (value == null) return fallback;
+    if (value is bool) {
+      return value;
+    }
+    if (value == null) {
+      return fallback;
+    }
 
     final normalized = value.toString().trim().toLowerCase();
-    if (normalized == 'true') return true;
-    if (normalized == 'false') return false;
+    if (normalized == 'true') {
+      return true;
+    }
+    if (normalized == 'false') {
+      return false;
+    }
 
     return fallback;
   }
 
   static Timestamp? _readTimestamp(dynamic value) {
-    if (value is Timestamp) return value;
+    if (value is Timestamp) {
+      return value;
+    }
     return null;
   }
 

@@ -32,10 +32,12 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
     if (now.hour < 6) {
       return now.subtract(const Duration(days: 1));
     }
-    return now;
+    return DateTime(now.year, now.month, now.day);
   }
 
   Future<void> _loadDashboard() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -132,7 +134,7 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
           ),
         ),
         IconButton(
-          onPressed: _loadDashboard,
+          onPressed: _isLoading ? null : _loadDashboard,
           tooltip: 'Refresh',
           icon: const Icon(Icons.refresh),
         ),
@@ -461,6 +463,18 @@ class _MealCostDashboardScreenState extends State<MealCostDashboardScreen> {
       return Center(
         child: Text(
           'No dashboard data available for ${_formatDate(_selectedDate)}.',
+        ),
+      );
+    }
+
+    if (data.totalLines == 0) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No costed reservation data found for ${_formatDate(_selectedDate)}.',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }

@@ -26,6 +26,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
 
   late DateTime _selectedMonth;
   bool _isLoading = true;
+  String? _errorMessage;
   MyMealHistoryData? _history;
   final Map<String, bool> _feedbackSubmittedMap = {};
 
@@ -46,8 +47,11 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
   }
 
   Future<void> _loadHistory() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
@@ -63,17 +67,22 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         toDateExclusive: nextMonth,
       );
 
-      final submittedMap = <String, bool>{};
-      for (final entry in data.entries) {
+      final futures = data.entries.map((entry) async {
         try {
-          submittedMap[entry.id] = await _feedbackService.hasFeedbackForReservation(
+          final submitted = await _feedbackService.hasFeedbackForReservation(
             reservationId: entry.id,
             submittedByUid: widget.userUid,
           );
+          return MapEntry(entry.id, submitted);
         } catch (_) {
-          submittedMap[entry.id] = false;
+          return MapEntry(entry.id, false);
         }
-      }
+      }).toList();
+
+      final submittedEntries = await Future.wait(futures);
+      final submittedMap = <String, bool>{
+        for (final entry in submittedEntries) entry.key: entry.value,
+      };
 
       if (!mounted) return;
 
@@ -91,20 +100,18 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         _history = null;
         _feedbackSubmittedMap.clear();
         _isLoading = false;
+        _errorMessage = 'Failed to load meal history: $e';
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load meal history: $e')),
-      );
     }
   }
 
   Future<void> _pickMonth() async {
+    final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedMonth,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+      firstDate: DateTime(now.year - 2, 1, 1),
+      lastDate: DateTime(now.year, now.month, now.day),
       helpText: 'Select any date in target month',
     );
 
@@ -118,6 +125,16 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
   }
 
   Future<void> _openFeedbackDialog(MyMealHistoryEntry entry) async {
+    if (entry.feedbackTargetKey.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Feedback target could not be resolved for this entry.'),
+        ),
+      );
+      return;
+    }
+
     int selectedRating = 0;
     String selectedIssueType = '';
     bool isAnonymous = false;
@@ -231,11 +248,11 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         employeeName: widget.employeeName,
         reservationDate: entry.reservationDate,
         mealType: entry.mealType,
-        menuItemId: entry.menuItemId.isEmpty ? entry.id : entry.menuItemId,
-        itemName: entry.itemName,
+        menuItemId: entry.feedbackTargetKey,
+        itemName: entry.itemName.isEmpty ? 'Meal' : entry.itemName,
         category: entry.category,
         rating: selectedRating,
-        feedbackText: controller.text,
+        feedbackText: controller.text.trim(),
         issueType: selectedIssueType,
         isAnonymous: isAnonymous,
       );
@@ -281,6 +298,19 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
           return part[0].toUpperCase() + part.substring(1);
         })
         .join(' ');
+  }
+
+  Color _statusColor(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'issued':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'active':
+        return Colors.orange;
+      default:
+        return Colors.blueGrey;
+    }
   }
 
   Widget _buildSummaryCard({
@@ -337,9 +367,12 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         double childAspectRatio = 2.5;
 
         if (width >= 1100) {
-          crossAxisCount = 4;
-          childAspectRatio = 2.4;
-        } else if (width >= 700) {
+          crossAxisCount = 5;
+          childAspectRatio = 2.2;
+        } else if (width >= 850) {
+          crossAxisCount = 3;
+          childAspectRatio = 2.15;
+        } else if (width >= 600) {
           crossAxisCount = 2;
           childAspectRatio = 2.2;
         }
@@ -376,6 +409,12 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
               subtitle: 'non-cancelled',
               icon: Icons.receipt_long_outlined,
             ),
+            _buildSummaryCard(
+              title: 'Cancelled',
+              value: '${data.cancelledCount}',
+              subtitle: 'excluded from totals',
+              icon: Icons.cancel_outlined,
+            ),
           ],
         );
       },
@@ -404,6 +443,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
               DataColumn(label: Text('Date')),
               DataColumn(label: Text('Meal')),
               DataColumn(label: Text('Item')),
+              DataColumn(label: Text('Category')),
               DataColumn(label: Text('Mode')),
               DataColumn(label: Text('Qty')),
               DataColumn(label: Text('Unit Rate')),
@@ -413,19 +453,43 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
             ],
             rows: data.entries.map((entry) {
               final alreadySubmitted = _feedbackSubmittedMap[entry.id] == true;
-              final canGiveFeedback =
-                  entry.status != 'cancelled' && entry.isIssued && !alreadySubmitted;
+              final canGiveFeedback = entry.status != 'cancelled' &&
+                  entry.isIssued &&
+                  !alreadySubmitted &&
+                  entry.feedbackTargetKey.trim().isNotEmpty;
 
               return DataRow(
                 cells: [
                   DataCell(Text(_formatDate(entry.reservationDate))),
                   DataCell(Text(_labelize(entry.mealType))),
                   DataCell(Text(entry.itemName.isEmpty ? '—' : entry.itemName)),
+                  DataCell(Text(entry.category.isEmpty ? '—' : _labelize(entry.category))),
                   DataCell(Text(_labelize(entry.diningMode))),
                   DataCell(Text('${entry.quantity}')),
                   DataCell(Text(_formatCurrency(entry.unitRate))),
                   DataCell(Text(_formatCurrency(entry.amount))),
-                  DataCell(Text(_labelize(entry.status))),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _statusColor(entry.status).withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _statusColor(entry.status).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        _labelize(entry.status),
+                        style: TextStyle(
+                          color: _statusColor(entry.status),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                   DataCell(
                     alreadySubmitted
                         ? const Text(
@@ -451,6 +515,18 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _errorMessage!,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     final history = _history;
@@ -481,7 +557,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
                 ),
               ),
               IconButton(
-                onPressed: _loadHistory,
+                onPressed: _isLoading ? null : _loadHistory,
                 tooltip: 'Refresh',
                 icon: const Icon(Icons.refresh),
               ),

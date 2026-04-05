@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MealFeedbackService {
   MealFeedbackService({FirebaseFirestore? firestore})
@@ -65,9 +65,11 @@ class MealFeedbackService {
     final menuSnapshot = asMap(reservationData['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_id']),
+      normalizeText(reservationData['feedback_target_key']),
+      normalizeText(reservationData['rate_target_key']),
       normalizeText(reservationData['menu_item_id']),
       normalizeText(reservationData['menu_option_key']),
+      normalizeText(menuSnapshot['item_id']),
       normalizeText(menuSnapshot['option_key']),
     ]);
   }
@@ -76,8 +78,8 @@ class MealFeedbackService {
     final menuSnapshot = asMap(reservationData['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_name']),
       normalizeText(reservationData['item_name']),
+      normalizeText(menuSnapshot['item_name']),
       normalizeText(reservationData['option_label']),
       normalizeText(menuSnapshot['option_label']),
       extractMenuItemId(reservationData),
@@ -88,8 +90,8 @@ class MealFeedbackService {
     final menuSnapshot = asMap(reservationData['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_category']),
       normalizeText(reservationData['category']),
+      normalizeText(menuSnapshot['item_category']),
       normalizeText(reservationData['meal_type']),
     ]);
   }
@@ -187,6 +189,7 @@ class MealFeedbackService {
       'reservation_date': Timestamp.fromDate(normalizedDate),
       'meal_type': normalizedMealType,
       'menu_item_id': normalizedMenuItemId,
+      'feedback_target_key': normalizedMenuItemId,
       'item_name': normalizedItemName,
       'category': normalizedCategory,
       'rating': rating,
@@ -268,29 +271,66 @@ class MealFeedbackService {
     String? submittedByUid,
   }) async {
     final normalizedEmployeeNumber = employeeNumber.trim();
+    final normalizedDate = normalizeDate(reservationDate);
+    final normalizedMealType = normalizeMealType(mealType ?? '');
+    final normalizedSubmittedByUid = (submittedByUid ?? '').trim();
+
     if (normalizedEmployeeNumber.isEmpty) {
       throw ArgumentError('employeeNumber is required.');
     }
 
-    Query<Map<String, dynamic>> query = _reservationsRef
+    Query<Map<String, dynamic>> reservationQuery = _reservationsRef
         .where('employee_number', isEqualTo: normalizedEmployeeNumber)
         .where(
           'reservation_date',
-          isGreaterThanOrEqualTo: startOfDay(reservationDate),
+          isGreaterThanOrEqualTo: startOfDay(normalizedDate),
         )
         .where(
           'reservation_date',
-          isLessThan: startOfNextDay(reservationDate),
+          isLessThan: startOfNextDay(normalizedDate),
         );
 
-    if (mealType != null && mealType.trim().isNotEmpty) {
-      query = query.where('meal_type', isEqualTo: normalizeMealType(mealType));
+    if (normalizedMealType.isNotEmpty) {
+      reservationQuery = reservationQuery.where(
+        'meal_type',
+        isEqualTo: normalizedMealType,
+      );
     }
 
-    final reservationSnapshot = await query.get();
+    final futures = <Future<dynamic>>[
+      reservationQuery.get(),
+      if (normalizedSubmittedByUid.isNotEmpty)
+        _feedbackRef
+            .where('submitted_by_uid', isEqualTo: normalizedSubmittedByUid)
+            .where(
+              'reservation_date',
+              isGreaterThanOrEqualTo: startOfDay(normalizedDate),
+            )
+            .where(
+              'reservation_date',
+              isLessThan: startOfNextDay(normalizedDate),
+            )
+            .get(),
+    ];
+
+    final results = await Future.wait(futures);
+
+    final reservationSnapshot =
+        results.first as QuerySnapshot<Map<String, dynamic>>;
 
     if (reservationSnapshot.docs.isEmpty) {
       return <FeedbackEligibleReservation>[];
+    }
+
+    final alreadySubmittedReservationIds = <String>{};
+    if (normalizedSubmittedByUid.isNotEmpty && results.length > 1) {
+      final feedbackSnapshot = results[1] as QuerySnapshot<Map<String, dynamic>>;
+      for (final doc in feedbackSnapshot.docs) {
+        final reservationId = normalizeText(doc.data()['reservation_id']);
+        if (reservationId.isNotEmpty) {
+          alreadySubmittedReservationIds.add(reservationId);
+        }
+      }
     }
 
     final result = <FeedbackEligibleReservation>[];
@@ -305,17 +345,14 @@ class MealFeedbackService {
         continue;
       }
 
-      final alreadySubmitted = submittedByUid == null || submittedByUid.trim().isEmpty
-          ? false
-          : await hasFeedbackForReservation(
-              reservationId: doc.id,
-              submittedByUid: submittedByUid.trim(),
-            );
+      if (!isIssued) {
+        continue;
+      }
 
       result.add(
         FeedbackEligibleReservation(
           reservationId: doc.id,
-          reservationDate: _toDate(data['reservation_date']) ?? reservationDate,
+          reservationDate: _toDate(data['reservation_date']) ?? normalizedDate,
           mealType: normalizeMealType(data['meal_type']),
           menuItemId: extractMenuItemId(data),
           itemName: extractItemName(data),
@@ -324,14 +361,17 @@ class MealFeedbackService {
           quantity: readInt(data['quantity']),
           status: status,
           isIssued: isIssued,
-          alreadySubmitted: alreadySubmitted,
+          alreadySubmitted: alreadySubmittedReservationIds.contains(doc.id),
         ),
       );
     }
 
-    result.sort((a, b) => a.itemName.toLowerCase().compareTo(
-          b.itemName.toLowerCase(),
-        ));
+    result.sort((a, b) {
+      final mealCompare =
+          a.mealType.toLowerCase().compareTo(b.mealType.toLowerCase());
+      if (mealCompare != 0) return mealCompare;
+      return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
+    });
 
     return result;
   }
@@ -466,7 +506,9 @@ class MealFeedbackEntry {
       isAnonymous: data['is_anonymous'] == true,
       reservationDate: _toDate(data['reservation_date']) ?? DateTime.now(),
       mealType: (data['meal_type'] ?? '').toString().trim().toLowerCase(),
-      menuItemId: (data['menu_item_id'] ?? '').toString().trim(),
+      menuItemId: (data['feedback_target_key'] ?? data['menu_item_id'] ?? '')
+          .toString()
+          .trim(),
       itemName: (data['item_name'] ?? '').toString().trim(),
       category: (data['category'] ?? '').toString().trim(),
       rating: _toInt(data['rating']),

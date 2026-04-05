@@ -153,13 +153,86 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     return value.trim().toLowerCase();
   }
 
-  Future<String> _resolveDisplayName(Map<String, dynamic> userData) async {
-    final directName = (userData['employee_name'] ?? '').toString().trim();
+  String _firstNonEmptyString(List<dynamic> values) {
+    for (final value in values) {
+      final text = (value ?? '').toString().trim();
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadLinkedProfileDocs({
+    required String uid,
+    required String employeeNumber,
+  }) async {
+    final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> byId = {};
+
+    final authQuery = await _firestore
+        .collection('employee_profiles')
+        .where('auth_uid', isEqualTo: uid)
+        .get();
+
+    for (final doc in authQuery.docs) {
+      byId[doc.id] = doc;
+    }
+
+    if (employeeNumber.isNotEmpty) {
+      final employeeQuery = await _firestore
+          .collection('employee_profiles')
+          .where('employee_number', isEqualTo: employeeNumber)
+          .get();
+
+      for (final doc in employeeQuery.docs) {
+        byId[doc.id] = doc;
+      }
+    }
+
+    return byId.values.toList();
+  }
+
+  Future<String> _resolveDisplayName({
+    required String uid,
+    required Map<String, dynamic> userData,
+  }) async {
+    final directName = _firstNonEmptyString([
+      userData['employee_name'],
+      userData['name'],
+      userData['display_name'],
+      userData['full_name'],
+    ]);
+
     if (directName.isNotEmpty) {
       return directName.toUpperCase();
     }
 
     final employeeNumber = (userData['employee_number'] ?? '').toString().trim();
+
+    try {
+      final linkedProfiles = await _loadLinkedProfileDocs(
+        uid: uid,
+        employeeNumber: employeeNumber,
+      );
+
+      for (final doc in linkedProfiles) {
+        final profileData = doc.data();
+        final profileName = _firstNonEmptyString([
+          profileData['employee_name'],
+          profileData['name'],
+          profileData['display_name'],
+          profileData['full_name'],
+        ]);
+
+        if (profileName.isNotEmpty) {
+          return profileName.toUpperCase();
+        }
+      }
+    } catch (_) {
+      // fall through to employee master fallback
+    }
+
     if (employeeNumber.isEmpty) {
       return 'UNNAMED USER';
     }
@@ -172,7 +245,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         return 'UNNAMED USER';
       }
 
-      final employeeName = (employeeDoc.data()!['name'] ?? '').toString().trim();
+      final employeeName = _firstNonEmptyString([
+        employeeDoc.data()!['name'],
+        employeeDoc.data()!['employee_name'],
+      ]);
 
       if (employeeName.isEmpty) {
         return 'UNNAMED USER';
@@ -182,6 +258,36 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     } catch (_) {
       return 'UNNAMED USER';
     }
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadRegistrationRequestDocs({
+    required String uid,
+    required String employeeNumber,
+  }) async {
+    final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>> byId = {};
+
+    final uidQuery = await _firestore
+        .collection('registration_requests')
+        .where('uid', isEqualTo: uid)
+        .get();
+
+    for (final doc in uidQuery.docs) {
+      byId[doc.id] = doc;
+    }
+
+    if (employeeNumber.isNotEmpty) {
+      final employeeQuery = await _firestore
+          .collection('registration_requests')
+          .where('employee_number', isEqualTo: employeeNumber)
+          .get();
+
+      for (final doc in employeeQuery.docs) {
+        byId[doc.id] = doc;
+      }
+    }
+
+    return byId.values.toList();
   }
 
   Future<List<String>> _collectApprovalBlockingReasons({
@@ -221,10 +327,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     }
 
     final blocking = identity.blockingReason.trim().toLowerCase();
-    if (blocking.isNotEmpty) {
-      if (!blocking.contains('user account is inactive')) {
-        reasons.add(identity.blockingReason.trim());
-      }
+    if (blocking.isNotEmpty &&
+        !blocking.contains('user account is inactive')) {
+      reasons.add(identity.blockingReason.trim());
     }
 
     if (employeeNumber.isNotEmpty) {
@@ -257,6 +362,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
       if (duplicateEmailDocs.isEmpty) {
         final allUsersSnapshot = await _firestore.collection('users').get();
+
         final caseInsensitiveDuplicates = allUsersSnapshot.docs.where((doc) {
           if (doc.id == uid) return false;
           final otherEmail = _normalizeValue(
@@ -300,10 +406,38 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     });
 
     try {
-      await _firestore.collection('users').doc(uid).update({
+      final now = FieldValue.serverTimestamp();
+      final userRef = _firestore.collection('users').doc(uid);
+      final userDoc = await userRef.get();
+
+      if (!userDoc.exists || userDoc.data() == null) {
+        throw Exception('User record not found.');
+      }
+
+      final userData = userDoc.data()!;
+      final employeeNumber =
+          (userData['employee_number'] ?? '').toString().trim();
+
+      final batch = _firestore.batch();
+
+      batch.update(userRef, {
         'role': newRole,
-        'updated_at': FieldValue.serverTimestamp(),
+        'updated_at': now,
       });
+
+      final linkedProfiles = await _loadLinkedProfileDocs(
+        uid: uid,
+        employeeNumber: employeeNumber,
+      );
+
+      for (final profileDoc in linkedProfiles) {
+        batch.update(profileDoc.reference, {
+          'role': newRole,
+          'updated_at': now,
+        });
+      }
+
+      await batch.commit();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -342,7 +476,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       return;
     }
 
-    final allowedStatuses = {'pending', 'approved', 'rejected', 'disabled'};
+    const allowedStatuses = {'pending', 'approved', 'rejected', 'disabled'};
     if (!allowedStatuses.contains(normalizedTarget)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -412,25 +546,65 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       } else if (normalizedTarget == 'disabled') {
         userUpdate['disabled_at'] = now;
         userUpdate['disabled_by_uid'] = adminUid;
+      } else if (normalizedTarget == 'pending') {
+        userUpdate['approved_at'] = null;
+        userUpdate['approved_by_uid'] = null;
+        userUpdate['rejected_at'] = null;
+        userUpdate['rejected_by_uid'] = null;
+        userUpdate['disabled_at'] = null;
+        userUpdate['disabled_by_uid'] = null;
       }
 
       final batch = _firestore.batch();
       batch.update(userRef, userUpdate);
 
-      Query<Map<String, dynamic>> requestQuery = _firestore
-          .collection('registration_requests')
-          .where('uid', isEqualTo: uid);
+      final linkedProfiles = await _loadLinkedProfileDocs(
+        uid: uid,
+        employeeNumber: employeeNumber,
+      );
 
-      if (employeeNumber.isNotEmpty) {
-        requestQuery = requestQuery.where(
-          'employee_number',
-          isEqualTo: employeeNumber,
-        );
+      for (final profileDoc in linkedProfiles) {
+        final profileUpdate = <String, dynamic>{
+          'status': normalizedTarget,
+          'is_active': normalizedTarget == 'approved',
+          'updated_at': now,
+        };
+
+        if (normalizedTarget == 'approved') {
+          profileUpdate['approved_at'] = now;
+          profileUpdate['approved_by_uid'] = adminUid;
+          profileUpdate['rejected_at'] = null;
+          profileUpdate['rejected_by_uid'] = null;
+          profileUpdate['disabled_at'] = null;
+          profileUpdate['disabled_by_uid'] = null;
+        } else if (normalizedTarget == 'rejected') {
+          profileUpdate['rejected_at'] = now;
+          profileUpdate['rejected_by_uid'] = adminUid;
+          profileUpdate['approved_at'] = null;
+          profileUpdate['approved_by_uid'] = null;
+          profileUpdate['disabled_at'] = null;
+          profileUpdate['disabled_by_uid'] = null;
+        } else if (normalizedTarget == 'disabled') {
+          profileUpdate['disabled_at'] = now;
+          profileUpdate['disabled_by_uid'] = adminUid;
+        } else if (normalizedTarget == 'pending') {
+          profileUpdate['approved_at'] = null;
+          profileUpdate['approved_by_uid'] = null;
+          profileUpdate['rejected_at'] = null;
+          profileUpdate['rejected_by_uid'] = null;
+          profileUpdate['disabled_at'] = null;
+          profileUpdate['disabled_by_uid'] = null;
+        }
+
+        batch.update(profileDoc.reference, profileUpdate);
       }
 
-      final requestSnapshot = await requestQuery.get();
+      final requestDocs = await _loadRegistrationRequestDocs(
+        uid: uid,
+        employeeNumber: employeeNumber,
+      );
 
-      for (final doc in requestSnapshot.docs) {
+      for (final doc in requestDocs) {
         final requestUpdate = <String, dynamic>{
           'updated_at': now,
         };
@@ -454,6 +628,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           if (currentRequestStatus == 'approved') {
             requestUpdate['status'] = 'disabled';
           }
+        } else if (normalizedTarget == 'pending') {
+          requestUpdate['status'] = 'pending';
+          requestUpdate['approved_at'] = null;
+          requestUpdate['approved_by_uid'] = null;
+          requestUpdate['rejected_at'] = null;
+          requestUpdate['rejected_by_uid'] = null;
         }
 
         batch.update(doc.reference, requestUpdate);
@@ -1082,7 +1262,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       final isBusy = _busyUserIds.contains(uid);
 
       return FutureBuilder<String>(
-        future: _resolveDisplayName(data),
+        future: _resolveDisplayName(
+          uid: uid,
+          userData: data,
+        ),
         builder: (context, nameSnapshot) {
           final displayName = nameSnapshot.data ?? 'Loading...';
 

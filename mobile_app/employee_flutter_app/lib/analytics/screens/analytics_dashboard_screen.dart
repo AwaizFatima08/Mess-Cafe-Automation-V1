@@ -49,11 +49,18 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     _loadAnalytics();
   }
 
-  AnalyticsFilterModel _buildDefaultFilter() {
+  DateTime _resolveOperationalReferenceDate() {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day)
-        .subtract(const Duration(days: 6));
-    final end = DateTime(now.year, now.month, now.day);
+    if (now.hour < 6) {
+      final adjusted = now.subtract(const Duration(days: 1));
+      return DateTime(adjusted.year, adjusted.month, adjusted.day);
+    }
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  AnalyticsFilterModel _buildDefaultFilter() {
+    final end = _resolveOperationalReferenceDate();
+    final start = end.subtract(const Duration(days: 6));
 
     return AnalyticsFilterModel(
       startDate: start,
@@ -64,6 +71,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
   }
 
   Future<void> _loadAnalytics() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -88,7 +97,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
       if (!mounted) return;
 
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = 'Failed to load analytics: $e';
         _isLoading = false;
       });
     }
@@ -102,11 +111,20 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
   }
 
   void _resetFilter() {
+    final resetFilter = _buildDefaultFilter();
+
     setState(() {
-      _defaultFilter = _buildDefaultFilter();
-      _activeFilter = _defaultFilter;
+      _defaultFilter = resetFilter;
+      _activeFilter = resetFilter;
     });
+
     _loadAnalytics();
+  }
+
+  bool get _hasAnyAnalyticsData {
+    return _attendanceResult.totalAttendance > 0 ||
+        _costResult.totalCost > 0 ||
+        _feedbackResult.totalResponses > 0;
   }
 
   List<AnalyticsKpiModel> _buildAttendanceKpis() {
@@ -218,7 +236,11 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     }
 
     return mealTypes
-        .map((e) => e.isEmpty ? e : e[0].toUpperCase() + e.substring(1))
+        .map((e) {
+          final value = e.trim();
+          if (value.isEmpty) return value;
+          return value[0].toUpperCase() + value.substring(1);
+        })
         .join(', ');
   }
 
@@ -251,7 +273,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            onPressed: _loadAnalytics,
+            onPressed: _isLoading ? null : _loadAnalytics,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -330,65 +352,70 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
         _buildHeaderCard(),
         const SizedBox(height: 16),
         AnalyticsFilterBar(
+          key: ValueKey<String>(_buildFilterKey()),
           initialFilter: _activeFilter,
           onApply: _applyFilter,
           onReset: _resetFilter,
         ),
         const SizedBox(height: 16),
-        _buildSectionTitle('Attendance KPIs'),
-        const SizedBox(height: 10),
-        _buildKpiGrid(
-          attendanceKpis,
-          iconMap: const <String, IconData>{
-            'Total Attendance': Icons.groups_outlined,
-            'Employees': Icons.badge_outlined,
-            'Guests': Icons.person_add_alt_1_outlined,
-            'Breakfast': Icons.free_breakfast_outlined,
-            'Lunch': Icons.lunch_dining_outlined,
-            'Dinner': Icons.dinner_dining_outlined,
-          },
-        ),
-        const SizedBox(height: 16),
-        AttendanceTrendChart(
-          dailyTrend: _attendanceResult.dailyTrend,
-        ),
-        const SizedBox(height: 16),
-        MealDistributionChart(
-          mealWiseAttendance: _attendanceResult.mealWiseAttendance,
-        ),
-        const SizedBox(height: 20),
-        _buildSectionTitle('Cost KPIs'),
-        const SizedBox(height: 10),
-        _buildKpiGrid(
-          costKpis,
-          iconMap: const <String, IconData>{
-            'Total Cost': Icons.account_balance_wallet_outlined,
-            'Employee Cost': Icons.badge_outlined,
-            'Guest Cost': Icons.person_add_alt_1_outlined,
-            'Avg Cost / Head': Icons.calculate_outlined,
-          },
-        ),
-        const SizedBox(height: 16),
-        CostTrendChart(
-          dailyCostTrend: _costResult.dailyCostTrend,
-        ),
-        const SizedBox(height: 20),
-        _buildSectionTitle('Feedback KPIs'),
-        const SizedBox(height: 10),
-        _buildKpiGrid(
-          feedbackKpis,
-          iconMap: const <String, IconData>{
-            'Responses': Icons.rate_review_outlined,
-            'Avg Rating': Icons.star_outline,
-            '5-Star': Icons.star,
-            '4-Star': Icons.star_half,
-            '3-Star': Icons.star_border,
-          },
-        ),
-        const SizedBox(height: 16),
-        FeedbackDistributionChart(
-          ratingDistribution: _feedbackResult.ratingDistribution,
-        ),
+        if (!_hasAnyAnalyticsData)
+          _buildEmptyState()
+        else ...[
+          _buildSectionTitle('Attendance KPIs'),
+          const SizedBox(height: 10),
+          _buildKpiGrid(
+            attendanceKpis,
+            iconMap: const <String, IconData>{
+              'Total Attendance': Icons.groups_outlined,
+              'Employees': Icons.badge_outlined,
+              'Guests': Icons.person_add_alt_1_outlined,
+              'Breakfast': Icons.free_breakfast_outlined,
+              'Lunch': Icons.lunch_dining_outlined,
+              'Dinner': Icons.dinner_dining_outlined,
+            },
+          ),
+          const SizedBox(height: 16),
+          AttendanceTrendChart(
+            dailyTrend: _attendanceResult.dailyTrend,
+          ),
+          const SizedBox(height: 16),
+          MealDistributionChart(
+            mealWiseAttendance: _attendanceResult.mealWiseAttendance,
+          ),
+          const SizedBox(height: 20),
+          _buildSectionTitle('Cost KPIs'),
+          const SizedBox(height: 10),
+          _buildKpiGrid(
+            costKpis,
+            iconMap: const <String, IconData>{
+              'Total Cost': Icons.account_balance_wallet_outlined,
+              'Employee Cost': Icons.badge_outlined,
+              'Guest Cost': Icons.person_add_alt_1_outlined,
+              'Avg Cost / Head': Icons.calculate_outlined,
+            },
+          ),
+          const SizedBox(height: 16),
+          CostTrendChart(
+            dailyCostTrend: _costResult.dailyCostTrend,
+          ),
+          const SizedBox(height: 20),
+          _buildSectionTitle('Feedback KPIs'),
+          const SizedBox(height: 10),
+          _buildKpiGrid(
+            feedbackKpis,
+            iconMap: const <String, IconData>{
+              'Responses': Icons.rate_review_outlined,
+              'Avg Rating': Icons.star_outline,
+              '5-Star': Icons.star,
+              '4-Star': Icons.star_half,
+              '3-Star': Icons.star_border,
+            },
+          ),
+          const SizedBox(height: 16),
+          FeedbackDistributionChart(
+            ratingDistribution: _feedbackResult.ratingDistribution,
+          ),
+        ],
       ],
     );
   }
@@ -460,6 +487,45 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     );
   }
 
+  Widget _buildEmptyState() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(
+              Icons.insights_outlined,
+              size: 44,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No analytics data found',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No attendance, cost, or feedback records matched the selected filter range.',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${_buildDateRangeLabel()} • ${_buildMealTypeLabel()} • ${_buildGuestScopeLabel()}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey.shade700,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
@@ -473,23 +539,52 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> {
     List<AnalyticsKpiModel> kpis, {
     required Map<String, IconData> iconMap,
   }) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: kpis.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.28,
-      ),
-      itemBuilder: (context, index) {
-        final kpi = kpis[index];
-        return AnalyticsSummaryCard(
-          kpi: kpi,
-          icon: iconMap[kpi.title],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+
+        int crossAxisCount = 1;
+        double childAspectRatio = 2.6;
+
+        if (width >= 1100) {
+          crossAxisCount = 4;
+          childAspectRatio = 1.65;
+        } else if (width >= 800) {
+          crossAxisCount = 3;
+          childAspectRatio = 1.45;
+        } else if (width >= 520) {
+          crossAxisCount = 2;
+          childAspectRatio = 1.28;
+        }
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: kpis.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: childAspectRatio,
+          ),
+          itemBuilder: (context, index) {
+            final kpi = kpis[index];
+            return AnalyticsSummaryCard(
+              kpi: kpi,
+              icon: iconMap[kpi.title],
+            );
+          },
         );
       },
     );
+  }
+
+  String _buildFilterKey() {
+    final start = _activeFilter.startDate.toIso8601String();
+    final end = _activeFilter.endDate.toIso8601String();
+    final meals = (_activeFilter.mealTypes ?? const <String>[]).join(',');
+    final guests = _activeFilter.includeGuests ? '1' : '0';
+    final employee = _activeFilter.employeeNumber ?? '';
+    return '$start|$end|$meals|$guests|$employee';
   }
 }

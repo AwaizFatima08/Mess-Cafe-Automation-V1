@@ -35,7 +35,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
   bool _isLoadingMenu = false;
   bool _isSaving = false;
 
-  DateTime _selectedDate = _startOfDay(DateTime.now());
+  late DateTime _selectedDate;
   DailyResolvedMenu? _resolvedMenu;
 
   bool _allowGuestBooking = true;
@@ -86,6 +86,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _selectedDate = _resolveOperationalReferenceDate();
     _initializeScreen();
   }
 
@@ -107,6 +108,18 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     _proxyOverrideReasonController.dispose();
 
     super.dispose();
+  }
+
+  DateTime _startOfDay(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return _startOfDay(now.subtract(const Duration(days: 1)));
+    }
+    return _startOfDay(now);
   }
 
   Future<void> _initializeScreen() async {
@@ -178,9 +191,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
           fallback: false,
         );
       });
-    } catch (_) {
-      // Keep defaults.
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadMenuForDate(DateTime date) async {
@@ -190,12 +201,15 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     });
 
     try {
-      final menu = await _menuResolverService.getBookingMenuForDate(date);
+      final normalizedDate = _startOfDay(date);
+      final menu = await _menuResolverService.getBookingMenuForDate(
+        normalizedDate,
+      );
 
       if (!mounted) return;
       setState(() {
         _resolvedMenu = menu;
-        _selectedDate = _startOfDay(date);
+        _selectedDate = normalizedDate;
         _selectedGuestOptionKey = null;
         _selectedProxyOptionKey = null;
       });
@@ -237,17 +251,23 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         final data = doc.data();
         return <String, dynamic>{
           'id': doc.id,
-          'name': (data['name'] ?? data['item_name'] ?? '').toString().trim(),
-          'category': (data['category'] ?? '').toString().trim().toLowerCase(),
+          'name': (data['name'] ?? data['item_name'] ?? '')
+              .toString()
+              .trim(),
+          'category':
+              (data['category'] ?? '').toString().trim().toLowerCase(),
         };
-      }).where((item) => (item['name'] as String).isNotEmpty).toList();
-
-      items.sort((a, b) =>
-          (a['name'] as String).toLowerCase().compareTo((b['name'] as String).toLowerCase()));
+      }).where((item) => (item['name'] as String).isNotEmpty).toList()
+        ..sort(
+          (a, b) => (a['name'] as String)
+              .toLowerCase()
+              .compareTo((b['name'] as String).toLowerCase()),
+        );
 
       setState(() {
         _allMenuItems = items;
       });
+      _ensureValidProxySelection();
     } catch (_) {
       if (!mounted) return;
       _showSnackBar('Failed to load menu items.');
@@ -261,11 +281,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
   }
 
   Future<void> _pickReservationDate() async {
+    final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+      firstDate:
+          _startOfDay(now).subtract(const Duration(days: 30)),
+      lastDate: _startOfDay(now).add(const Duration(days: 30)),
     );
 
     if (picked == null) {
@@ -386,14 +408,16 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     final needsOverrideReason =
         validation.message.toLowerCase().contains('override');
 
-    if (_requireOverrideReason && needsOverrideReason && overrideReason.isEmpty) {
+    if (_requireOverrideReason &&
+        needsOverrideReason &&
+        overrideReason.isEmpty) {
       _showSnackBar('Override reason is required for this booking.');
       return;
     }
 
     final lines = [
-      ReservationLineInput(
-        menuOptionKey: selectedOption.optionKey,
+      ReservationLineInput.forCycleOption(
+        optionKey: selectedOption.optionKey,
         optionLabel: selectedOption.optionLabel,
         diningMode: _selectedGuestDiningMode!,
         quantity: _guestQuantity,
@@ -417,7 +441,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         mealType: _selectedGuestMealType,
         lines: lines,
         createdByUid: authUser.uid,
-        createdByRole: profile.roleLabel,
+        createdByRole: _normalizedRole(profile.roleLabel),
         createdByEmployeeNumber: profile.employeeNumber,
         createdByName: profile.employeeName,
         guestName: guestName,
@@ -459,7 +483,9 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     if (_isSaving) return;
 
     if (!_allowProxyEmployeeBooking) {
-      _showSnackBar('Proxy employee booking is disabled in reservation settings.');
+      _showSnackBar(
+        'Proxy employee booking is disabled in reservation settings.',
+      );
       return;
     }
 
@@ -507,8 +533,9 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
 
     final overrideReason = _proxyOverrideReasonController.text.trim();
-    final role = profile.roleLabel.trim().toLowerCase();
-    final isPrivileged = _mealReservationService.canWaiveCutoffForRole(role);
+    final normalizedRole = _normalizedRole(profile.roleLabel);
+    final isPrivileged =
+        _mealReservationService.canWaiveCutoffForRole(normalizedRole);
 
     final validation = _mealReservationService.validateReservationRequest(
       reservationDate: _selectedDate,
@@ -521,7 +548,11 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       return;
     }
 
-    if (_requireOverrideReason && isPrivileged && overrideReason.isEmpty) {
+    final needsOverrideReason = !validation.isAllowed || isPrivileged;
+
+    if (_requireOverrideReason &&
+        needsOverrideReason &&
+        overrideReason.isEmpty) {
       _showSnackBar('Override reason is required for proxy override booking.');
       return;
     }
@@ -541,8 +572,8 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       }
 
       lines = [
-        ReservationLineInput(
-          menuOptionKey: selectedOption.optionKey,
+        ReservationLineInput.forCycleOption(
+          optionKey: selectedOption.optionKey,
           optionLabel: selectedOption.optionLabel,
           diningMode: _selectedProxyDiningMode!,
           quantity: _proxyQuantity,
@@ -595,7 +626,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         mealType: _selectedProxyMealType,
         lines: lines,
         createdByUid: authUser.uid,
-        createdByRole: profile.roleLabel,
+        createdByRole: normalizedRole,
         createdByEmployeeNumber: profile.employeeNumber,
         createdByName: profile.employeeName,
         notes: _proxyNotesController.text.trim(),
@@ -661,7 +692,10 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     final normalizedMealType = mealType.trim().toLowerCase();
 
     final filtered = _allMenuItems.where((item) {
-      final category = (item['category'] ?? '').toString().trim().toLowerCase();
+      final category = (item['category'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
       if (category.isEmpty) {
         return true;
       }
@@ -778,8 +812,8 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     return fallback;
   }
 
-  static DateTime _startOfDay(DateTime value) {
-    return DateTime(value.year, value.month, value.day);
+  String _normalizedRole(String value) {
+    return value.trim().toLowerCase().replaceAll(' ', '_');
   }
 
   String _formatDate(DateTime date) {

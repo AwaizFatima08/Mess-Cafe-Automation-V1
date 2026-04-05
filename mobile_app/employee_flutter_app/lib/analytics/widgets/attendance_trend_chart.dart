@@ -38,18 +38,10 @@ class AttendanceTrendChart extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
-                    height: 220,
-                    child: CustomPaint(
-                      painter: _AttendanceTrendPainter(
-                        values: entries.map((e) => e.value.toDouble()).toList(),
-                        lineColor: theme.colorScheme.primary,
-                        axisColor: Colors.grey.shade400,
-                        gridColor: Colors.grey.shade300,
-                      ),
-                      child: Container(),
-                    ),
+                    height: 260,
+                    child: _AttendanceTrendPlot(entries: entries),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
@@ -68,7 +60,7 @@ class AttendanceTrendChart extends StatelessWidget {
 
   Widget _buildEmptyState(ThemeData theme) {
     return SizedBox(
-      height: 220,
+      height: 240,
       child: Center(
         child: Text(
           'No attendance trend data available.',
@@ -84,6 +76,135 @@ class AttendanceTrendChart extends StatelessWidget {
     final parts = input.split('-');
     if (parts.length != 3) return input;
     return '${parts[2]}/${parts[1]}';
+  }
+}
+
+class _AttendanceTrendPlot extends StatelessWidget {
+  const _AttendanceTrendPlot({
+    required this.entries,
+  });
+
+  final List<MapEntry<String, int>> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final values = entries.map((e) => e.value.toDouble()).toList();
+    final maxValue = values.isEmpty
+        ? 1
+        : math.max(1, values.reduce((a, b) => a > b ? a : b).toInt());
+
+    final yTicks = _buildYAxisTicks(maxValue);
+
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 40,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: yTicks.reversed.map((tick) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        '$tick',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              Expanded(
+                child: CustomPaint(
+                  painter: _AttendanceTrendPainter(
+                    values: values,
+                    yTicks: yTicks,
+                    lineColor: theme.colorScheme.primary,
+                    axisColor: Colors.grey.shade400,
+                    gridColor: Colors.grey.shade300,
+                    pointFillColor: theme.colorScheme.primary,
+                    pointStrokeColor: theme.colorScheme.surface,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 20,
+          child: Row(
+            children: List.generate(entries.length, (index) {
+              final label = _compactBottomLabel(
+                entries: entries,
+                index: index,
+              );
+
+              return Expanded(
+                child: Align(
+                  alignment: index == 0
+                      ? Alignment.centerLeft
+                      : index == entries.length - 1
+                          ? Alignment.centerRight
+                          : Alignment.center,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<int> _buildYAxisTicks(int maxValue) {
+    if (maxValue <= 4) {
+      return List<int>.generate(maxValue + 1, (index) => index);
+    }
+
+    final step = (maxValue / 4).ceil();
+    return <int>[
+      0,
+      step,
+      step * 2,
+      step * 3,
+      step * 4,
+    ];
+  }
+
+  String _compactBottomLabel({
+    required List<MapEntry<String, int>> entries,
+    required int index,
+  }) {
+    final total = entries.length;
+    final raw = entries[index].key;
+    final parts = raw.split('-');
+    if (parts.length != 3) return raw;
+
+    final compact = '${parts[2]}/${parts[1]}';
+
+    if (total <= 7) return compact;
+
+    if (index == 0 || index == total - 1) return compact;
+
+    final interval = (total / 4).ceil();
+    if (index % interval == 0) return compact;
+
+    return '';
   }
 }
 
@@ -116,24 +237,30 @@ class _TrendLegendChip extends StatelessWidget {
 class _AttendanceTrendPainter extends CustomPainter {
   _AttendanceTrendPainter({
     required this.values,
+    required this.yTicks,
     required this.lineColor,
     required this.axisColor,
     required this.gridColor,
+    required this.pointFillColor,
+    required this.pointStrokeColor,
   });
 
   final List<double> values;
+  final List<int> yTicks;
   final Color lineColor;
   final Color axisColor;
   final Color gridColor;
+  final Color pointFillColor;
+  final Color pointStrokeColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) return;
 
-    const double leftPadding = 28;
-    const double bottomPadding = 20;
-    const double topPadding = 12;
-    const double rightPadding = 12;
+    const double topPadding = 10;
+    const double bottomPadding = 12;
+    const double leftPadding = 4;
+    const double rightPadding = 10;
 
     final chartWidth = size.width - leftPadding - rightPadding;
     final chartHeight = size.height - topPadding - bottomPadding;
@@ -163,12 +290,20 @@ class _AttendanceTrendPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final dotPaint = Paint()
-      ..color = lineColor
+    final pointFillPaint = Paint()
+      ..color = pointFillColor
       ..style = PaintingStyle.fill;
 
-    for (int i = 0; i <= 4; i++) {
-      final y = chartRect.top + (chartHeight / 4) * i;
+    final pointStrokePaint = Paint()
+      ..color = pointStrokeColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final maxValue = yTicks.isEmpty ? 1 : yTicks.last.clamp(1, 1 << 30);
+
+    for (final tick in yTicks) {
+      final ratio = maxValue == 0 ? 0.0 : tick / maxValue;
+      final y = chartRect.bottom - (ratio * chartHeight);
       canvas.drawLine(
         Offset(chartRect.left, y),
         Offset(chartRect.right, y),
@@ -187,47 +322,43 @@ class _AttendanceTrendPainter extends CustomPainter {
       axisPaint,
     );
 
-    final maxValue = math.max(
-      1,
-      values.reduce((a, b) => a > b ? a : b).toInt(),
-    );
-
-    final path = Path();
+    final points = <Offset>[];
 
     for (int i = 0; i < values.length; i++) {
       final dx = values.length == 1
           ? chartRect.left + (chartWidth / 2)
           : chartRect.left + (chartWidth / (values.length - 1)) * i;
 
-      final normalized = values[i] / maxValue;
+      final normalized = maxValue == 0 ? 0.0 : (values[i] / maxValue);
       final dy = chartRect.bottom - (normalized * chartHeight);
 
-      if (i == 0) {
-        path.moveTo(dx, dy);
-      } else {
-        path.lineTo(dx, dy);
-      }
+      points.add(Offset(dx, dy));
     }
 
-    canvas.drawPath(path, linePaint);
+    if (points.isNotEmpty) {
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
 
-    for (int i = 0; i < values.length; i++) {
-      final dx = values.length == 1
-          ? chartRect.left + (chartWidth / 2)
-          : chartRect.left + (chartWidth / (values.length - 1)) * i;
+      for (int i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
 
-      final normalized = values[i] / maxValue;
-      final dy = chartRect.bottom - (normalized * chartHeight);
+      canvas.drawPath(path, linePaint);
 
-      canvas.drawCircle(Offset(dx, dy), 4, dotPaint);
+      for (final point in points) {
+        canvas.drawCircle(point, 4.5, pointFillPaint);
+        canvas.drawCircle(point, 4.5, pointStrokePaint);
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _AttendanceTrendPainter oldDelegate) {
     return oldDelegate.values != values ||
+        oldDelegate.yTicks != yTicks ||
         oldDelegate.lineColor != lineColor ||
         oldDelegate.axisColor != axisColor ||
-        oldDelegate.gridColor != gridColor;
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.pointFillColor != pointFillColor ||
+        oldDelegate.pointStrokeColor != pointStrokeColor;
   }
 }

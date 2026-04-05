@@ -21,7 +21,6 @@ class _MealRateManagementScreenState
   String? _errorMessage;
 
   List<MealRateEntryRow> _rows = [];
-
   final Map<String, TextEditingController> _controllers = {};
 
   @override
@@ -36,10 +35,16 @@ class _MealRateManagementScreenState
     if (now.hour < 6) {
       return now.subtract(const Duration(days: 1));
     }
-    return now;
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  String _rowKey(MealRateEntryRow row) {
+    return '${row.summary.menuItemId}__${row.summary.mealType}';
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -54,7 +59,8 @@ class _MealRateManagementScreenState
       _controllers.clear();
 
       for (final row in rows) {
-        _controllers[row.summary.menuItemId] = TextEditingController(
+        final key = _rowKey(row);
+        _controllers[key] = TextEditingController(
           text: row.initialRate > 0 ? row.initialRate.toStringAsFixed(0) : '',
         );
       }
@@ -85,17 +91,22 @@ class _MealRateManagementScreenState
     );
 
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      });
       await _loadData();
     }
   }
 
   Future<void> _saveRates() async {
+    if (_isSaving || _rows.isEmpty) return;
+
     setState(() => _isSaving = true);
 
     try {
       final drafts = _rows.map((row) {
-        final controller = _controllers[row.summary.menuItemId];
+        final key = _rowKey(row);
+        final controller = _controllers[key];
         final rate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
 
         return MealRateDraft(
@@ -152,7 +163,7 @@ class _MealRateManagementScreenState
         ),
         IconButton(
           tooltip: 'Refresh',
-          onPressed: _loadData,
+          onPressed: _isLoading ? null : _loadData,
           icon: const Icon(Icons.refresh),
         ),
         const SizedBox(width: 8),
@@ -188,7 +199,8 @@ class _MealRateManagementScreenState
           DataColumn(label: Text('Rate')),
         ],
         rows: _rows.map((row) {
-          final controller = _controllers[row.summary.menuItemId]!;
+          final key = _rowKey(row);
+          final controller = _controllers[key]!;
 
           return DataRow(
             cells: [

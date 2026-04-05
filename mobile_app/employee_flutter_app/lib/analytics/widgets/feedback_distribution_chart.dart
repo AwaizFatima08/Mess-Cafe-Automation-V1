@@ -22,7 +22,14 @@ class FeedbackDistributionChart extends StatelessWidget {
       5: ratingDistribution[5] ?? 0,
     };
 
-    final int total = normalized.values.fold<int>(0, (sum, item) => sum + item);
+    final total = normalized.values.fold<int>(0, (sum, item) => sum + item);
+    final averageRating = total == 0
+        ? 0.0
+        : normalized.entries.fold<double>(
+              0.0,
+              (sum, entry) => sum + (entry.key * entry.value),
+            ) /
+            total;
 
     return Card(
       elevation: 2,
@@ -42,9 +49,24 @@ class FeedbackDistributionChart extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _SummaryChip(
+                        label: 'Responses',
+                        value: '$total',
+                      ),
+                      _SummaryChip(
+                        label: 'Average',
+                        value: averageRating.toStringAsFixed(2),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 18),
                   ...normalized.entries.toList().reversed.map((entry) {
-                    final double ratio = total == 0 ? 0.0 : entry.value / total;
+                    final ratio = total == 0 ? 0.0 : entry.value / total;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: _RatingBarRow(
@@ -75,6 +97,34 @@ class FeedbackDistributionChart extends StatelessWidget {
   }
 }
 
+class _SummaryChip extends StatelessWidget {
+  const _SummaryChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Text(
+        '$label: $value',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
 class _RatingBarRow extends StatelessWidget {
   const _RatingBarRow({
     required this.rating,
@@ -89,7 +139,7 @@ class _RatingBarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final double safeRatio = ratio.clamp(0.0, 1.0);
+    final safeRatio = ratio.clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,7 +147,7 @@ class _RatingBarRow extends StatelessWidget {
         Row(
           children: [
             SizedBox(
-              width: 64,
+              width: 72,
               child: Text(
                 '$rating Star',
                 style: theme.textTheme.bodyMedium?.copyWith(
@@ -117,7 +167,7 @@ class _RatingBarRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             SizedBox(
-              width: 36,
+              width: 44,
               child: Text(
                 '$value',
                 textAlign: TextAlign.end,

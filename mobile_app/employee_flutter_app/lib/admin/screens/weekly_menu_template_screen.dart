@@ -20,6 +20,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   final TextEditingController templateNameController = TextEditingController();
   final FocusNode templateNameFocusNode = FocusNode();
 
+  final ScrollController _scrollController = ScrollController();
+
   final List<String> weekDays = const [
     'monday',
     'tuesday',
@@ -35,6 +37,9 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     {'value': 'lunch', 'label': 'Lunch'},
     {'value': 'dinner', 'label': 'Dinner'},
   ];
+
+  static const String _defaultOptionKey = 'default';
+  static const String _defaultOptionLabel = 'Default Option';
 
   String selectedMealType = 'breakfast';
   String savedTemplateFilter = 'all';
@@ -66,6 +71,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   void dispose() {
     templateNameController.dispose();
     templateNameFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -80,13 +86,118 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   }
 
   bool isItemActive(Map<String, dynamic> data) {
-    return data['is_active'] == true ||
-        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
+    return data['is_active'] == true;
   }
 
-  bool isTemplateActive(Map<String, dynamic> data) {
-    return data['is_active'] == true ||
-        (data['status'] ?? '').toString().trim().toLowerCase() == 'active';
+  bool isItemVisible(Map<String, dynamic> data) {
+    final raw = data['is_visible'];
+    if (raw is bool) return raw;
+    return true;
+  }
+
+  bool isTemplateRowActive(Map<String, dynamic> data) {
+    return data['is_active'] == true;
+  }
+
+  bool isTemplateRowVisible(Map<String, dynamic> data) {
+    final raw = data['is_visible'];
+    if (raw is bool) return raw;
+    return true;
+  }
+
+  String getMenuItemName(Map<String, dynamic> data, String docId) {
+    final name = (data['name'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
+
+    final legacy = (data['item_name'] ?? '').toString().trim();
+    if (legacy.isNotEmpty) return legacy;
+
+    return docId;
+  }
+
+  String getMenuItemCode(Map<String, dynamic> data, String docId) {
+    final code = (data['item_Id'] ?? '').toString().trim();
+    if (code.isNotEmpty) return code;
+    return docId;
+  }
+
+  String getFoodTypeLabel(Map<String, dynamic> data) {
+    final name = (data['food_type_name'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
+
+    final code = (data['food_type_code'] ?? '').toString().trim();
+    if (code.isNotEmpty) return code;
+
+    return 'unspecified';
+  }
+
+  List<String> getMealTypes(Map<String, dynamic> data) {
+    final raw = data['available_meal_types'];
+
+    if (raw is Iterable) {
+      return raw
+          .map((e) => e.toString().trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+    }
+
+    if (raw is String) {
+      return raw
+          .replaceAll('[', '')
+          .replaceAll(']', '')
+          .replaceAll('"', '')
+          .replaceAll("'", '')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+    }
+
+    final legacyCategory = (data['category'] ?? '').toString().trim().toLowerCase();
+    if (legacyCategory.isNotEmpty) {
+      return [legacyCategory];
+    }
+
+    return const [];
+  }
+
+  int getSortOrder(Map<String, dynamic> data) {
+    final raw = data['sort_order'];
+
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim()) ?? 999999;
+
+    return 999999;
+  }
+
+  List<String> _normalizeStringList(dynamic raw) {
+    if (raw is Iterable) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+    }
+
+    if (raw is String) {
+      return raw
+          .replaceAll('[', '')
+          .replaceAll(']', '')
+          .replaceAll('"', '')
+          .replaceAll("'", '')
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+    }
+
+    return <String>[];
   }
 
   Future<String> _generateNextTemplateId() async {
@@ -96,16 +207,32 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     final regex = RegExp(r'^WMT(\d+)$');
 
     for (final doc in snapshot.docs) {
-      final match = regex.firstMatch(doc.id.trim().toUpperCase());
-      if (match == null) continue;
+      final data = doc.data();
+      final candidates = <String>[
+        (data['template_id'] ?? '').toString().trim().toUpperCase(),
+        doc.id.trim().toUpperCase(),
+      ];
 
-      final number = int.tryParse(match.group(1) ?? '0') ?? 0;
-      if (number > maxNumber) {
-        maxNumber = number;
+      for (final candidate in candidates) {
+        final match = regex.firstMatch(candidate);
+        if (match == null) continue;
+        final number = int.tryParse(match.group(1) ?? '0') ?? 0;
+        if (number > maxNumber) {
+          maxNumber = number;
+        }
       }
     }
 
     return 'WMT${(maxNumber + 1).toString().padLeft(4, '0')}';
+  }
+
+  String _buildTemplateRowDocId({
+    required String templateId,
+    required String mealType,
+    required String weekday,
+    required String optionKey,
+  }) {
+    return '${templateId}_${mealType}_${weekday}_$optionKey';
   }
 
   void resetForm() {
@@ -122,15 +249,6 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     if (mounted) {
       setState(() {});
     }
-  }
-
-  List<String> _normalizeStringList(dynamic raw) {
-    if (raw is! List) return <String>[];
-
-    return raw
-        .map((e) => e.toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
   }
 
   Future<void> saveTemplate() async {
@@ -166,29 +284,54 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
         statusMessage = null;
       });
 
+      final templateId = editingTemplateId ?? await _generateNextTemplateId();
+      final batch = _firestore.batch();
+      final templatesRef = _firestore.collection('weekly_menu_templates');
       final now = FieldValue.serverTimestamp();
-      final docId = editingTemplateId ?? await _generateNextTemplateId();
 
-      final payload = <String, dynamic>{
-        'template_name': templateName,
-        'meal_type': selectedMealType,
-        'is_active': true,
-        'status': 'active',
-        'updated_at': now,
-      };
+      if (editingTemplateId != null) {
+        final existing = await templatesRef
+            .where('template_id', isEqualTo: editingTemplateId)
+            .where('meal_type', isEqualTo: selectedMealType)
+            .get();
 
-      if (editingTemplateId == null) {
-        payload['created_at'] = now;
+        for (final doc in existing.docs) {
+          batch.delete(doc.reference);
+        }
       }
 
       for (final day in weekDays) {
-        payload[day] = List<String>.from(daySelections[day] ?? <String>[]);
+        final itemIds = List<String>.from(daySelections[day] ?? const <String>[]);
+
+        if (itemIds.isEmpty) {
+          continue;
+        }
+
+        final rowDocId = _buildTemplateRowDocId(
+          templateId: templateId,
+          mealType: selectedMealType,
+          weekday: day,
+          optionKey: _defaultOptionKey,
+        );
+
+        final rowRef = templatesRef.doc(rowDocId);
+
+        batch.set(rowRef, {
+          'template_id': templateId,
+          'template_name': templateName,
+          'weekday': day,
+          'meal_type': selectedMealType,
+          'menu_option_key': _defaultOptionKey,
+          'option_label': _defaultOptionLabel,
+          'item_ids': itemIds,
+          'is_active': true,
+          'is_visible': true,
+          'updated_at': now,
+          if (editingTemplateId == null) 'created_at': now,
+        }, SetOptions(merge: true));
       }
 
-      await _firestore
-          .collection('weekly_menu_templates')
-          .doc(docId)
-          .set(payload, SetOptions(merge: true));
+      await batch.commit();
 
       if (!mounted) return;
 
@@ -198,7 +341,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
         isSaving = false;
         statusMessage = wasEdit
             ? 'Template updated successfully.'
-            : 'Template created successfully with ID $docId.';
+            : 'Template created successfully with ID $templateId.';
       });
 
       resetForm();
@@ -211,17 +354,14 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     }
   }
 
-  void loadTemplateForEdit(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data();
-
-    templateNameController.text =
-        (data['template_name'] ?? '').toString().trim();
-    selectedMealType = (data['meal_type'] ?? 'breakfast').toString().trim();
-    editingTemplateId = doc.id;
+  void loadTemplateGroupForEdit(_TemplateGroup group) {
+    templateNameController.text = group.templateName;
+    selectedMealType = group.mealType;
+    editingTemplateId = group.templateId;
     statusMessage = null;
 
     for (final day in weekDays) {
-      daySelections[day] = _normalizeStringList(data[day]);
+      daySelections[day] = List<String>.from(group.daySelections[day] ?? const []);
       dayExpandedState[day] = false;
     }
 
@@ -233,19 +373,19 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     });
   }
 
-  Future<void> toggleTemplateActive(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) async {
+  Future<void> toggleTemplateGroupActive(_TemplateGroup group) async {
     try {
-      final data = doc.data();
-      final currentlyActive = isTemplateActive(data);
-      final nextActive = !currentlyActive;
+      final batch = _firestore.batch();
+      final nextActive = !group.isActive;
 
-      await doc.reference.update({
-        'is_active': nextActive,
-        'status': nextActive ? 'active' : 'inactive',
-        'updated_at': FieldValue.serverTimestamp(),
-      });
+      for (final row in group.rows) {
+        batch.update(row.reference, {
+          'is_active': nextActive,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -318,12 +458,14 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  selectedMealType = value;
-                });
-              },
+              onChanged: isSaving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        selectedMealType = value;
+                      });
+                    },
             ),
             if (statusMessage != null) ...[
               const SizedBox(height: 16),
@@ -339,6 +481,40 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildScrollButtons() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        spacing: 8,
+        children: [
+          OutlinedButton.icon(
+            onPressed: () {
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOut,
+              );
+            },
+            icon: const Icon(Icons.arrow_upward),
+            label: const Text('Top'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              final max = _scrollController.position.maxScrollExtent;
+              _scrollController.animateTo(
+                max,
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOut,
+              );
+            },
+            icon: const Icon(Icons.arrow_downward),
+            label: const Text('Bottom'),
+          ),
+        ],
       ),
     );
   }
@@ -371,7 +547,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           if (activeMenuItems.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('No active menu items found.'),
+              child: Text('No active menu items found for selected meal type.'),
             )
           else
             Padding(
@@ -380,9 +556,9 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                 children: activeMenuItems.map((doc) {
                   final data = doc.data();
                   final itemId = doc.id;
-                  final itemName = (data['item_name'] ?? itemId).toString().trim();
-                  final category =
-                      (data['category'] ?? 'other').toString().trim();
+                  final itemCode = getMenuItemCode(data, doc.id);
+                  final itemName = getMenuItemName(data, doc.id);
+                  final foodType = getFoodTypeLabel(data);
                   final checked = selectedIds.contains(itemId);
 
                   return CheckboxListTile(
@@ -390,11 +566,11 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                     controlAffinity: ListTileControlAffinity.leading,
                     value: checked,
                     title: Text(itemName),
-                    subtitle: Text('$itemId • $category'),
+                    subtitle: Text('$itemCode • $foodType'),
                     onChanged: (value) {
                       setState(() {
                         final updated =
-                            List<String>.from(daySelections[day] ?? <String>[]);
+                            List<String>.from(daySelections[day] ?? const <String>[]);
 
                         if (value == true) {
                           if (!updated.contains(itemId)) {
@@ -417,30 +593,12 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     );
   }
 
-  Widget _buildSavedTemplateCard(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data();
-
-    final templateName =
-        (data['template_name'] ?? '').toString().trim().isEmpty
-            ? '(Untitled Template)'
-            : (data['template_name'] ?? '').toString().trim();
-
-    final mealType =
-        (data['meal_type'] ?? '').toString().trim().isEmpty
-            ? '(Missing Meal Type)'
-            : (data['meal_type'] ?? '').toString().trim();
-
-    final active = isTemplateActive(data);
-
-    int totalItems = 0;
-    for (final day in weekDays) {
-      totalItems += _normalizeStringList(data[day]).length;
-    }
+  Widget _buildSavedTemplateCard(_TemplateGroup group) {
+    final totalItems = group.daySelections.values
+        .fold<int>(0, (sum, items) => sum + items.length);
 
     return Card(
-      key: ValueKey(doc.id),
+      key: ValueKey('${group.templateId}_${group.mealType}'),
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -453,35 +611,46 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
-                  templateName,
+                  group.templateName,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Chip(label: Text(active ? 'Active' : 'Inactive')),
+                Chip(label: Text(group.isActive ? 'Active' : 'Inactive')),
               ],
             ),
             const SizedBox(height: 8),
-            Text('Meal Type: ${formatLabel(mealType)}'),
-            Text('Document ID: ${doc.id}'),
+            Text('Template ID: ${group.templateId}'),
+            Text('Meal Type: ${formatLabel(group.mealType)}'),
             Text('Total selected items: $totalItems'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: weekDays.map((day) {
+                final count = group.daySelections[day]?.length ?? 0;
+                return Chip(
+                  label: Text('${formatLabel(day)}: $count'),
+                );
+              }).toList(),
+            ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: [
                 OutlinedButton.icon(
-                  onPressed: () => loadTemplateForEdit(doc),
+                  onPressed: () => loadTemplateGroupForEdit(group),
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => toggleTemplateActive(doc),
+                  onPressed: () => toggleTemplateGroupActive(group),
                   icon: Icon(
-                    active ? Icons.visibility_off : Icons.visibility,
+                    group.isActive ? Icons.visibility_off : Icons.visibility,
                   ),
-                  label: Text(active ? 'Deactivate' : 'Activate'),
+                  label: Text(group.isActive ? 'Deactivate' : 'Activate'),
                 ),
               ],
             ),
@@ -491,21 +660,94 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     );
   }
 
+  List<_TemplateGroup> _groupTemplateRows(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final templateId = (data['template_id'] ?? '').toString().trim();
+      final mealType = (data['meal_type'] ?? '').toString().trim().toLowerCase();
+      final weekday = (data['weekday'] ?? '').toString().trim().toLowerCase();
+
+      if (templateId.isEmpty || mealType.isEmpty || weekday.isEmpty) {
+        continue;
+      }
+
+      final key = '$templateId|$mealType';
+      grouped.putIfAbsent(key, () => []).add(doc);
+    }
+
+    final groups = grouped.entries.map((entry) {
+      final rows = entry.value;
+      rows.sort((a, b) {
+        final aDay = (a.data()['weekday'] ?? '').toString().trim().toLowerCase();
+        final bDay = (b.data()['weekday'] ?? '').toString().trim().toLowerCase();
+        return weekDays.indexOf(aDay).compareTo(weekDays.indexOf(bDay));
+      });
+
+      final first = rows.first.data();
+      final templateId = (first['template_id'] ?? '').toString().trim();
+      final templateName =
+          (first['template_name'] ?? '').toString().trim().isEmpty
+              ? templateId
+              : (first['template_name'] ?? '').toString().trim();
+      final mealType = (first['meal_type'] ?? '').toString().trim().toLowerCase();
+
+      final Map<String, List<String>> dayMap = {
+        for (final day in weekDays) day: <String>[],
+      };
+
+      bool anyActive = false;
+
+      for (final row in rows) {
+        final data = row.data();
+        final day = (data['weekday'] ?? '').toString().trim().toLowerCase();
+        final itemIds = _normalizeStringList(data['item_ids']);
+
+        if (weekDays.contains(day)) {
+          dayMap[day] = itemIds;
+        }
+
+        if (isTemplateRowActive(data)) {
+          anyActive = true;
+        }
+      }
+
+      return _TemplateGroup(
+        templateId: templateId,
+        templateName: templateName,
+        mealType: mealType,
+        rows: rows,
+        isActive: anyActive,
+        daySelections: dayMap,
+      );
+    }).toList();
+
+    groups.sort((a, b) {
+      final nameCompare = a.templateName.toLowerCase().compareTo(
+            b.templateName.toLowerCase(),
+          );
+      if (nameCompare != 0) return nameCompare;
+
+      final mealCompare = a.mealType.compareTo(b.mealType);
+      if (mealCompare != 0) return mealCompare;
+
+      return a.templateId.compareTo(b.templateId);
+    });
+
+    return groups;
+  }
+
   Widget _buildDynamicDataSection(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> activeMenuItems,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> templateDocs,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> templateRows,
   ) {
-    var filteredDocs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-      templateDocs,
-    );
-
-    filteredDocs.sort((a, b) => a.id.compareTo(b.id));
+    var groups = _groupTemplateRows(templateRows);
 
     if (savedTemplateFilter != 'all') {
-      filteredDocs = filteredDocs.where((doc) {
-        final mealType = (doc.data()['meal_type'] ?? '').toString().trim();
-        return mealType == savedTemplateFilter;
-      }).toList();
+      groups = groups.where((group) => group.mealType == savedTemplateFilter).toList();
     }
 
     return Column(
@@ -521,6 +763,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        _buildScrollButtons(),
+        const SizedBox(height: 8),
         ...weekDays.map(
           (day) => _buildDayCard(
             day: day,
@@ -588,7 +832,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (filteredDocs.isEmpty)
+        if (groups.isEmpty)
           const Card(
             child: Padding(
               padding: EdgeInsets.all(20),
@@ -596,7 +840,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
             ),
           )
         else
-          ...filteredDocs.map(_buildSavedTemplateCard),
+          ...groups.map(_buildSavedTemplateCard),
       ],
     );
   }
@@ -645,19 +889,35 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                 }
 
                 final activeMenuItems = (itemSnapshot.data?.docs ?? [])
-                    .where((doc) => isItemActive(doc.data()))
+                    .where((doc) {
+                      final data = doc.data();
+                      final mealTypes = getMealTypes(data);
+
+                      return isItemActive(data) &&
+                          isItemVisible(data) &&
+                          mealTypes.contains(selectedMealType);
+                    })
                     .toList()
                   ..sort((a, b) {
-                    final aName =
-                        (a.data()['item_name'] ?? a.id).toString().toLowerCase();
-                    final bName =
-                        (b.data()['item_name'] ?? b.id).toString().toLowerCase();
-                    return aName.compareTo(bName);
+                    final aData = a.data();
+                    final bData = b.data();
+
+                    final sortCompare =
+                        getSortOrder(aData).compareTo(getSortOrder(bData));
+                    if (sortCompare != 0) return sortCompare;
+
+                    final nameCompare = getMenuItemName(aData, a.id)
+                        .toLowerCase()
+                        .compareTo(getMenuItemName(bData, b.id).toLowerCase());
+                    if (nameCompare != 0) return nameCompare;
+
+                    return a.id.compareTo(b.id);
                   });
 
                 return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream:
-                      _firestore.collection('weekly_menu_templates').snapshots(),
+                  stream: _firestore
+                      .collection('weekly_menu_templates')
+                      .snapshots(),
                   builder: (context, templateSnapshot) {
                     if (templateSnapshot.connectionState ==
                         ConnectionState.waiting) {
@@ -675,12 +935,25 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                       );
                     }
 
-                    final templateDocs = templateSnapshot.data?.docs ?? [];
+                    final templateRows = (templateSnapshot.data?.docs ?? [])
+                        .where((doc) {
+                          final data = doc.data();
+                          final weekday =
+                              (data['weekday'] ?? '').toString().trim().toLowerCase();
+                          final mealType =
+                              (data['meal_type'] ?? '').toString().trim().toLowerCase();
+
+                          return weekDays.contains(weekday) &&
+                              mealType.isNotEmpty &&
+                              isTemplateRowVisible(data);
+                        })
+                        .toList();
 
                     return ListView(
+                      controller: _scrollController,
                       padding: const EdgeInsets.all(16),
                       children: [
-                        _buildDynamicDataSection(activeMenuItems, templateDocs),
+                        _buildDynamicDataSection(activeMenuItems, templateRows),
                       ],
                     );
                   },
@@ -692,4 +965,22 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
       ),
     );
   }
+}
+
+class _TemplateGroup {
+  final String templateId;
+  final String templateName;
+  final String mealType;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> rows;
+  final bool isActive;
+  final Map<String, List<String>> daySelections;
+
+  const _TemplateGroup({
+    required this.templateId,
+    required this.templateName,
+    required this.mealType,
+    required this.rows,
+    required this.isActive,
+    required this.daySelections,
+  });
 }

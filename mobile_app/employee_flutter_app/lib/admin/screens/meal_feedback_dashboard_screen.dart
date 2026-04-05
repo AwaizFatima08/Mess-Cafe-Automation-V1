@@ -17,6 +17,7 @@ class _MealFeedbackDashboardScreenState
 
   DateTime _selectedDate = DateTime.now().subtract(const Duration(days: 1));
   bool _isLoading = true;
+  String? _errorMessage;
 
   MealFeedbackSummary? _summary;
   List<MealFeedbackEntry> _entries = [];
@@ -28,18 +29,34 @@ class _MealFeedbackDashboardScreenState
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
-
-    final summary = await _service.getFeedbackSummaryForDate(_selectedDate);
-    final entries = await _service.getFeedbackForDate(_selectedDate);
-
     if (!mounted) return;
 
     setState(() {
-      _summary = summary;
-      _entries = entries;
-      _isLoading = false;
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      final summary = await _service.getFeedbackSummaryForDate(_selectedDate);
+      final entries = await _service.getFeedbackForDate(_selectedDate);
+
+      if (!mounted) return;
+
+      setState(() {
+        _summary = summary;
+        _entries = entries;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _summary = null;
+        _entries = [];
+        _errorMessage = 'Failed to load feedback dashboard: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _pickDate() async {
@@ -51,7 +68,9 @@ class _MealFeedbackDashboardScreenState
     );
 
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      });
       await _loadData();
     }
   }
@@ -74,7 +93,7 @@ class _MealFeedbackDashboardScreenState
           ),
         ),
         IconButton(
-          onPressed: _loadData,
+          onPressed: _isLoading ? null : _loadData,
           icon: const Icon(Icons.refresh),
         ),
       ],
@@ -90,10 +109,10 @@ class _MealFeedbackDashboardScreenState
       mainAxisSpacing: 10,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        _card("Total", s.totalCount),
-        _card("Avg Rating", s.averageRating.toStringAsFixed(2)),
-        _card("Open", s.openCount),
-        _card("Closed", s.closedCount),
+        _card('Total', s.totalCount),
+        _card('Avg Rating', s.averageRating.toStringAsFixed(2)),
+        _card('Open', s.openCount),
+        _card('Closed', s.closedCount),
       ],
     );
   }
@@ -124,24 +143,27 @@ class _MealFeedbackDashboardScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Rating Distribution",
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Rating Distribution',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             ...s.ratingBuckets.entries.map((e) {
-              return Row(
-                children: [
-                  Text("${e.key} ⭐"),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: LinearProgressIndicator(
-                      value: s.totalCount == 0
-                          ? 0
-                          : e.value / s.totalCount,
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Text('${e.key} ⭐'),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: LinearProgressIndicator(
+                        value: s.totalCount == 0 ? 0 : e.value / s.totalCount,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text("${e.value}"),
-                ],
+                    const SizedBox(width: 10),
+                    Text('${e.value}'),
+                  ],
+                ),
               );
             }),
           ],
@@ -157,30 +179,40 @@ class _MealFeedbackDashboardScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Item-wise Ratings",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text("Item")),
-                  DataColumn(label: Text("Category")),
-                  DataColumn(label: Text("Count")),
-                  DataColumn(label: Text("Avg Rating")),
-                  DataColumn(label: Text("Issues")),
-                ],
-                rows: s.itemSummaries.map((e) {
-                  return DataRow(cells: [
-                    DataCell(Text(e.itemName)),
-                    DataCell(Text(e.category)),
-                    DataCell(Text("${e.totalCount}")),
-                    DataCell(Text(e.averageRating.toStringAsFixed(2))),
-                    DataCell(Text(e.issueTypes.join(", "))),
-                  ]);
-                }).toList(),
-              ),
+            const Text(
+              'Item-wise Ratings',
+              style: TextStyle(fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 10),
+            if (s.itemSummaries.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Text('No item-wise rating data available'),
+              )
+            else
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Item')),
+                    DataColumn(label: Text('Category')),
+                    DataColumn(label: Text('Count')),
+                    DataColumn(label: Text('Avg Rating')),
+                    DataColumn(label: Text('Issues')),
+                  ],
+                  rows: s.itemSummaries.map((e) {
+                    return DataRow(cells: [
+                      DataCell(Text(e.itemName.isEmpty ? '—' : e.itemName)),
+                      DataCell(Text(e.category.isEmpty ? '—' : e.category)),
+                      DataCell(Text('${e.totalCount}')),
+                      DataCell(Text(e.averageRating.toStringAsFixed(2))),
+                      DataCell(Text(
+                        e.issueTypes.isEmpty ? '—' : e.issueTypes.join(', '),
+                      )),
+                    ]);
+                  }).toList(),
+                ),
+              ),
           ],
         ),
       ),
@@ -189,7 +221,7 @@ class _MealFeedbackDashboardScreenState
 
   Widget _buildEntries() {
     if (_entries.isEmpty) {
-      return const Center(child: Text("No feedback available"));
+      return const Center(child: Text('No feedback available'));
     }
 
     return ListView.builder(
@@ -198,27 +230,28 @@ class _MealFeedbackDashboardScreenState
       itemCount: _entries.length,
       itemBuilder: (context, i) {
         final e = _entries[i];
+        final isOpen = e.status.toLowerCase() == 'open';
 
         return Card(
           child: ListTile(
-            title: Text("${e.itemName} (${e.rating}⭐)"),
+            title: Text('${e.itemName} (${e.rating}⭐)'),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(e.feedbackText),
-                Text("Status: ${e.status}"),
+                if (e.feedbackText.trim().isNotEmpty) Text(e.feedbackText),
+                Text('Status: ${e.status}'),
               ],
             ),
-            trailing: e.status == 'open'
+            trailing: isOpen
                 ? IconButton(
                     icon: const Icon(Icons.check),
                     onPressed: () async {
                       await _service.closeFeedback(
                         feedbackId: e.id,
-                        closedByUid: "admin",
-                        closedByName: "Admin",
+                        closedByUid: 'admin',
+                        closedByName: 'Admin',
                       );
-                      _loadData();
+                      await _loadData();
                     },
                   )
                 : const Icon(Icons.check_circle, color: Colors.green),
@@ -236,12 +269,27 @@ class _MealFeedbackDashboardScreenState
       );
     }
 
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Feedback Dashboard')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     final s = _summary;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Feedback Dashboard")),
+      appBar: AppBar(title: const Text('Feedback Dashboard')),
       body: s == null
-          ? const Center(child: Text("No data"))
+          ? const Center(child: Text('No data'))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(

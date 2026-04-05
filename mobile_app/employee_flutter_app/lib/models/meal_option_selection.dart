@@ -22,7 +22,7 @@ class MealOptionSelection {
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    return <String, dynamic>{
       'option_key': optionKey,
       'option_label': optionLabel,
       'quantity': quantity,
@@ -30,16 +30,29 @@ class MealOptionSelection {
   }
 
   factory MealOptionSelection.fromMap(Map<String, dynamic> map) {
+    final dynamic rawQuantity = map['quantity'];
+
+    int parsedQuantity = 0;
+    if (rawQuantity is num) {
+      parsedQuantity = rawQuantity.toInt();
+    } else if (rawQuantity is String) {
+      parsedQuantity = int.tryParse(rawQuantity.trim()) ?? 0;
+    }
+
     return MealOptionSelection(
-      optionKey: (map['option_key'] ?? '').toString(),
-      optionLabel: (map['option_label'] ?? '').toString(),
-      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+      optionKey: (map['option_key'] ?? '').toString().trim(),
+      optionLabel: (map['option_label'] ?? '').toString().trim(),
+      quantity: parsedQuantity < 0 ? 0 : parsedQuantity,
     );
   }
 
   @override
   String toString() {
-    return 'MealOptionSelection(optionKey: $optionKey, optionLabel: $optionLabel, quantity: $quantity)';
+    return 'MealOptionSelection('
+        'optionKey: $optionKey, '
+        'optionLabel: $optionLabel, '
+        'quantity: $quantity'
+        ')';
   }
 
   @override
@@ -54,6 +67,6 @@ class MealOptionSelection {
 
   @override
   int get hashCode {
-    return optionKey.hashCode ^ optionLabel.hashCode ^ quantity.hashCode;
+    return Object.hash(optionKey, optionLabel, quantity);
   }
 }

@@ -1,4 +1,6 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'meal_rate_service.dart';
 import 'notification_service.dart';
@@ -67,6 +69,7 @@ class MealReservationService {
     final normalizedCreatedByUid = createdByUid.trim();
     final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
     final normalizedOverrideReason = (overrideReason ?? '').trim();
+    final normalizedNotes = (notes ?? '').trim();
 
     if (normalizedEmployeeNumber.isEmpty) {
       throw ArgumentError('employeeNumber is required.');
@@ -122,55 +125,49 @@ class MealReservationService {
 
     for (final line in sanitizedLines) {
       final docRef = _reservationsRef.doc();
-
-      final payload = <String, dynamic>{
-        'booking_group_id': effectiveBookingGroupId,
-        'reservation_category': reservationCategory,
-        'booking_source': bookingSource,
-        'booking_subject_type': bookingSubjectType,
-        'employee_number': normalizedEmployeeNumber,
-        'employee_name': normalizedEmployeeName,
-        'guest_name': '',
-        'host_employee_number': '',
-        'host_employee_name': '',
-        'reservation_date': Timestamp.fromDate(normalizedDate),
-        'meal_type': normalizedMealType,
-        'menu_option_key': line.optionKey,
-        'option_label': line.optionLabel,
-        'dining_mode': line.diningMode,
-        'quantity': line.quantity,
-        'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
-        'unit_rate': null,
-        'amount': null,
-        'notes': notes?.trim() ?? '',
-        'created_at': now,
-        'booking_time': now,
-        'created_by_uid': normalizedCreatedByUid,
-        'created_by_role': normalizedCreatedByRole,
-        'created_by_employee_number': createdByEmployeeNumber?.trim() ?? '',
-        'created_by_name': createdByName?.trim() ?? '',
-        'status': 'active',
-        'is_issued': false,
-        'override_reason':
+      final payload = _buildReservationPayload(
+        reservationId: docRef.id,
+        bookingGroupId: effectiveBookingGroupId,
+        reservationCategory: reservationCategory,
+        bookingSource: bookingSource,
+        bookingSubjectType: bookingSubjectType,
+        bookingMode: _resolveBookingMode(
+          reservationCategory: reservationCategory,
+          bookingSubjectType: bookingSubjectType,
+        ),
+        employeeNumber: normalizedEmployeeNumber,
+        employeeName: normalizedEmployeeName,
+        guestName: '',
+        hostEmployeeNumber: '',
+        hostEmployeeName: '',
+        reservationDate: normalizedDate,
+        mealType: normalizedMealType,
+        line: line,
+        notes: normalizedNotes,
+        now: now,
+        createdByUid: normalizedCreatedByUid,
+        createdByRole: normalizedCreatedByRole,
+        createdByEmployeeNumber: createdByEmployeeNumber?.trim() ?? '',
+        createdByName: createdByName?.trim() ?? '',
+        overrideReason:
             normalizedOverrideReason.isEmpty ? '' : normalizedOverrideReason,
-      };
-
-      if (extraFields != null && extraFields.isNotEmpty) {
-        payload.addAll(extraFields);
-      }
+        extraFields: extraFields,
+      );
 
       batch.set(docRef, payload);
     }
 
     await batch.commit();
 
-    await _sendBookingConfirmedNotificationIfPossible(
-      employeeNumber: normalizedEmployeeNumber,
-      employeeName: normalizedEmployeeName,
-      reservationDate: normalizedDate,
-      mealType: normalizedMealType,
-      reservationId: effectiveBookingGroupId,
-      reservationCategory: reservationCategory,
+    unawaited(
+      _sendBookingConfirmedNotificationIfPossible(
+        employeeNumber: normalizedEmployeeNumber,
+        employeeName: normalizedEmployeeName,
+        reservationDate: normalizedDate,
+        mealType: normalizedMealType,
+        reservationId: effectiveBookingGroupId,
+        reservationCategory: reservationCategory,
+      ),
     );
 
     return effectiveBookingGroupId;
@@ -268,6 +265,7 @@ class MealReservationService {
     final normalizedCreatedByUid = createdByUid.trim();
     final normalizedCreatedByRole = createdByRole.trim().toLowerCase();
     final normalizedOverrideReason = (overrideReason ?? '').trim();
+    final normalizedNotes = (notes ?? '').trim();
 
     if (normalizedGuestName.isEmpty) {
       throw ArgumentError('guestName is required.');
@@ -327,40 +325,35 @@ class MealReservationService {
 
     for (final line in sanitizedLines) {
       final docRef = _reservationsRef.doc();
-
-      batch.set(docRef, {
-        'booking_group_id': effectiveBookingGroupId,
-        'reservation_category': categoryOfficialGuest,
-        'booking_source': effectiveBookingSource,
-        'booking_subject_type': subjectOfficialGuest,
-        'booking_mode': bookingModeGuest,
-        'selection_mode': selectionModeCycleCombo,
-        'employee_number': '',
-        'employee_name': '',
-        'guest_name': normalizedGuestName,
-        'host_employee_number': normalizedHostEmployeeNumber,
-        'host_employee_name': hostEmployeeName?.trim() ?? '',
-        'reservation_date': Timestamp.fromDate(normalizedDate),
-        'meal_type': normalizedMealType,
-        'menu_option_key': line.optionKey,
-        'option_label': line.optionLabel,
-        'dining_mode': line.diningMode,
-        'quantity': line.quantity,
-        'menu_snapshot': line.menuSnapshot ?? <String, dynamic>{},
-        'unit_rate': null,
-        'amount': null,
-        'notes': notes?.trim() ?? '',
-        'created_at': now,
-        'booking_time': now,
-        'created_by_uid': normalizedCreatedByUid,
-        'created_by_role': normalizedCreatedByRole,
-        'created_by_employee_number': createdByEmployeeNumber?.trim() ?? '',
-        'created_by_name': createdByName?.trim() ?? '',
-        'status': 'active',
-        'is_issued': false,
-        'override_reason':
+      final payload = _buildReservationPayload(
+        reservationId: docRef.id,
+        bookingGroupId: effectiveBookingGroupId,
+        reservationCategory: categoryOfficialGuest,
+        bookingSource: effectiveBookingSource,
+        bookingSubjectType: subjectOfficialGuest,
+        bookingMode: bookingModeGuest,
+        employeeNumber: '',
+        employeeName: '',
+        guestName: normalizedGuestName,
+        hostEmployeeNumber: normalizedHostEmployeeNumber,
+        hostEmployeeName: hostEmployeeName?.trim() ?? '',
+        reservationDate: normalizedDate,
+        mealType: normalizedMealType,
+        line: line,
+        notes: normalizedNotes,
+        now: now,
+        createdByUid: normalizedCreatedByUid,
+        createdByRole: normalizedCreatedByRole,
+        createdByEmployeeNumber: createdByEmployeeNumber?.trim() ?? '',
+        createdByName: createdByName?.trim() ?? '',
+        overrideReason:
             normalizedOverrideReason.isEmpty ? '' : normalizedOverrideReason,
-      });
+        extraFields: const <String, dynamic>{
+          'selection_mode': selectionModeCycleCombo,
+        },
+      );
+
+      batch.set(docRef, payload);
     }
 
     await batch.commit();
@@ -530,16 +523,19 @@ class MealReservationService {
       'cancelled_by_uid': cancelledByUid.trim(),
       'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
       'override_reason': overrideReason?.trim() ?? '',
+      'updated_at': Timestamp.now(),
     });
 
-    await _sendBookingCancelledNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: reservationId,
-      reservationCategory:
-          (data['reservation_category'] ?? '').toString().trim(),
+    unawaited(
+      _sendBookingCancelledNotificationIfPossible(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        reservationDate: reservationDate,
+        mealType: mealType,
+        reservationId: reservationId,
+        reservationCategory:
+            (data['reservation_category'] ?? '').toString().trim(),
+      ),
     );
   }
 
@@ -578,18 +574,21 @@ class MealReservationService {
         'cancelled_by_uid': cancelledByUid.trim(),
         'cancelled_by_role': cancelledByRole.trim().toLowerCase(),
         'override_reason': overrideReason?.trim() ?? '',
+        'updated_at': now,
       });
     }
 
     await batch.commit();
 
-    await _sendBookingCancelledNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: bookingGroupId.trim(),
-      reservationCategory: reservationCategory,
+    unawaited(
+      _sendBookingCancelledNotificationIfPossible(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        reservationDate: reservationDate,
+        mealType: mealType,
+        reservationId: bookingGroupId.trim(),
+        reservationCategory: reservationCategory,
+      ),
     );
   }
 
@@ -629,15 +628,18 @@ class MealReservationService {
       'issued_at': Timestamp.now(),
       'issued_by_uid': issuedByUid.trim(),
       'issued_by_role': issuedByRole.trim().toLowerCase(),
+      'updated_at': Timestamp.now(),
     });
 
-    await _sendMealIssuedNotificationIfPossible(
-      employeeNumber: employeeNumber,
-      employeeName: employeeName,
-      reservationDate: reservationDate,
-      mealType: mealType,
-      reservationId: reservationId,
-      reservationCategory: reservationCategory,
+    unawaited(
+      _sendMealIssuedNotificationIfPossible(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        reservationDate: reservationDate,
+        mealType: mealType,
+        reservationId: reservationId,
+        reservationCategory: reservationCategory,
+      ),
     );
   }
 
@@ -1112,6 +1114,188 @@ class MealReservationService {
     );
   }
 
+  Map<String, dynamic> _buildReservationPayload({
+    required String reservationId,
+    required String bookingGroupId,
+    required String reservationCategory,
+    required String bookingSource,
+    required String bookingSubjectType,
+    required String bookingMode,
+    required String employeeNumber,
+    required String employeeName,
+    required String guestName,
+    required String hostEmployeeNumber,
+    required String hostEmployeeName,
+    required DateTime reservationDate,
+    required String mealType,
+    required ReservationLineInput line,
+    required String notes,
+    required Timestamp now,
+    required String createdByUid,
+    required String createdByRole,
+    required String createdByEmployeeNumber,
+    required String createdByName,
+    required String overrideReason,
+    Map<String, dynamic>? extraFields,
+  }) {
+    final normalizedSnapshot = _normalizedMenuSnapshot(line);
+    final identity = _resolveLineIdentity(
+      line: line,
+      mealType: mealType,
+      menuSnapshot: normalizedSnapshot,
+    );
+
+    final payload = <String, dynamic>{
+      'booking_group_id': bookingGroupId,
+      'reservation_category': reservationCategory,
+      'booking_source': bookingSource,
+      'booking_subject_type': bookingSubjectType,
+      'booking_mode': bookingMode,
+      'employee_number': employeeNumber,
+      'employee_name': employeeName,
+      'guest_name': guestName,
+      'host_employee_number': hostEmployeeNumber,
+      'host_employee_name': hostEmployeeName,
+      'reservation_date': Timestamp.fromDate(reservationDate),
+      'meal_type': mealType,
+      'reservation_id': reservationId,
+      'menu_option_key': identity.menuOptionKey,
+      'menu_item_id': identity.menuItemId,
+      'option_label': line.optionLabel,
+      'item_name': identity.itemName,
+      'category': identity.category,
+      'selection_mode': identity.selectionMode,
+      'rate_target_key': identity.rateTargetKey,
+      'feedback_target_key': identity.feedbackTargetKey,
+      'dining_mode': line.diningMode,
+      'quantity': line.quantity,
+      'menu_snapshot': normalizedSnapshot,
+      'unit_rate': null,
+      'amount': null,
+      'notes': notes,
+      'created_at': now,
+      'updated_at': now,
+      'booking_time': now,
+      'created_by_uid': createdByUid,
+      'created_by_role': createdByRole,
+      'created_by_employee_number': createdByEmployeeNumber,
+      'created_by_name': createdByName,
+      'status': 'active',
+      'is_issued': false,
+      'override_reason': overrideReason,
+    };
+
+    if (extraFields != null && extraFields.isNotEmpty) {
+      payload.addAll(extraFields);
+    }
+
+    return payload;
+  }
+
+  _ReservationLineIdentity _resolveLineIdentity({
+    required ReservationLineInput line,
+    required String mealType,
+    required Map<String, dynamic> menuSnapshot,
+  }) {
+    final snapshotSelectionType =
+        _normalizeText(menuSnapshot['selection_type']).toLowerCase();
+    final snapshotItemId = _normalizeText(menuSnapshot['item_id']);
+    final snapshotOptionKey = _normalizeText(menuSnapshot['option_key']);
+    final snapshotItemName = _normalizeText(menuSnapshot['item_name']);
+    final snapshotOptionLabel = _normalizeText(menuSnapshot['option_label']);
+    final snapshotItemCategory =
+        _normalizeText(menuSnapshot['item_category']).toLowerCase();
+    final hasItems = _asListOfMaps(menuSnapshot['items']).isNotEmpty;
+
+    final looksManual =
+        snapshotSelectionType == selectionModeManualItem ||
+        snapshotItemId.isNotEmpty;
+
+    final menuItemId = looksManual ? _firstNonEmpty([
+      snapshotItemId,
+      line.optionKey,
+    ]) : '';
+
+    final menuOptionKey = looksManual
+        ? ''
+        : _firstNonEmpty([
+            line.optionKey,
+            snapshotOptionKey,
+          ]);
+
+    final selectionMode = looksManual
+        ? selectionModeManualItem
+        : selectionModeCycleCombo;
+
+    final targetKey = _firstNonEmpty([
+      looksManual ? menuItemId : menuOptionKey,
+      line.optionKey,
+    ]);
+
+    return _ReservationLineIdentity(
+      menuItemId: menuItemId,
+      menuOptionKey: menuOptionKey,
+      itemName: _firstNonEmpty([
+        snapshotItemName,
+        line.optionLabel,
+        snapshotOptionLabel,
+        targetKey,
+      ]),
+      category: _firstNonEmpty([
+        snapshotItemCategory,
+        mealType,
+      ]),
+      selectionMode: selectionMode,
+      rateTargetKey: targetKey,
+      feedbackTargetKey: targetKey,
+      hasItems: hasItems,
+    );
+  }
+
+  Map<String, dynamic> _normalizedMenuSnapshot(ReservationLineInput line) {
+    final snapshot = line.menuSnapshot == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(line.menuSnapshot!);
+
+    snapshot['option_key'] = _firstNonEmpty([
+      _normalizeText(snapshot['option_key']),
+      line.optionKey,
+    ]);
+
+    snapshot['option_label'] = _firstNonEmpty([
+      _normalizeText(snapshot['option_label']),
+      line.optionLabel,
+    ]);
+
+    final snapshotSelectionType =
+        _normalizeText(snapshot['selection_type']).toLowerCase();
+    final snapshotItemId = _normalizeText(snapshot['item_id']);
+    final hasItems = _asListOfMaps(snapshot['items']).isNotEmpty;
+
+    if (snapshotSelectionType.isEmpty) {
+      snapshot['selection_type'] =
+          snapshotItemId.isNotEmpty || !hasItems ? selectionModeManualItem : selectionModeCycleCombo;
+    }
+
+    return snapshot;
+  }
+
+  String _resolveBookingMode({
+    required String reservationCategory,
+    required String bookingSubjectType,
+  }) {
+    if (reservationCategory.trim().toLowerCase() == categoryOfficialGuest) {
+      return bookingModeGuest;
+    }
+
+    final normalizedSubjectType = bookingSubjectType.trim().toLowerCase();
+    if (normalizedSubjectType == subjectEmployeeProxy) {
+      return bookingModeProxy;
+    }
+
+    return bookingModeSelf;
+  }
+
   String _resolveOperatorBookingSource({
     required String createdByRole,
   }) {
@@ -1136,6 +1320,10 @@ class MealReservationService {
     return mealType.trim().toLowerCase();
   }
 
+  String _normalizeText(dynamic value) {
+    return (value ?? '').toString().trim();
+  }
+
   DateTime _normalizeDate(DateTime date) {
     return DateTime(date.year, date.month, date.day);
   }
@@ -1154,6 +1342,26 @@ class MealReservationService {
   int _readInt(dynamic value) {
     if (value is int) return value;
     return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  List<Map<String, dynamic>> _asListOfMaps(dynamic value) {
+    if (value is! List) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
   }
 
   String _mealLabel(String mealType) {
@@ -1255,10 +1463,13 @@ class ReservationLineInput {
     final snapshot = <String, dynamic>{
       if (menuSnapshot != null) ...menuSnapshot,
       if (extraSnapshot != null) ...extraSnapshot,
+      if (resolvedItemId.isNotEmpty) 'item_id': resolvedItemId,
+      if (resolvedLabel.isNotEmpty) 'item_name': resolvedLabel,
       if (mealType != null && mealType.trim().isNotEmpty)
         'meal_type': mealType.trim().toLowerCase(),
       if (itemCategory != null && itemCategory.trim().isNotEmpty)
         'item_category': itemCategory.trim().toLowerCase(),
+      'selection_type': MealReservationService.selectionModeManualItem,
     };
 
     return ReservationLineInput(
@@ -1309,4 +1520,26 @@ class _NotificationRecipient {
 
   final String userUid;
   final String email;
+}
+
+class _ReservationLineIdentity {
+  const _ReservationLineIdentity({
+    required this.menuItemId,
+    required this.menuOptionKey,
+    required this.itemName,
+    required this.category,
+    required this.selectionMode,
+    required this.rateTargetKey,
+    required this.feedbackTargetKey,
+    required this.hasItems,
+  });
+
+  final String menuItemId;
+  final String menuOptionKey;
+  final String itemName;
+  final String category;
+  final String selectionMode;
+  final String rateTargetKey;
+  final String feedbackTargetKey;
+  final bool hasItems;
 }

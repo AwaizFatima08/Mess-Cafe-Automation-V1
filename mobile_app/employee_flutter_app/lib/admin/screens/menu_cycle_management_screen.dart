@@ -30,6 +30,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   DateTime? endDate;
 
   bool keepActiveUntilNextChange = true;
+  bool activateImmediately = true;
   bool isSaving = false;
   String? statusMessage;
   String? editingCycleId;
@@ -39,6 +40,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     cycleNameController.dispose();
     cycleNameFocusNode.dispose();
     super.dispose();
+  }
+
+  DateTime _normalizeDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
   }
 
   void _dismissKeyboard() {
@@ -60,6 +65,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     startDate = null;
     endDate = null;
     keepActiveUntilNextChange = true;
+    activateImmediately = true;
     isSaving = false;
     statusMessage = null;
     editingCycleId = null;
@@ -81,9 +87,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
 
   String formatDate(DateTime? date) {
     if (date == null) return 'Select date';
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    return '$day-$month-${date.year}';
+    final normalized = _normalizeDate(date);
+    final day = normalized.day.toString().padLeft(2, '0');
+    final month = normalized.month.toString().padLeft(2, '0');
+    return '$day-$month-${normalized.year}';
   }
 
   Future<void> pickDate({required bool forStartDate}) async {
@@ -103,11 +110,36 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
 
     setState(() {
       if (forStartDate) {
-        startDate = picked;
+        startDate = _normalizeDate(picked);
+        if (endDate != null && endDate!.isBefore(startDate!)) {
+          endDate = startDate;
+        }
       } else {
-        endDate = picked;
+        endDate = _normalizeDate(picked);
       }
     });
+  }
+
+  Future<void> _deactivateOtherCycles({
+    required WriteBatch batch,
+    required String? excludeCycleId,
+  }) async {
+    final snapshot = await _firestore
+        .collection('menu_cycles')
+        .where('is_active', isEqualTo: true)
+        .get();
+
+    for (final doc in snapshot.docs) {
+      if (excludeCycleId != null && doc.id == excludeCycleId) {
+        continue;
+      }
+
+      batch.update(doc.reference, {
+        'is_active': false,
+        'status': 'inactive',
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   Future<void> saveCycle() async {
@@ -162,52 +194,71 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
         statusMessage = null;
       });
 
-      final now = FieldValue.serverTimestamp();
+      final normalizedStartDate = _normalizeDate(startDate!);
+      final normalizedEndDate =
+          keepActiveUntilNextChange || endDate == null ? null : _normalizeDate(endDate!);
+
+      final batch = _firestore.batch();
+      final cyclesRef = _firestore.collection('menu_cycles');
+
+      if (activateImmediately) {
+        await _deactivateOtherCycles(
+          batch: batch,
+          excludeCycleId: editingCycleId,
+        );
+      }
 
       if (editingCycleId == null) {
-        await _firestore.collection('menu_cycles').add({
+        final newDoc = cyclesRef.doc();
+
+        batch.set(newDoc, {
           'cycle_name': cycleName,
           'breakfast_template_id': breakfastTemplateId,
           'lunch_template_1_id': lunchTemplate1Id,
           'lunch_template_2_id': lunchTemplate2Id,
           'dinner_template_1_id': dinnerTemplate1Id,
           'dinner_template_2_id': dinnerTemplate2Id,
-          'start_date': Timestamp.fromDate(startDate!),
-          'end_date': keepActiveUntilNextChange || endDate == null
+          'start_date': Timestamp.fromDate(normalizedStartDate),
+          'end_date': normalizedEndDate == null
               ? null
-              : Timestamp.fromDate(endDate!),
-          'is_active': true,
-          'status': 'active',
-          'created_at': now,
-          'updated_at': now,
-        });
-
-        if (!mounted) return;
-        setState(() {
-          isSaving = false;
-          statusMessage = 'Menu cycle created successfully.';
+              : Timestamp.fromDate(normalizedEndDate),
+          'is_active': activateImmediately,
+          'status': activateImmediately ? 'active' : 'inactive',
+          'created_by': widget.userEmail,
+          'updated_by': widget.userEmail,
+          'created_at': FieldValue.serverTimestamp(),
+          'updated_at': FieldValue.serverTimestamp(),
         });
       } else {
-        await _firestore.collection('menu_cycles').doc(editingCycleId).update({
+        final docRef = cyclesRef.doc(editingCycleId);
+
+        batch.update(docRef, {
           'cycle_name': cycleName,
           'breakfast_template_id': breakfastTemplateId,
           'lunch_template_1_id': lunchTemplate1Id,
           'lunch_template_2_id': lunchTemplate2Id,
           'dinner_template_1_id': dinnerTemplate1Id,
           'dinner_template_2_id': dinnerTemplate2Id,
-          'start_date': Timestamp.fromDate(startDate!),
-          'end_date': keepActiveUntilNextChange || endDate == null
+          'start_date': Timestamp.fromDate(normalizedStartDate),
+          'end_date': normalizedEndDate == null
               ? null
-              : Timestamp.fromDate(endDate!),
-          'updated_at': now,
-        });
-
-        if (!mounted) return;
-        setState(() {
-          isSaving = false;
-          statusMessage = 'Menu cycle updated successfully.';
+              : Timestamp.fromDate(normalizedEndDate),
+          'is_active': activateImmediately,
+          'status': activateImmediately ? 'active' : 'inactive',
+          'updated_by': widget.userEmail,
+          'updated_at': FieldValue.serverTimestamp(),
         });
       }
+
+      await batch.commit();
+
+      if (!mounted) return;
+      setState(() {
+        isSaving = false;
+        statusMessage = editingCycleId == null
+            ? 'Menu cycle created successfully.'
+            : 'Menu cycle updated successfully.';
+      });
 
       resetForm();
     } catch (e) {
@@ -254,9 +305,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     final startTs = data['start_date'];
     final endTs = data['end_date'];
 
-    startDate = startTs is Timestamp ? startTs.toDate() : null;
-    endDate = endTs is Timestamp ? endTs.toDate() : null;
+    startDate = startTs is Timestamp ? _normalizeDate(startTs.toDate()) : null;
+    endDate = endTs is Timestamp ? _normalizeDate(endTs.toDate()) : null;
     keepActiveUntilNextChange = endDate == null;
+    activateImmediately = isCycleActive(data);
     editingCycleId = doc.id;
     statusMessage = null;
 
@@ -278,11 +330,23 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       final currentlyActive = isCycleActive(data);
       final nextActive = !currentlyActive;
 
-      await doc.reference.update({
+      final batch = _firestore.batch();
+
+      if (nextActive) {
+        await _deactivateOtherCycles(
+          batch: batch,
+          excludeCycleId: doc.id,
+        );
+      }
+
+      batch.update(doc.reference, {
         'is_active': nextActive,
         'status': nextActive ? 'active' : 'inactive',
+        'updated_by': widget.userEmail,
         'updated_at': FieldValue.serverTimestamp(),
       });
+
+      await batch.commit();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -518,9 +582,26 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> templateDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> cycleDocs,
   ) {
-    final sortedCycles = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
-      cycleDocs,
-    )..sort((a, b) => a.id.compareTo(b.id));
+    final sortedCycles =
+        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(cycleDocs)
+          ..sort((a, b) {
+            final aData = a.data();
+            final bData = b.data();
+
+            final aActive = isCycleActive(aData);
+            final bActive = isCycleActive(bData);
+            if (aActive != bActive) {
+              return aActive ? -1 : 1;
+            }
+
+            final aStart = aData['start_date'];
+            final bStart = bData['start_date'];
+
+            final aDate = aStart is Timestamp ? aStart.toDate() : DateTime(1900);
+            final bDate = bStart is Timestamp ? bStart.toDate() : DateTime(1900);
+
+            return bDate.compareTo(aDate);
+          });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -614,6 +695,19 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                       onPressed: () => pickDate(forStartDate: false),
                     ),
                   ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Activate immediately'),
+                  subtitle: const Text(
+                    'If enabled, this cycle becomes the only active cycle.',
+                  ),
+                  value: activateImmediately,
+                  onChanged: (value) {
+                    setState(() {
+                      activateImmediately = value;
+                    });
+                  },
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,

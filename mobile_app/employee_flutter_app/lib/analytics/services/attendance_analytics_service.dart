@@ -13,7 +13,22 @@ class AttendanceAnalyticsService {
     AnalyticsFilterModel filter,
   ) async {
     try {
-      final snapshot = await _firestore.collection('meal_reservations').get();
+      final startDate = filter.normalizedStartDate;
+      final endDate = filter.normalizedEndDate;
+
+      final snapshot = await _firestore
+          .collection('meal_reservations')
+          .where(
+            'reservation_date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where(
+            'reservation_date',
+            isLessThan: Timestamp.fromDate(
+              endDate.add(const Duration(days: 1)),
+            ),
+          )
+          .get();
 
       if (snapshot.docs.isEmpty) {
         return AttendanceAnalyticsResult.empty();
@@ -42,7 +57,10 @@ class AttendanceAnalyticsService {
       for (final doc in snapshot.docs) {
         final data = doc.data();
 
-        if (data['is_issued'] != true) {
+        final String status = _readText(data['status']).toLowerCase();
+        final bool isIssued = data['is_issued'] == true || status == 'issued';
+
+        if (!isIssued || status == 'cancelled') {
           continue;
         }
 
@@ -57,7 +75,7 @@ class AttendanceAnalyticsService {
         }
 
         final String mealType =
-            ((data['meal_type'] as String?) ?? '').trim().toLowerCase();
+            _readText(data['meal_type']).trim().toLowerCase();
 
         if (allowedMealTypes.isNotEmpty &&
             !allowedMealTypes.contains(mealType)) {
@@ -65,24 +83,29 @@ class AttendanceAnalyticsService {
         }
 
         final String docEmployeeNumber =
-            ((data['employee_number'] as String?) ?? '').trim();
+            _readText(data['employee_number']).trim();
 
         if (employeeNumber != null && docEmployeeNumber != employeeNumber) {
           continue;
         }
 
         final String reservationCategory =
-            ((data['reservation_category'] as String?) ?? '')
-                .trim()
-                .toLowerCase();
+            _readText(data['reservation_category']).trim().toLowerCase();
+        final String bookingSubjectType =
+            _readText(data['booking_subject_type']).trim().toLowerCase();
 
-        final bool isGuest = reservationCategory != 'employee';
+        final bool isGuest = reservationCategory == 'official_guest' ||
+            bookingSubjectType == 'official_guest';
 
         if (!filter.includeGuests && isGuest) {
           continue;
         }
 
         final int quantity = _readQuantity(data['quantity']);
+        if (quantity <= 0) {
+          continue;
+        }
+
         final String dateKey = _formatDateKey(reservationDate);
 
         totalAttendance += quantity;
@@ -149,9 +172,13 @@ class AttendanceAnalyticsService {
 
   int _readQuantity(dynamic value) {
     if (value is int) return value;
-    if (value is double) return value.toInt();
+    if (value is double) return value.round();
     if (value is String) return int.tryParse(value.trim()) ?? 1;
     return 1;
+  }
+
+  String _readText(dynamic value) {
+    return (value ?? '').toString().trim();
   }
 
   String _formatDateKey(DateTime date) {

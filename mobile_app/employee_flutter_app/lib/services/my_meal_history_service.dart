@@ -52,26 +52,32 @@ class MyMealHistoryService {
     return '';
   }
 
-  String extractMenuItemId(Map<String, dynamic> data) {
+  String extractTargetKey(Map<String, dynamic> data) {
     final menuSnapshot = asMap(data['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_id']),
+      normalizeText(data['feedback_target_key']),
+      normalizeText(data['rate_target_key']),
       normalizeText(data['menu_item_id']),
       normalizeText(data['menu_option_key']),
+      normalizeText(menuSnapshot['item_id']),
       normalizeText(menuSnapshot['option_key']),
     ]);
+  }
+
+  String extractMenuItemId(Map<String, dynamic> data) {
+    return extractTargetKey(data);
   }
 
   String extractItemName(Map<String, dynamic> data) {
     final menuSnapshot = asMap(data['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_name']),
       normalizeText(data['item_name']),
+      normalizeText(menuSnapshot['item_name']),
       normalizeText(data['option_label']),
       normalizeText(menuSnapshot['option_label']),
-      extractMenuItemId(data),
+      extractTargetKey(data),
     ]);
   }
 
@@ -79,8 +85,8 @@ class MyMealHistoryService {
     final menuSnapshot = asMap(data['menu_snapshot']);
 
     return firstNonEmpty([
-      normalizeText(menuSnapshot['item_category']),
       normalizeText(data['category']),
+      normalizeText(menuSnapshot['item_category']),
       normalizeText(data['meal_type']),
     ]);
   }
@@ -189,9 +195,11 @@ class MyMealHistoryService {
       items.add(
         MyMealHistoryEntry(
           id: doc.id,
+          bookingGroupId: normalizeText(data['booking_group_id']),
           reservationDate: toDate(data['reservation_date']) ?? DateTime.now(),
           mealType: normalizeText(data['meal_type']).toLowerCase(),
           menuItemId: extractMenuItemId(data),
+          feedbackTargetKey: extractTargetKey(data),
           itemName: extractItemName(data),
           category: extractCategory(data),
           diningMode: normalizeText(data['dining_mode']).toLowerCase(),
@@ -208,6 +216,12 @@ class MyMealHistoryService {
     items.sort((a, b) {
       final byDate = b.reservationDate.compareTo(a.reservationDate);
       if (byDate != 0) return byDate;
+
+      final mealCompare = _mealSortOrder(a.mealType).compareTo(
+        _mealSortOrder(b.mealType),
+      );
+      if (mealCompare != 0) return mealCompare;
+
       return a.itemName.toLowerCase().compareTo(b.itemName.toLowerCase());
     });
 
@@ -234,6 +248,19 @@ class MyMealHistoryService {
       toDateExclusive: to,
     );
   }
+
+  int _mealSortOrder(String mealType) {
+    switch (mealType.trim().toLowerCase()) {
+      case 'breakfast':
+        return 1;
+      case 'lunch':
+        return 2;
+      case 'dinner':
+        return 3;
+      default:
+        return 99;
+    }
+  }
 }
 
 class MyMealHistoryData {
@@ -256,9 +283,11 @@ class MyMealHistoryData {
 
 class MyMealHistoryEntry {
   final String id;
+  final String bookingGroupId;
   final DateTime reservationDate;
   final String mealType;
   final String menuItemId;
+  final String feedbackTargetKey;
   final String itemName;
   final String category;
   final String diningMode;
@@ -271,9 +300,11 @@ class MyMealHistoryEntry {
 
   const MyMealHistoryEntry({
     required this.id,
+    required this.bookingGroupId,
     required this.reservationDate,
     required this.mealType,
     required this.menuItemId,
+    required this.feedbackTargetKey,
     required this.itemName,
     required this.category,
     required this.diningMode,

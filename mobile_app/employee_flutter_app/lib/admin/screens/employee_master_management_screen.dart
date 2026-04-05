@@ -35,6 +35,12 @@ class _EmployeeMasterManagementScreenState
   String? _employeeMasterMessage;
   String? _editingEmployeeNumber;
 
+  CollectionReference<Map<String, dynamic>> get _employeesRef =>
+      _firestore.collection('employees');
+
+  CollectionReference<Map<String, dynamic>> get _employeeProfilesRef =>
+      _firestore.collection('employee_profiles');
+
   @override
   void dispose() {
     _employeeNumberController.dispose();
@@ -70,7 +76,7 @@ class _EmployeeMasterManagementScreenState
     final data = doc.data();
 
     _employeeNumberController.text = doc.id;
-    _employeeNameController.text = (data['name'] ?? '').toString().trim();
+    _employeeNameController.text = _resolveEmployeeName(data);
     _employeeEmailController.text = (data['email'] ?? '').toString().trim();
     _employeeCnicLast4Controller.text =
         (data['cnic_last_4'] ?? '').toString().trim();
@@ -126,10 +132,8 @@ class _EmployeeMasterManagementScreenState
         _employeeMasterMessage = null;
       });
 
-      final duplicateEmailSnapshot = await _firestore
-          .collection('employees')
-          .where('email', isEqualTo: employeeEmail)
-          .get();
+      final duplicateEmailSnapshot =
+          await _employeesRef.where('email', isEqualTo: employeeEmail).get();
 
       for (final doc in duplicateEmailSnapshot.docs) {
         if (doc.id != employeeNumber) {
@@ -142,14 +146,14 @@ class _EmployeeMasterManagementScreenState
         }
       }
 
-      final existingDoc =
-          await _firestore.collection('employees').doc(employeeNumber).get();
-
+      final existingDoc = await _employeesRef.doc(employeeNumber).get();
       final now = FieldValue.serverTimestamp();
 
-      await _firestore.collection('employees').doc(employeeNumber).set({
+      await _employeesRef.doc(employeeNumber).set({
         'employee_number': employeeNumber,
         'name': employeeName,
+        'employee_name': employeeName,
+        'display_name': employeeName,
         'email': employeeEmail,
         'cnic_last_4': cnicLast4,
         'is_active': _newEmployeeIsActive,
@@ -157,6 +161,13 @@ class _EmployeeMasterManagementScreenState
         if (!existingDoc.exists) 'created_at': now,
         'updated_at': now,
       }, SetOptions(merge: true));
+
+      await _syncExistingEmployeeProfileFromMaster(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        employeeEmail: employeeEmail,
+        isActive: _newEmployeeIsActive,
+      );
 
       if (!mounted) return;
 
@@ -194,6 +205,9 @@ class _EmployeeMasterManagementScreenState
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
+    final employeeNumber = doc.id;
+    final employeeName = _resolveEmployeeName(data);
+    final employeeEmail = (data['email'] ?? '').toString().trim().toLowerCase();
     final currentlyActive = data['is_active'] == true;
     final nextActive = !currentlyActive;
 
@@ -203,6 +217,13 @@ class _EmployeeMasterManagementScreenState
         'status': nextActive ? 'active' : 'inactive',
         'updated_at': FieldValue.serverTimestamp(),
       });
+
+      await _syncExistingEmployeeProfileFromMaster(
+        employeeNumber: employeeNumber,
+        employeeName: employeeName,
+        employeeEmail: employeeEmail,
+        isActive: nextActive,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -222,6 +243,43 @@ class _EmployeeMasterManagementScreenState
         ),
       );
     }
+  }
+
+  Future<void> _syncExistingEmployeeProfileFromMaster({
+    required String employeeNumber,
+    required String employeeName,
+    required String employeeEmail,
+    required bool isActive,
+  }) async {
+    final profileDoc = await _employeeProfilesRef.doc(employeeNumber).get();
+
+    if (!profileDoc.exists) {
+      return;
+    }
+
+    await _employeeProfilesRef.doc(employeeNumber).set({
+      'employee_number': employeeNumber,
+      'display_name': employeeName,
+      'employee_name': employeeName,
+      'email': employeeEmail,
+      'is_active': isActive,
+      'updated_at': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  String _resolveEmployeeName(Map<String, dynamic> data) {
+    final displayName = (data['display_name'] ?? '').toString().trim();
+    if (displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    final employeeName = (data['employee_name'] ?? '').toString().trim();
+    if (employeeName.isNotEmpty) {
+      return employeeName;
+    }
+
+    final name = (data['name'] ?? '').toString().trim();
+    return name;
   }
 
   Widget _buildEmployeeMasterFormCard() {
@@ -244,7 +302,7 @@ class _EmployeeMasterManagementScreenState
             ),
             const SizedBox(height: 8),
             const Text(
-              'Create the employee master record first so the employee can sign up without validation failure.',
+              'Manage employee master records required before employee signup. Existing employee profiles, if already present, will be kept aligned for overlapping fields only.',
             ),
             if (isEditMode) ...[
               const SizedBox(height: 8),
@@ -254,7 +312,8 @@ class _EmployeeMasterManagementScreenState
               ),
               const SizedBox(height: 6),
               TextButton.icon(
-                onPressed: _isSavingEmployeeMaster ? null : _resetEmployeeMasterForm,
+                onPressed:
+                    _isSavingEmployeeMaster ? null : _resetEmployeeMasterForm,
                 icon: const Icon(Icons.close),
                 label: const Text('Cancel Edit'),
               ),
@@ -387,7 +446,7 @@ class _EmployeeMasterManagementScreenState
 
   Widget _buildEmployeeMasterListCard() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestore.collection('employees').orderBy('name').snapshots(),
+      stream: _employeesRef.orderBy('employee_name').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(
@@ -432,10 +491,10 @@ class _EmployeeMasterManagementScreenState
                 else
                   ...docs.map((doc) {
                     final data = doc.data();
-                    final employeeName =
-                        (data['name'] ?? '').toString().trim().isEmpty
-                            ? '(Unnamed Employee)'
-                            : (data['name'] ?? '').toString().trim();
+                    final resolvedName = _resolveEmployeeName(data);
+                    final employeeName = resolvedName.isEmpty
+                        ? '(Unnamed Employee)'
+                        : resolvedName;
                     final email = (data['email'] ?? '').toString().trim();
                     final cnicLast4 =
                         (data['cnic_last_4'] ?? '').toString().trim();

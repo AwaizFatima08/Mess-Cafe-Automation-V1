@@ -21,6 +21,7 @@ class MealDistributionChart extends StatelessWidget {
     };
 
     final total = normalized.values.fold<int>(0, (sum, item) => sum + item);
+    final highest = normalized.values.fold<int>(0, (max, item) => item > max ? item : max);
 
     return Card(
       elevation: 2,
@@ -40,15 +41,36 @@ class MealDistributionChart extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Text(
+                      'Total attendance: $total',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
                   const SizedBox(height: 18),
                   ...normalized.entries.map((entry) {
                     final ratio = total == 0 ? 0.0 : entry.value / total;
+                    final relativeWidth = highest == 0 ? 0.0 : entry.value / highest;
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 14),
                       child: _MealBarRow(
                         label: _formatLabel(entry.key),
                         value: entry.value,
                         ratio: ratio,
+                        relativeWidth: relativeWidth,
                       ),
                     );
                   }),
@@ -83,16 +105,19 @@ class _MealBarRow extends StatelessWidget {
     required this.label,
     required this.value,
     required this.ratio,
+    required this.relativeWidth,
   });
 
   final String label;
   final int value;
   final double ratio;
+  final double relativeWidth;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final safeRatio = ratio.clamp(0.0, 1.0);
+    final safeRelativeWidth = relativeWidth.clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,14 +144,14 @@ class _MealBarRow extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
           child: LinearProgressIndicator(
-            value: safeRatio,
+            value: safeRelativeWidth,
             minHeight: 14,
             backgroundColor: Colors.grey.shade300,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          '${(safeRatio * 100).toStringAsFixed(1)}%',
+          '${(safeRatio * 100).toStringAsFixed(1)}% of total',
           style: theme.textTheme.bodySmall?.copyWith(
             color: Colors.grey.shade700,
           ),

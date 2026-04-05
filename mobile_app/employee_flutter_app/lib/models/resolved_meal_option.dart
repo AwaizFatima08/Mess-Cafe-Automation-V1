@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class ResolvedMealOption {
   final String optionKey;
   final String optionLabel;
@@ -22,19 +24,19 @@ class ResolvedMealOption {
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    return <String, dynamic>{
       'option_key': optionKey,
       'option_label': optionLabel,
-      'items': items,
+      'items': items.map((item) => Map<String, dynamic>.from(item)).toList(),
     };
   }
 
   factory ResolvedMealOption.fromMap(Map<String, dynamic> map) {
-    final rawItems = (map['items'] as List<dynamic>?) ?? const [];
+    final List<dynamic> rawItems = (map['items'] as List<dynamic>?) ?? const <dynamic>[];
 
     return ResolvedMealOption(
-      optionKey: (map['option_key'] ?? '').toString(),
-      optionLabel: (map['option_label'] ?? '').toString(),
+      optionKey: (map['option_key'] ?? '').toString().trim(),
+      optionLabel: (map['option_label'] ?? '').toString().trim(),
       items: rawItems
           .whereType<Map>()
           .map((item) => Map<String, dynamic>.from(item))
@@ -44,7 +46,11 @@ class ResolvedMealOption {
 
   @override
   String toString() {
-    return 'ResolvedMealOption(optionKey: $optionKey, optionLabel: $optionLabel, items: $items)';
+    return 'ResolvedMealOption('
+        'optionKey: $optionKey, '
+        'optionLabel: $optionLabel, '
+        'items: $items'
+        ')';
   }
 
   @override
@@ -53,11 +59,16 @@ class ResolvedMealOption {
 
     return other is ResolvedMealOption &&
         other.optionKey == optionKey &&
-        other.optionLabel == optionLabel;
+        other.optionLabel == optionLabel &&
+        listEquals(other.items, items);
   }
 
   @override
   int get hashCode {
-    return optionKey.hashCode ^ optionLabel.hashCode;
+    return Object.hash(
+      optionKey,
+      optionLabel,
+      Object.hashAll(items),
+    );
   }
 }

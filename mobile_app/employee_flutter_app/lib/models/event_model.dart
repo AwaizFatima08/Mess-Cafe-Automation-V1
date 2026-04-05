@@ -15,6 +15,16 @@ class EventModel {
     statusCancelled,
   ];
 
+  static const String targetScopeAllActiveEmployees = 'all_active_employees';
+
+  static const List<String> allowedTargetScopes = <String>[
+    targetScopeAllActiveEmployees,
+    'selected_employees',
+    'custom',
+  ];
+
+  static const Object _unset = Object();
+
   final String documentId;
   final String eventId;
   final String title;
@@ -132,7 +142,7 @@ class EventModel {
       selectedNoteIds: const <String>[],
       notesSnapshot: const <EventNoteSnapshot>[],
       customNotice: '',
-      targetScope: 'all_active_employees',
+      targetScope: targetScopeAllActiveEmployees,
       targetCountEstimate: 0,
       householdsResponded: 0,
       householdsPending: 0,
@@ -191,8 +201,7 @@ class EventModel {
       selectedNoteIds: _readStringList(selectedNoteIdsRaw),
       notesSnapshot: _readNotesSnapshotList(notesSnapshotRaw),
       customNotice: _readString(map['custom_notice']),
-      targetScope:
-          _readString(map['target_scope'], fallback: 'all_active_employees'),
+      targetScope: _normalizeTargetScope(map['target_scope']),
       targetCountEstimate:
           _readInt(map['target_count_estimate'], fallback: 0),
       householdsResponded:
@@ -228,11 +237,11 @@ class EventModel {
       'selected_note_ids': selectedNoteIds
           .map((value) => value.trim())
           .where((value) => value.isNotEmpty)
-          .toList(),
+          .toList(growable: false),
       'notes_snapshot':
           notesSnapshot.map((note) => note.toMap()).toList(growable: false),
       'custom_notice': customNotice.trim(),
-      'target_scope': targetScope.trim(),
+      'target_scope': normalizedTargetScope,
       'target_count_estimate': targetCountEstimate,
       'households_responded': householdsResponded,
       'households_pending': householdsPending,
@@ -277,19 +286,19 @@ class EventModel {
     String? description,
     String? eventType,
     String? venue,
-    Timestamp? eventDate,
-    Timestamp? startAt,
-    Timestamp? endAt,
-    Timestamp? responseCutoffAt,
+    Object? eventDate = _unset,
+    Object? startAt = _unset,
+    Object? endAt = _unset,
+    Object? responseCutoffAt = _unset,
     String? status,
     String? createdByUid,
     String? createdByEmployeeNumber,
     String? createdByName,
-    Timestamp? createdAt,
-    Timestamp? updatedAt,
-    Timestamp? publishedAt,
-    Timestamp? closedAt,
-    Timestamp? cancelledAt,
+    Object? createdAt = _unset,
+    Object? updatedAt = _unset,
+    Object? publishedAt = _unset,
+    Object? closedAt = _unset,
+    Object? cancelledAt = _unset,
     int? dashboardPriority,
     bool? allowEditUntilCutoff,
     bool? showOnEmployeeDashboard,
@@ -314,20 +323,30 @@ class EventModel {
       description: description ?? this.description,
       eventType: eventType ?? this.eventType,
       venue: venue ?? this.venue,
-      eventDate: eventDate ?? this.eventDate,
-      startAt: startAt ?? this.startAt,
-      endAt: endAt ?? this.endAt,
-      responseCutoffAt: responseCutoffAt ?? this.responseCutoffAt,
+      eventDate:
+          identical(eventDate, _unset) ? this.eventDate : eventDate as Timestamp?,
+      startAt: identical(startAt, _unset) ? this.startAt : startAt as Timestamp?,
+      endAt: identical(endAt, _unset) ? this.endAt : endAt as Timestamp?,
+      responseCutoffAt: identical(responseCutoffAt, _unset)
+          ? this.responseCutoffAt
+          : responseCutoffAt as Timestamp?,
       status: status ?? this.status,
       createdByUid: createdByUid ?? this.createdByUid,
       createdByEmployeeNumber:
           createdByEmployeeNumber ?? this.createdByEmployeeNumber,
       createdByName: createdByName ?? this.createdByName,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      publishedAt: publishedAt ?? this.publishedAt,
-      closedAt: closedAt ?? this.closedAt,
-      cancelledAt: cancelledAt ?? this.cancelledAt,
+      createdAt:
+          identical(createdAt, _unset) ? this.createdAt : createdAt as Timestamp?,
+      updatedAt:
+          identical(updatedAt, _unset) ? this.updatedAt : updatedAt as Timestamp?,
+      publishedAt: identical(publishedAt, _unset)
+          ? this.publishedAt
+          : publishedAt as Timestamp?,
+      closedAt:
+          identical(closedAt, _unset) ? this.closedAt : closedAt as Timestamp?,
+      cancelledAt: identical(cancelledAt, _unset)
+          ? this.cancelledAt
+          : cancelledAt as Timestamp?,
       dashboardPriority: dashboardPriority ?? this.dashboardPriority,
       allowEditUntilCutoff:
           allowEditUntilCutoff ?? this.allowEditUntilCutoff,
@@ -349,11 +368,13 @@ class EventModel {
   }
 
   String get normalizedStatus => _normalizeStatus(status);
+  String get normalizedTargetScope => _normalizeTargetScope(targetScope);
 
   bool get isDraft => normalizedStatus == statusDraft;
   bool get isPublished => normalizedStatus == statusPublished;
   bool get isClosed => normalizedStatus == statusClosed;
   bool get isCancelled => normalizedStatus == statusCancelled;
+
   bool get isActiveForEmployees =>
       isPublished && !isDeletedSoft && !reportLocked;
 
@@ -399,13 +420,11 @@ class EventModel {
   }
 
   String get displayTitle => title.trim().isEmpty ? eventId : title.trim();
-
   String get displayVenue => venue.trim();
 
   @override
   String toString() {
-    return 'EventModel(documentId: $documentId, eventId: $eventId, '
-        'title: $title, status: $status)';
+    return 'EventModel(documentId: $documentId, eventId: $eventId, title: $title, status: $status)';
   }
 
   static String buildEventDocumentId({
@@ -451,6 +470,25 @@ class EventModel {
       return normalized;
     }
     return statusDraft;
+  }
+
+  static String _normalizeTargetScope(dynamic value) {
+    final normalized =
+        value?.toString().trim().toLowerCase() ?? targetScopeAllActiveEmployees;
+
+    if (normalized.isEmpty) {
+      return targetScopeAllActiveEmployees;
+    }
+
+    if (normalized == 'all_employees') {
+      return targetScopeAllActiveEmployees;
+    }
+
+    if (allowedTargetScopes.contains(normalized)) {
+      return normalized;
+    }
+
+    return targetScopeAllActiveEmployees;
   }
 
   static String _readString(dynamic value, {String fallback = ''}) {

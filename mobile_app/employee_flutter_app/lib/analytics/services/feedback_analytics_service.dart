@@ -13,7 +13,22 @@ class FeedbackAnalyticsService {
     AnalyticsFilterModel filter,
   ) async {
     try {
-      final snapshot = await _firestore.collection('meal_feedback').get();
+      final startDate = filter.normalizedStartDate;
+      final endDate = filter.normalizedEndDate;
+
+      final snapshot = await _firestore
+          .collection('meal_feedback')
+          .where(
+            'reservation_date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where(
+            'reservation_date',
+            isLessThan: Timestamp.fromDate(
+              endDate.add(const Duration(days: 1)),
+            ),
+          )
+          .get();
 
       if (snapshot.docs.isEmpty) {
         return FeedbackAnalyticsResult.empty();

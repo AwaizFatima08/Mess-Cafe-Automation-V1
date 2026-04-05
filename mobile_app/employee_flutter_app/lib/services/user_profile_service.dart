@@ -67,21 +67,31 @@ class UserProfileService {
       return null;
     }
 
-    final query =
-        await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+    DocumentSnapshot<Map<String, dynamic>>? doc;
 
-    if (query.docs.isEmpty) {
-      return null;
+    final directDoc = await _usersRef.doc(normalizedUid).get();
+    if (directDoc.exists && directDoc.data() != null) {
+      doc = directDoc;
+    } else {
+      final query =
+          await _usersRef.where('uid', isEqualTo: normalizedUid).limit(1).get();
+
+      if (query.docs.isEmpty) {
+        return null;
+      }
+
+      doc = query.docs.first;
     }
 
-    final doc = query.docs.first;
     final data = doc.data();
+    if (data == null) {
+      return null;
+    }
 
     final email = (data['email'] ?? '').toString().trim().toLowerCase();
     final employeeNumber =
         (data['employee_number'] ?? '').toString().trim();
-    final employeeName =
-        (data['employee_name'] ?? '').toString().trim();
+    final employeeName = _resolveEmployeeName(data);
     final status = (data['status'] ?? '').toString().trim().toLowerCase();
     final isActive = data['is_active'] == true;
 
@@ -89,7 +99,7 @@ class UserProfileService {
       documentId: doc.id,
       authUid: (data['uid'] ?? normalizedUid).toString().trim(),
       email: email,
-      role: _userRoleService.parseRole(data['role']),
+      role: _resolveEffectiveRole(data),
       employeeNumber: employeeNumber,
       employeeName: employeeName,
       isActive: isActive,
@@ -100,5 +110,35 @@ class UserProfileService {
 
   Future<AppUserProfile?> getUserProfileByUid(String authUid) {
     return resolveCurrentUserProfile(authUid: authUid);
+  }
+
+  String _resolveEmployeeName(Map<String, dynamic> data) {
+    final displayName = (data['display_name'] ?? '').toString().trim();
+    if (displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    final employeeName = (data['employee_name'] ?? '').toString().trim();
+    if (employeeName.isNotEmpty) {
+      return employeeName;
+    }
+
+    final fallbackName = (data['name'] ?? '').toString().trim();
+    return fallbackName;
+  }
+
+  AppUserRole _resolveEffectiveRole(Map<String, dynamic> data) {
+    final isActive = data['is_active'] == true;
+    final status = (data['status'] ?? '').toString().trim().toLowerCase();
+
+    if (!isActive) {
+      return AppUserRole.unknown;
+    }
+
+    if (status.isNotEmpty && status != 'approved' && status != 'active') {
+      return AppUserRole.unknown;
+    }
+
+    return _userRoleService.parseRole(data['role']);
   }
 }

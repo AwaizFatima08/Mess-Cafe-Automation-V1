@@ -26,6 +26,7 @@ class _MealFeedbackSubmissionScreenState
 
   late DateTime _selectedDate;
   bool _isLoading = true;
+  bool _isSubmitting = false;
   String? _errorMessage;
 
   List<FeedbackEligibleReservation> _items = [];
@@ -47,7 +48,7 @@ class _MealFeedbackSubmissionScreenState
     if (now.hour < 6) {
       return now.subtract(const Duration(days: 1));
     }
-    return now;
+    return DateTime(now.year, now.month, now.day);
   }
 
   @override
@@ -59,6 +60,8 @@ class _MealFeedbackSubmissionScreenState
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -83,7 +86,7 @@ class _MealFeedbackSubmissionScreenState
         _ratings[item.reservationId] = 0;
         _controllers[item.reservationId] = TextEditingController();
         _anonymous[item.reservationId] = false;
-        _issueType[item.reservationId] = '';
+        _issueType[item.reservationId] = 'none';
       }
 
       if (!mounted) return;
@@ -112,12 +115,16 @@ class _MealFeedbackSubmissionScreenState
     );
 
     if (picked != null) {
-      setState(() => _selectedDate = picked);
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      });
       await _loadData();
     }
   }
 
   Future<void> _submit(FeedbackEligibleReservation item) async {
+    if (_isSubmitting) return;
+
     final rating = _ratings[item.reservationId] ?? 0;
 
     if (rating == 0) {
@@ -127,7 +134,13 @@ class _MealFeedbackSubmissionScreenState
       return;
     }
 
+    setState(() {
+      _isSubmitting = true;
+    });
+
     try {
+      final issueType = _issueType[item.reservationId] ?? 'none';
+
       await _service.submitFeedback(
         reservationId: item.reservationId,
         submittedByUid: widget.userUid,
@@ -136,12 +149,12 @@ class _MealFeedbackSubmissionScreenState
         employeeName: widget.employeeName,
         reservationDate: item.reservationDate,
         mealType: item.mealType,
-        menuItemId: item.menuItemId.isEmpty ? item.reservationId : item.menuItemId,
+        menuItemId: item.menuItemId,
         itemName: item.itemName,
         category: item.category,
         rating: rating,
-        feedbackText: _controllers[item.reservationId]?.text ?? '',
-        issueType: _issueType[item.reservationId] ?? '',
+        feedbackText: _controllers[item.reservationId]?.text.trim() ?? '',
+        issueType: issueType == 'none' ? '' : issueType,
         isAnonymous: _anonymous[item.reservationId] ?? false,
       );
 
@@ -158,6 +171,12 @@ class _MealFeedbackSubmissionScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Feedback submit failed: $e')),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
     }
   }
 
@@ -188,11 +207,13 @@ class _MealFeedbackSubmissionScreenState
             i < rating ? Icons.star : Icons.star_border,
             color: Colors.orange,
           ),
-          onPressed: () {
-            setState(() {
-              _ratings[id] = i + 1;
-            });
-          },
+          onPressed: _isSubmitting
+              ? null
+              : () {
+                  setState(() {
+                    _ratings[id] = i + 1;
+                  });
+                },
         );
       }),
     );
@@ -218,7 +239,7 @@ class _MealFeedbackSubmissionScreenState
             ),
           ),
           IconButton(
-            onPressed: _loadData,
+            onPressed: _isLoading ? null : _loadData,
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
           ),
@@ -229,7 +250,7 @@ class _MealFeedbackSubmissionScreenState
 
   Widget _buildItemCard(FeedbackEligibleReservation item) {
     final already = item.alreadySubmitted;
-    final canSubmit = item.isIssued && !already;
+    final canSubmit = item.isIssued && !already && !_isSubmitting;
 
     return Card(
       child: Padding(
@@ -267,20 +288,24 @@ class _MealFeedbackSubmissionScreenState
                 hint: const Text('Issue Type (optional)'),
                 isExpanded: true,
                 items: const [
-                  DropdownMenuItem(value: '', child: Text('None')),
+                  DropdownMenuItem(value: 'none', child: Text('None')),
                   DropdownMenuItem(value: 'taste', child: Text('Taste')),
                   DropdownMenuItem(value: 'quality', child: Text('Quality')),
                   DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
                   DropdownMenuItem(value: 'service', child: Text('Service')),
                 ],
-                onChanged: (v) {
-                  setState(() {
-                    _issueType[item.reservationId] = v ?? '';
-                  });
-                },
+                onChanged: _isSubmitting
+                    ? null
+                    : (v) {
+                        setState(() {
+                          _issueType[item.reservationId] = v ?? 'none';
+                        });
+                      },
               ),
               TextField(
                 controller: _controllers[item.reservationId],
+                enabled: !_isSubmitting,
+                maxLines: 2,
                 decoration: const InputDecoration(
                   hintText: 'Write feedback...',
                 ),
@@ -289,17 +314,21 @@ class _MealFeedbackSubmissionScreenState
                 children: [
                   Checkbox(
                     value: _anonymous[item.reservationId],
-                    onChanged: (v) {
-                      setState(() {
-                        _anonymous[item.reservationId] = v ?? false;
-                      });
-                    },
+                    onChanged: _isSubmitting
+                        ? null
+                        : (v) {
+                            setState(() {
+                              _anonymous[item.reservationId] = v ?? false;
+                            });
+                          },
                   ),
                   const Text('Submit anonymously'),
                   const Spacer(),
                   ElevatedButton(
                     onPressed: canSubmit ? () => _submit(item) : null,
-                    child: const Text('Submit'),
+                    child: _isSubmitting
+                        ? const Text('Submitting...')
+                        : const Text('Submit'),
                   ),
                 ],
               ),

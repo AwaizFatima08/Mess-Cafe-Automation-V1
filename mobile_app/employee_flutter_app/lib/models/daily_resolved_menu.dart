@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'resolved_meal_option.dart';
 
 class DailyResolvedMenu {
@@ -32,7 +34,7 @@ class DailyResolvedMenu {
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    return <String, dynamic>{
       'weekday': weekday,
       'cycle_name': cycleName,
       'breakfast_options': breakfastOptions.map((e) => e.toMap()).toList(),
@@ -43,16 +45,21 @@ class DailyResolvedMenu {
 
   factory DailyResolvedMenu.fromMap(Map<String, dynamic> map) {
     List<ResolvedMealOption> parseOptions(dynamic raw) {
-      final list = (raw as List<dynamic>?) ?? const [];
+      final List<dynamic> list = (raw as List<dynamic>?) ?? const <dynamic>[];
+
       return list
           .whereType<Map>()
-          .map((e) => ResolvedMealOption.fromMap(Map<String, dynamic>.from(e)))
+          .map(
+            (e) => ResolvedMealOption.fromMap(
+              Map<String, dynamic>.from(e),
+            ),
+          )
           .toList();
     }
 
     return DailyResolvedMenu(
-      weekday: (map['weekday'] ?? '').toString(),
-      cycleName: (map['cycle_name'] ?? '').toString(),
+      weekday: (map['weekday'] ?? '').toString().trim(),
+      cycleName: (map['cycle_name'] ?? '').toString().trim(),
       breakfastOptions: parseOptions(map['breakfast_options']),
       lunchOptions: parseOptions(map['lunch_options']),
       dinnerOptions: parseOptions(map['dinner_options']),
@@ -61,7 +68,13 @@ class DailyResolvedMenu {
 
   @override
   String toString() {
-    return 'DailyResolvedMenu(weekday: $weekday, cycleName: $cycleName, breakfastOptions: $breakfastOptions, lunchOptions: $lunchOptions, dinnerOptions: $dinnerOptions)';
+    return 'DailyResolvedMenu('
+        'weekday: $weekday, '
+        'cycleName: $cycleName, '
+        'breakfastOptions: $breakfastOptions, '
+        'lunchOptions: $lunchOptions, '
+        'dinnerOptions: $dinnerOptions'
+        ')';
   }
 
   @override
@@ -70,11 +83,20 @@ class DailyResolvedMenu {
 
     return other is DailyResolvedMenu &&
         other.weekday == weekday &&
-        other.cycleName == cycleName;
+        other.cycleName == cycleName &&
+        listEquals(other.breakfastOptions, breakfastOptions) &&
+        listEquals(other.lunchOptions, lunchOptions) &&
+        listEquals(other.dinnerOptions, dinnerOptions);
   }
 
   @override
   int get hashCode {
-    return weekday.hashCode ^ cycleName.hashCode;
+    return Object.hash(
+      weekday,
+      cycleName,
+      Object.hashAll(breakfastOptions),
+      Object.hashAll(lunchOptions),
+      Object.hashAll(dinnerOptions),
+    );
   }
 }

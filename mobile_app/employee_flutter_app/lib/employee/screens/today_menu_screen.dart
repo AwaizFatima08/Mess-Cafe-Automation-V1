@@ -60,7 +60,7 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = _normalizeDate(DateTime.now());
+    _selectedDate = _resolveOperationalReferenceDate();
     _loadScreenData();
   }
 
@@ -68,16 +68,24 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     return DateTime(value.year, value.month, value.day);
   }
 
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return _normalizeDate(now.subtract(const Duration(days: 1)));
+    }
+    return _normalizeDate(now);
+  }
+
   Future<void> _loadScreenData({bool forceRefresh = false}) async {
     final normalizedDate = _normalizeDate(_selectedDate);
 
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-        _identityWarning = null;
-      });
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+      _identityWarning = null;
+    });
 
     try {
       final authUser = FirebaseAuth.instance.currentUser;
@@ -90,7 +98,6 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
           normalizedDate,
           forceRefresh: forceRefresh,
         ),
-
         _userProfileService.resolveCurrentUserProfile(authUid: authUser.uid),
         _employeeIdentityService.resolveByAuthUid(authUser.uid),
       ]);
@@ -123,7 +130,6 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
 
         for (final doc in reservationsSnapshot.docs) {
           final data = doc.data();
-
           final mealType =
               (data['meal_type'] ?? '').toString().trim().toLowerCase();
           final status = (data['status'] ?? '').toString().trim().toLowerCase();
@@ -228,6 +234,13 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     return '—';
   }
 
+  String _formatCurrency(dynamic value) {
+    if (value is int) return value.toDouble().toStringAsFixed(2);
+    if (value is double) return value.toStringAsFixed(2);
+    final parsed = double.tryParse((value ?? '').toString());
+    return (parsed ?? 0).toStringAsFixed(2);
+  }
+
   String _buildItemsSummary(ResolvedMealOption option) {
     if (option.items.isEmpty) {
       return 'No items listed';
@@ -276,11 +289,17 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
   }
 
   Future<void> _pickDate() async {
+    final now = DateTime.now();
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+      firstDate: DateTime(now.year, now.month, now.day).subtract(
+        const Duration(days: 1),
+      ),
+      lastDate: DateTime(now.year, now.month, now.day).add(
+        const Duration(days: 30),
+      ),
     );
 
     if (picked == null) return;
@@ -334,34 +353,34 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     for (final option in options) {
       final draft = _draftFor(mealType, option.optionKey);
 
+      final baseSnapshot = <String, dynamic>{
+        'selection_type': MealReservationService.selectionModeCycleCombo,
+        'option_key': option.optionKey,
+        'option_label': option.optionLabel,
+        'meal_type': mealType,
+        'items': option.items,
+      };
+
       if (draft.dineInQuantity > 0) {
         selectedLines.add(
-          ReservationLineInput(
+          ReservationLineInput.forCycleOption(
             optionKey: option.optionKey,
             optionLabel: option.optionLabel,
             diningMode: 'dine_in',
             quantity: draft.dineInQuantity,
-            menuSnapshot: {
-              'option_key': option.optionKey,
-              'option_label': option.optionLabel,
-              'items': option.items,
-            },
+            menuSnapshot: baseSnapshot,
           ),
         );
       }
 
       if (draft.takeawayQuantity > 0) {
         selectedLines.add(
-          ReservationLineInput(
+          ReservationLineInput.forCycleOption(
             optionKey: option.optionKey,
             optionLabel: option.optionLabel,
             diningMode: 'takeaway',
             quantity: draft.takeawayQuantity,
-            menuSnapshot: {
-              'option_key': option.optionKey,
-              'option_label': option.optionLabel,
-              'items': option.items,
-            },
+            menuSnapshot: baseSnapshot,
           ),
         );
       }
@@ -474,20 +493,38 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
       return;
     }
 
+    final bookingGroupIds = docs
+        .map((doc) => (doc.data()['booking_group_id'] ?? '').toString().trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+
     setState(() {
       _isSaving = true;
     });
 
     try {
-      for (final doc in docs) {
-        await _mealReservationService.cancelReservation(
-          reservationId: doc.id,
+      if (bookingGroupIds.length == 1) {
+        await _mealReservationService.cancelReservationGroup(
+          bookingGroupId: bookingGroupIds.first,
           cancelledByUid: authUser.uid,
           cancelledByRole: 'employee',
         );
+      } else {
+        for (final doc in docs) {
+          await _mealReservationService.cancelReservation(
+            reservationId: doc.id,
+            cancelledByUid: authUser.uid,
+            cancelledByRole: 'employee',
+          );
+        }
       }
 
       if (!mounted) return;
+
+      setState(() {
+        _draftsByMeal[mealType]!.clear();
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -746,11 +783,13 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     return Column(
       children: docs.map((doc) {
         final data = doc.data();
-        final option = (data['option_label'] ?? '').toString();
+        final option = (data['option_label'] ?? data['item_name'] ?? '').toString();
         final mode = (data['dining_mode'] ?? '').toString();
         final qty = (data['quantity'] ?? 0).toString();
         final status = (data['status'] ?? '').toString();
         final issued = data['is_issued'] == true;
+        final unitRate = data['unit_rate'];
+        final amount = data['amount'];
         final createdAt = _formatDateTime(data['created_at']);
 
         return Container(
@@ -783,6 +822,16 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
               const SizedBox(height: AppSpacing.xs),
               Text(
                 'Quantity: $qty',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Unit Rate: ${_formatCurrency(unitRate)}',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Amount: ${_formatCurrency(amount)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -1154,9 +1203,7 @@ class _QuantityEditor extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: highlighted
-            ? AppColors.primaryLight
-            : Colors.white,
+        color: highlighted ? AppColors.primaryLight : Colors.white,
         borderRadius: BorderRadius.circular(AppRadii.md),
         border: Border.all(
           color: highlighted ? AppColors.primary : AppColors.border,

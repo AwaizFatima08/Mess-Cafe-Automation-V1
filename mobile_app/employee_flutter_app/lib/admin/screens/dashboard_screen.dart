@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -47,7 +48,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = _normalizeDate(DateTime.now());
+    _selectedDate = _resolveOperationalReferenceDate();
     _loadDashboardData();
   }
 
@@ -59,6 +60,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   DateTime _normalizeDate(DateTime date) {
     return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return _normalizeDate(now.subtract(const Duration(days: 1)));
+    }
+    return _normalizeDate(now);
   }
 
   String _cacheKeyForDate(DateTime date) {
@@ -314,7 +323,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   int _readInt(dynamic value) {
     if (value is int) return value;
+    if (value is double) return value.round();
     return int.tryParse((value ?? '0').toString()) ?? 0;
+  }
+
+  double _readDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
   }
 
   DateTime? _timestampToDateTime(dynamic value) {
@@ -322,6 +338,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return value.toDate();
     }
     return null;
+  }
+
+  double _resolveAmount(Map<String, dynamic> data) {
+    final explicitAmount = _readDouble(data['amount']);
+    if (explicitAmount > 0) {
+      return explicitAmount;
+    }
+
+    final unitRate = _readDouble(data['unit_rate']);
+    final quantity = _readInt(data['quantity']);
+
+    if (unitRate > 0 && quantity > 0) {
+      return unitRate * quantity;
+    }
+
+    return 0.0;
   }
 
   int _mealSortOrder(String mealType) {
@@ -450,11 +482,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _pickDate() async {
+    final now = DateTime.now();
+
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime(2025),
-      lastDate: DateTime(2035),
+      firstDate: DateTime(now.year - 1, 1, 1),
+      lastDate: DateTime(now.year + 1, 12, 31),
     );
 
     if (picked == null) return;
@@ -552,6 +586,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final confirmed = await _confirmIssue(target.data);
     if (!confirmed) return;
 
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No authenticated user found.')),
+      );
+      return;
+    }
+
     setState(() {
       _isIssuing = true;
     });
@@ -559,7 +601,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await _mealReservationService.markReservationIssued(
         reservationId: recordId,
-        issuedByUid: widget.userEmail,
+        issuedByUid: authUser.uid,
         issuedByRole: 'mess_dashboard_operator',
       );
 
@@ -576,7 +618,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             'is_issued': true,
             'status': 'issued',
             'issued_at': issuedAt,
-            'issued_by_uid': widget.userEmail,
+            'issued_by_uid': authUser.uid,
             'issued_by_role': 'mess_dashboard_operator',
           },
         );
@@ -655,6 +697,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return '$day-$month-$year $hour:$minute';
   }
 
+  String _formatCurrency(dynamic value) {
+    if (value is int) return value.toDouble().toStringAsFixed(2);
+    if (value is double) return value.toStringAsFixed(2);
+
+    final parsed = double.tryParse((value ?? '').toString());
+    return (parsed ?? 0).toStringAsFixed(2);
+  }
+
   bool _matchesSearch(_ReservationRecord record) {
     final q = _searchQuery.trim().toLowerCase();
     if (q.isEmpty) return true;
@@ -667,6 +717,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       (data['host_employee_number'] ?? '').toString(),
       (data['host_employee_name'] ?? '').toString(),
       (data['option_label'] ?? '').toString(),
+      (data['item_name'] ?? '').toString(),
       (data['created_by_employee_number'] ?? '').toString(),
       (data['created_by_name'] ?? '').toString(),
     ].join(' | ').toLowerCase();
@@ -1495,14 +1546,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   actionIcon: isPendingTab
                       ? Icons.check_circle_outline
                       : Icons.verified_outlined,
-                  onAction:
-                      isPendingTab ? () => _issueMeal(record.id) : null,
+                  onAction: isPendingTab ? () => _issueMeal(record.id) : null,
                   mealLabelBuilder: _mealLabel,
                   bookingSourceLabelBuilder: _bookingSourceLabel,
                   bookingSubjectTypeLabelBuilder: _bookingSubjectTypeLabel,
                   diningModeLabelBuilder: _diningModeLabel,
                   reservationCategoryLabelBuilder: _reservationCategoryLabel,
                   formatDateTime: _formatDateTime,
+                  formatCurrency: _formatCurrency,
+                  resolveAmount: _resolveAmount,
                   showIssuedMeta: !isPendingTab,
                 ),
               ),
@@ -1513,7 +1565,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildBody() {
-    final isWide = MediaQuery.of(context).size.width >= 1100;
+    final width = MediaQuery.of(context).size.width;
+    final kpiCrossAxisCount = width >= 1200 ? 4 : 2;
 
     return RefreshIndicator(
       color: AppColors.primary,
@@ -1525,12 +1578,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _buildHeaderCard(),
           const SizedBox(height: AppSpacing.lg),
           GridView.count(
-            crossAxisCount: isWide ? 4 : 2,
+            crossAxisCount: kpiCrossAxisCount,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: AppSpacing.md,
             mainAxisSpacing: AppSpacing.md,
-            childAspectRatio: isWide ? 2.5 : 2.0,
+            childAspectRatio: width >= 1200 ? 2.5 : 2.0,
             children: [
               _buildKpiCard(
                 title: 'Total Quantity',
@@ -1691,6 +1744,8 @@ class _ReservationTile extends StatelessWidget {
   final String Function(String) diningModeLabelBuilder;
   final String Function(String) reservationCategoryLabelBuilder;
   final String Function(dynamic) formatDateTime;
+  final String Function(dynamic) formatCurrency;
+  final double Function(Map<String, dynamic>) resolveAmount;
   final bool showIssuedMeta;
 
   const _ReservationTile({
@@ -1705,11 +1760,14 @@ class _ReservationTile extends StatelessWidget {
     required this.diningModeLabelBuilder,
     required this.reservationCategoryLabelBuilder,
     required this.formatDateTime,
+    required this.formatCurrency,
+    required this.resolveAmount,
     this.showIssuedMeta = false,
   });
 
   int _readInt(dynamic value) {
     if (value is int) return value;
+    if (value is double) return value.round();
     return int.tryParse((value ?? '0').toString()) ?? 0;
   }
 
@@ -1733,6 +1791,7 @@ class _ReservationTile extends StatelessWidget {
     final hostEmployeeName = _value(data['host_employee_name']);
     final optionLabel = _value(data['option_label']);
     final quantity = _readInt(data['quantity']);
+    final amount = resolveAmount(data);
 
     final createdByName = _value(data['created_by_name']);
     final createdByRole = _value(data['created_by_role']);
@@ -1790,6 +1849,11 @@ class _ReservationTile extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(
               'Quantity: $quantity',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Amount: ${formatCurrency(amount)}',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.xs),

@@ -31,6 +31,9 @@ class EventAttendanceService {
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _firestore.collection('users');
 
+  CollectionReference<Map<String, dynamic>> get _profilesRef =>
+      _firestore.collection('employee_profiles');
+
   CollectionReference<Map<String, dynamic>> get _notificationsRef =>
       _firestore.collection('notifications');
 
@@ -662,6 +665,7 @@ class EventAttendanceService {
             'user_uid': user.userUid,
             'employee_number': user.employeeNumber,
             'employee_name': user.employeeName,
+            'email': user.email,
           };
         })
         .toList(growable: false);
@@ -868,18 +872,49 @@ class EventAttendanceService {
     final WriteBatch batch = _firestore.batch();
 
     batch.set(notificationDoc, <String, dynamic>{
+      'notification_id': notificationDoc.id,
       'notification_layer': 'administrative',
       'type': 'event_invitation',
       'title': title,
       'body': body,
+      'short_message': title,
+      'status': 'published',
+      'priority': 'normal',
+      'target_type': event.targetScope.trim().isEmpty
+          ? 'all_active_employees'
+          : event.targetScope.trim(),
+      'target_user_uid': null,
+      'target_user_uids': targets.map((e) => e.userUid).toList(),
+      'send_in_app': true,
+      'send_push': false,
+      'send_email': false,
+      'created_by_uid': '',
+      'created_by_name': '',
+      'trigger_source': 'event_attendance_service',
+      'requires_review': false,
+      'review_status': 'not_required',
+      'reviewed_by_uid': '',
+      'reviewed_at': null,
+      'context_type': 'event',
+      'context_id': event.eventId,
       'reference_type': 'event',
       'reference_id': event.eventId,
-      'target_scope': event.targetScope,
       'show_popup_on_publish': event.showPopupOnPublish,
-      'status': 'active',
+      'email_subject': title,
+      'email_body': body,
+      'push_title': title,
+      'push_body': body,
+      'publish_at': now,
+      'published_at': now,
+      'expires_at': null,
+      'delivery_count_total': targets.length,
+      'delivery_count_in_app': targets.length,
+      'delivery_count_push_sent': 0,
+      'delivery_count_push_failed': 0,
+      'delivery_count_email_sent': 0,
+      'delivery_count_email_failed': 0,
       'created_at': now,
       'updated_at': now,
-      'published_at': now,
     });
 
     for (final _NotificationTarget target in targets) {
@@ -887,13 +922,32 @@ class EventAttendanceService {
           _notificationDeliveriesRef.doc();
 
       batch.set(deliveryDoc, <String, dynamic>{
+        'delivery_id': deliveryDoc.id,
         'notification_id': notificationDoc.id,
         'user_uid': target.userUid,
         'employee_number': target.employeeNumber,
-        'in_app_status': 'unread',
-        'is_read': false,
-        'email_status': 'not_applicable',
-        'push_status': 'not_applicable',
+        'employee_name': target.employeeName,
+        'email': target.email,
+        'notification_layer': 'administrative',
+        'type': 'event_invitation',
+        'in_app_enabled': true,
+        'push_enabled': false,
+        'email_enabled': false,
+        'in_app_status': event.showPopupOnPublish ? 'pending' : 'visible',
+        'push_status': 'skipped',
+        'email_status': 'skipped',
+        'push_sent_at': null,
+        'email_sent_at': null,
+        'in_app_visible_at': event.showPopupOnPublish ? null : now,
+        'read_at': null,
+        'archived_at': null,
+        'popup_acknowledged_at': null,
+        'failure_reason_push': '',
+        'failure_reason_email': '',
+        'title_snapshot': title,
+        'body_snapshot': body,
+        'context_type': 'event',
+        'context_id': event.eventId,
         'reference_type': 'event',
         'reference_id': event.eventId,
         'created_at': now,
@@ -907,7 +961,7 @@ class EventAttendanceService {
   String _buildNotificationBody(EventModel event) {
     final String cutoffText = event.responseCutoffDateTime == null
         ? 'Please mark attendance.'
-        : 'Please mark attendance before ${event.responseCutoffDateTime}.';
+        : 'Please mark attendance before ${_formatDateTime(event.responseCutoffDateTime!)}.';
 
     if (event.venue.trim().isEmpty) {
       return cutoffText;
@@ -917,38 +971,88 @@ class EventAttendanceService {
   }
 
   Future<List<_NotificationTarget>> _loadActiveUserTargets() async {
-    final QuerySnapshot<Map<String, dynamic>> snapshot = await _usersRef.get();
+    final QuerySnapshot<Map<String, dynamic>> usersSnapshot =
+        await _usersRef.get();
+    final QuerySnapshot<Map<String, dynamic>> profilesSnapshot =
+        await _profilesRef.get();
+
+    final Map<String, Map<String, dynamic>> profilesByAuthUid =
+        <String, Map<String, dynamic>>{};
+    final Map<String, Map<String, dynamic>> profilesByEmployeeNumber =
+        <String, Map<String, dynamic>>{};
+
+    for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
+        in profilesSnapshot.docs) {
+      final Map<String, dynamic> data = doc.data();
+
+      final String authUid = _readString(data['auth_uid']);
+      final String employeeNumber = _readString(data['employee_number']);
+
+      if (authUid.isNotEmpty && !profilesByAuthUid.containsKey(authUid)) {
+        profilesByAuthUid[authUid] = data;
+      }
+
+      if (employeeNumber.isNotEmpty &&
+          !profilesByEmployeeNumber.containsKey(employeeNumber)) {
+        profilesByEmployeeNumber[employeeNumber] = data;
+      }
+    }
 
     final List<_NotificationTarget> targets = <_NotificationTarget>[];
 
     for (final QueryDocumentSnapshot<Map<String, dynamic>> doc
-        in snapshot.docs) {
-      final Map<String, dynamic> data = doc.data();
+        in usersSnapshot.docs) {
+      final Map<String, dynamic> userData = doc.data();
 
       final String userUid = _readString(
-        data['uid'],
+        userData['uid'],
         fallback: doc.id,
       );
 
-      final String employeeNumber = _readString(data['employee_number']);
-      final String employeeName = _readString(data['name']);
+      final String employeeNumber = _readString(userData['employee_number']);
 
       if (userUid.isEmpty || employeeNumber.isEmpty) {
         continue;
       }
 
-      final bool approved = _looksApproved(data);
-      final bool active = _looksActive(data);
+      final Map<String, dynamic>? profileData =
+          profilesByAuthUid[userUid] ?? profilesByEmployeeNumber[employeeNumber];
+
+      final bool approved = _looksApproved(
+        userData: userData,
+        profileData: profileData,
+      );
+      final bool active = _looksActive(
+        userData: userData,
+        profileData: profileData,
+      );
 
       if (!approved || !active) {
         continue;
       }
+
+      final String employeeName = _firstNonEmptyString([
+        userData['employee_name'],
+        userData['name'],
+        userData['display_name'],
+        userData['full_name'],
+        profileData?['employee_name'],
+        profileData?['name'],
+        profileData?['display_name'],
+        profileData?['full_name'],
+      ]);
+
+      final String email = _firstNonEmptyString([
+        userData['email'],
+        profileData?['email'],
+      ]);
 
       targets.add(
         _NotificationTarget(
           userUid: userUid,
           employeeNumber: employeeNumber,
           employeeName: employeeName,
+          email: email,
         ),
       );
     }
@@ -957,37 +1061,54 @@ class EventAttendanceService {
     return targets;
   }
 
-  bool _looksApproved(Map<String, dynamic> data) {
-    final String approvalStatus =
-        _readString(data['approval_status']).toLowerCase();
-    final String reviewStatus =
-        _readString(data['review_status']).toLowerCase();
+  bool _looksApproved({
+    required Map<String, dynamic> userData,
+    Map<String, dynamic>? profileData,
+  }) {
+    final bool userActive = userData['is_active'] == true;
+    final bool profileActive = profileData?['is_active'] == true;
 
-    if (approvalStatus.isNotEmpty) {
-      return approvalStatus == 'approved' ||
-          approvalStatus == 'active' ||
-          approvalStatus == 'accepted';
-    }
+    final String userStatus = _readString(userData['status']).toLowerCase();
+    final String profileStatus =
+        _readString(profileData?['status']).toLowerCase();
 
-    if (reviewStatus.isNotEmpty) {
-      return reviewStatus == 'approved' ||
-          reviewStatus == 'active' ||
-          reviewStatus == 'accepted';
-    }
-
-    return true;
-  }
-
-  bool _looksActive(Map<String, dynamic> data) {
-    final String status = _readString(data['status']).toLowerCase();
-
-    if (status.isEmpty) {
+    if (userActive || profileActive) {
       return true;
     }
 
-    return status == 'active' ||
-        status == 'approved' ||
-        status == 'enabled';
+    if (userStatus == 'approved' || profileStatus == 'approved') {
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _looksActive({
+    required Map<String, dynamic> userData,
+    Map<String, dynamic>? profileData,
+  }) {
+    final bool userActive = userData['is_active'] == true;
+    final bool profileActive = profileData?['is_active'] == true;
+
+    final String userStatus = _readString(userData['status']).toLowerCase();
+    final String profileStatus =
+        _readString(profileData?['status']).toLowerCase();
+
+    if (userActive || profileActive) {
+      return true;
+    }
+
+    return userStatus == 'approved' || profileStatus == 'approved';
+  }
+
+  String _firstNonEmptyString(List<dynamic> values) {
+    for (final dynamic value in values) {
+      final String text = _readString(value);
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return '';
   }
 
   int _sortEventsForAdmin(EventModel a, EventModel b) {
@@ -1040,7 +1161,21 @@ class EventAttendanceService {
   }
 
   String _readString(dynamic value, {String fallback = ''}) {
-    return (value?.toString() ?? fallback).trim();
+    final String text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty) {
+      return text;
+    }
+    return fallback.trim();
+  }
+
+  String _formatDateTime(DateTime value) {
+    final DateTime local = value.toLocal();
+    final String day = local.day.toString().padLeft(2, '0');
+    final String month = local.month.toString().padLeft(2, '0');
+    final String year = local.year.toString();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return '$day-$month-$year $hour:$minute';
   }
 }
 
@@ -1049,11 +1184,13 @@ class _NotificationTarget {
     required this.userUid,
     required this.employeeNumber,
     required this.employeeName,
+    required this.email,
   });
 
   final String userUid;
   final String employeeNumber;
   final String employeeName;
+  final String email;
 }
 
 class _SummaryComputation {

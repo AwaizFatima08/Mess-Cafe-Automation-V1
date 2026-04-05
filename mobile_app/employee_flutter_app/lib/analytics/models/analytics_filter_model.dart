@@ -1,7 +1,6 @@
 class AnalyticsFilterModel {
   final DateTime startDate;
   final DateTime endDate;
-
   final List<String>? mealTypes;
   final String? employeeNumber;
   final bool includeGuests;
@@ -36,22 +35,25 @@ class AnalyticsFilterModel {
 
   Map<String, dynamic> toMap() {
     return {
-      'startDate': startDate.toIso8601String(),
-      'endDate': endDate.toIso8601String(),
-      'mealTypes': mealTypes,
-      'employeeNumber': employeeNumber,
+      'startDate': normalizedStartDate.toIso8601String(),
+      'endDate': normalizedEndDate.toIso8601String(),
+      'mealTypes': normalizedMealTypes,
+      'employeeNumber': normalizedEmployeeNumber,
       'includeGuests': includeGuests,
-      'organizationId': organizationId,
+      'organizationId': normalizedOrganizationId,
     };
   }
 
-  bool get hasMealTypeFilter => mealTypes != null && mealTypes!.isNotEmpty;
+  bool get hasMealTypeFilter =>
+      normalizedMealTypes != null && normalizedMealTypes!.isNotEmpty;
 
   bool get hasEmployeeFilter =>
-      employeeNumber != null && employeeNumber!.trim().isNotEmpty;
+      normalizedEmployeeNumber != null &&
+      normalizedEmployeeNumber!.trim().isNotEmpty;
 
   bool get hasOrganizationFilter =>
-      organizationId != null && organizationId!.trim().isNotEmpty;
+      normalizedOrganizationId != null &&
+      normalizedOrganizationId!.trim().isNotEmpty;
 
   DateTime get normalizedStartDate =>
       DateTime(startDate.year, startDate.month, startDate.day);
@@ -59,10 +61,32 @@ class AnalyticsFilterModel {
   DateTime get normalizedEndDate =>
       DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59, 999);
 
+  List<String>? get normalizedMealTypes {
+    if (mealTypes == null) return null;
+
+    final normalized = mealTypes!
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    return normalized;
+  }
+
+  String? get normalizedEmployeeNumber {
+    final value = employeeNumber?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
+  String? get normalizedOrganizationId {
+    final value = organizationId?.trim();
+    return (value == null || value.isEmpty) ? null : value;
+  }
+
   bool isWithinRange(DateTime date) {
-    final target = date;
-    return !target.isBefore(normalizedStartDate) &&
-        !target.isAfter(normalizedEndDate);
+    return !date.isBefore(normalizedStartDate) &&
+        !date.isAfter(normalizedEndDate);
   }
 
   @override
@@ -75,5 +99,43 @@ class AnalyticsFilterModel {
         'includeGuests: $includeGuests, '
         'organizationId: $organizationId'
         ')';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is AnalyticsFilterModel &&
+        other.normalizedStartDate == normalizedStartDate &&
+        other.normalizedEndDate == normalizedEndDate &&
+        _listEquals(other.normalizedMealTypes, normalizedMealTypes) &&
+        other.normalizedEmployeeNumber == normalizedEmployeeNumber &&
+        other.includeGuests == includeGuests &&
+        other.normalizedOrganizationId == normalizedOrganizationId;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      normalizedStartDate,
+      normalizedEndDate,
+      Object.hashAll(normalizedMealTypes ?? const <String>[]),
+      normalizedEmployeeNumber,
+      includeGuests,
+      normalizedOrganizationId,
+    );
+  }
+
+  static bool _listEquals(List<String>? a, List<String>? b) {
+    if (identical(a, b)) return true;
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+
+    return true;
   }
 }

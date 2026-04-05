@@ -38,18 +38,10 @@ class CostTrendChart extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
-                    height: 220,
-                    child: CustomPaint(
-                      painter: _CostTrendPainter(
-                        values: entries.map((e) => e.value).toList(),
-                        lineColor: theme.colorScheme.primary,
-                        axisColor: Colors.grey.shade400,
-                        gridColor: Colors.grey.shade300,
-                      ),
-                      child: Container(),
-                    ),
+                    height: 260,
+                    child: _CostTrendPlot(entries: entries),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Wrap(
                     spacing: 12,
                     runSpacing: 8,
@@ -68,7 +60,7 @@ class CostTrendChart extends StatelessWidget {
 
   Widget _buildEmptyState(ThemeData theme) {
     return SizedBox(
-      height: 220,
+      height: 240,
       child: Center(
         child: Text(
           'No cost trend data available.',
@@ -84,6 +76,142 @@ class CostTrendChart extends StatelessWidget {
     final parts = input.split('-');
     if (parts.length != 3) return input;
     return '${parts[2]}/${parts[1]}';
+  }
+}
+
+class _CostTrendPlot extends StatelessWidget {
+  const _CostTrendPlot({
+    required this.entries,
+  });
+
+  final List<MapEntry<String, double>> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final values = entries.map((e) => e.value).toList();
+    final maxValue = values.isEmpty
+        ? 1.0
+        : math.max(1.0, values.reduce((a, b) => a > b ? a : b));
+
+    final yTicks = _buildYAxisTicks(maxValue);
+
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 58,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: yTicks.reversed.map((tick) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        _compactCurrency(tick),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              Expanded(
+                child: CustomPaint(
+                  painter: _CostTrendPainter(
+                    values: values,
+                    yTicks: yTicks,
+                    lineColor: theme.colorScheme.primary,
+                    axisColor: Colors.grey.shade400,
+                    gridColor: Colors.grey.shade300,
+                    pointFillColor: theme.colorScheme.primary,
+                    pointStrokeColor: theme.colorScheme.surface,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 20,
+          child: Row(
+            children: List.generate(entries.length, (index) {
+              final label = _compactBottomLabel(
+                entries: entries,
+                index: index,
+              );
+
+              return Expanded(
+                child: Align(
+                  alignment: index == 0
+                      ? Alignment.centerLeft
+                      : index == entries.length - 1
+                          ? Alignment.centerRight
+                          : Alignment.center,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<double> _buildYAxisTicks(double maxValue) {
+    final safeMax = maxValue <= 0 ? 1.0 : maxValue;
+    final step = safeMax / 4.0;
+
+    return <double>[
+      0,
+      step,
+      step * 2,
+      step * 3,
+      step * 4,
+    ];
+  }
+
+  String _compactCurrency(double value) {
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1)}M';
+    }
+    if (value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(1)}K';
+    }
+    return value.toStringAsFixed(0);
+  }
+
+  String _compactBottomLabel({
+    required List<MapEntry<String, double>> entries,
+    required int index,
+  }) {
+    final total = entries.length;
+    final raw = entries[index].key;
+    final parts = raw.split('-');
+    if (parts.length != 3) return raw;
+
+    final compact = '${parts[2]}/${parts[1]}';
+
+    if (total <= 7) return compact;
+    if (index == 0 || index == total - 1) return compact;
+
+    final interval = (total / 4).ceil();
+    if (index % interval == 0) return compact;
+
+    return '';
   }
 }
 
@@ -116,59 +244,73 @@ class _CostLegendChip extends StatelessWidget {
 class _CostTrendPainter extends CustomPainter {
   _CostTrendPainter({
     required this.values,
+    required this.yTicks,
     required this.lineColor,
     required this.axisColor,
     required this.gridColor,
+    required this.pointFillColor,
+    required this.pointStrokeColor,
   });
 
   final List<double> values;
+  final List<double> yTicks;
   final Color lineColor;
   final Color axisColor;
   final Color gridColor;
+  final Color pointFillColor;
+  final Color pointStrokeColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) return;
 
-    const double leftPadding = 28;
-    const double bottomPadding = 20;
-    const double topPadding = 12;
-    const double rightPadding = 12;
+    const double topPadding = 10;
+    const double bottomPadding = 12;
+    const double leftPadding = 4;
+    const double rightPadding = 10;
 
-    final double chartWidth = size.width - leftPadding - rightPadding;
-    final double chartHeight = size.height - topPadding - bottomPadding;
+    final chartWidth = size.width - leftPadding - rightPadding;
+    final chartHeight = size.height - topPadding - bottomPadding;
 
     if (chartWidth <= 0 || chartHeight <= 0) return;
 
-    final Rect chartRect = Rect.fromLTWH(
+    final chartRect = Rect.fromLTWH(
       leftPadding,
       topPadding,
       chartWidth,
       chartHeight,
     );
 
-    final Paint axisPaint = Paint()
+    final axisPaint = Paint()
       ..color = axisColor
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke;
 
-    final Paint gridPaint = Paint()
+    final gridPaint = Paint()
       ..color = gridColor
       ..strokeWidth = 1;
 
-    final Paint linePaint = Paint()
+    final linePaint = Paint()
       ..color = lineColor
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
 
-    final Paint dotPaint = Paint()
-      ..color = lineColor
+    final pointFillPaint = Paint()
+      ..color = pointFillColor
       ..style = PaintingStyle.fill;
 
-    for (int i = 0; i <= 4; i++) {
-      final double y = chartRect.top + (chartHeight / 4) * i;
+    final pointStrokePaint = Paint()
+      ..color = pointStrokeColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final maxValue = yTicks.isEmpty ? 1.0 : yTicks.last.clamp(1.0, double.infinity);
+
+    for (final tick in yTicks) {
+      final ratio = maxValue == 0 ? 0.0 : tick / maxValue;
+      final y = chartRect.bottom - (ratio * chartHeight);
       canvas.drawLine(
         Offset(chartRect.left, y),
         Offset(chartRect.right, y),
@@ -187,47 +329,43 @@ class _CostTrendPainter extends CustomPainter {
       axisPaint,
     );
 
-    final double maxValue = math.max(
-      1.0,
-      values.reduce((a, b) => a > b ? a : b),
-    );
-
-    final Path path = Path();
+    final points = <Offset>[];
 
     for (int i = 0; i < values.length; i++) {
-      final double dx = values.length == 1
+      final dx = values.length == 1
           ? chartRect.left + (chartWidth / 2)
           : chartRect.left + (chartWidth / (values.length - 1)) * i;
 
-      final double normalized = values[i] / maxValue;
-      final double dy = chartRect.bottom - (normalized * chartHeight);
+      final normalized = maxValue == 0 ? 0.0 : (values[i] / maxValue);
+      final dy = chartRect.bottom - (normalized * chartHeight);
 
-      if (i == 0) {
-        path.moveTo(dx, dy);
-      } else {
-        path.lineTo(dx, dy);
-      }
+      points.add(Offset(dx, dy));
     }
 
-    canvas.drawPath(path, linePaint);
+    if (points.isNotEmpty) {
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
 
-    for (int i = 0; i < values.length; i++) {
-      final double dx = values.length == 1
-          ? chartRect.left + (chartWidth / 2)
-          : chartRect.left + (chartWidth / (values.length - 1)) * i;
+      for (int i = 1; i < points.length; i++) {
+        path.lineTo(points[i].dx, points[i].dy);
+      }
 
-      final double normalized = values[i] / maxValue;
-      final double dy = chartRect.bottom - (normalized * chartHeight);
+      canvas.drawPath(path, linePaint);
 
-      canvas.drawCircle(Offset(dx, dy), 4, dotPaint);
+      for (final point in points) {
+        canvas.drawCircle(point, 4.5, pointFillPaint);
+        canvas.drawCircle(point, 4.5, pointStrokePaint);
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _CostTrendPainter oldDelegate) {
     return oldDelegate.values != values ||
+        oldDelegate.yTicks != yTicks ||
         oldDelegate.lineColor != lineColor ||
         oldDelegate.axisColor != axisColor ||
-        oldDelegate.gridColor != gridColor;
+        oldDelegate.gridColor != gridColor ||
+        oldDelegate.pointFillColor != pointFillColor ||
+        oldDelegate.pointStrokeColor != pointStrokeColor;
   }
 }

@@ -18,7 +18,9 @@ class MealCostReportingService {
   }
 
   Timestamp _startOfNextDay(DateTime date) {
-    return Timestamp.fromDate(_normalizeDate(date).add(const Duration(days: 1)));
+    return Timestamp.fromDate(
+      _normalizeDate(date).add(const Duration(days: 1)),
+    );
   }
 
   int _readInt(dynamic value) {
@@ -30,7 +32,7 @@ class MealCostReportingService {
   double _readDouble(dynamic value) {
     if (value is int) return value.toDouble();
     if (value is double) return value;
-    return double.tryParse((value ?? '0').toString()) ?? 0;
+    return double.tryParse((value ?? '0').toString()) ?? 0.0;
   }
 
   String _readText(dynamic value) {
@@ -55,31 +57,46 @@ class MealCostReportingService {
     return 0.0;
   }
 
-  String _extractItemName(Map<String, dynamic> data) {
+  Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
+  }
+
+  String _extractTargetKey(Map<String, dynamic> data) {
     final menuSnapshot = _asMap(data['menu_snapshot']);
     return _firstNonEmpty([
-      _readText(menuSnapshot['item_name']),
-      _readText(data['option_label']),
-      _readText(data['item_name']),
+      _readText(data['rate_target_key']),
+      _readText(data['menu_item_id']),
       _readText(data['menu_option_key']),
+      _readText(menuSnapshot['item_id']),
+      _readText(menuSnapshot['option_key']),
     ]);
   }
 
-  String _extractMenuItemId(Map<String, dynamic> data) {
+  String _extractItemName(Map<String, dynamic> data) {
     final menuSnapshot = _asMap(data['menu_snapshot']);
     return _firstNonEmpty([
-      _readText(menuSnapshot['item_id']),
-      _readText(data['menu_item_id']),
-      _readText(data['menu_option_key']),
-      _readText(menuSnapshot['option_key']),
+      _readText(data['item_name']),
+      _readText(menuSnapshot['item_name']),
+      _readText(data['option_label']),
+      _readText(menuSnapshot['option_label']),
+      _extractTargetKey(data),
     ]);
   }
 
   String _extractCategory(Map<String, dynamic> data) {
     final menuSnapshot = _asMap(data['menu_snapshot']);
     return _firstNonEmpty([
-      _readText(menuSnapshot['item_category']),
       _readText(data['category']),
+      _readText(menuSnapshot['item_category']),
       _readText(data['meal_type']),
     ]);
   }
@@ -95,19 +112,6 @@ class MealCostReportingService {
       return 'guest';
     }
     return 'employee';
-  }
-
-  Map<String, dynamic> _asMap(dynamic value) {
-    if (value is Map<String, dynamic>) return value;
-    if (value is Map) return Map<String, dynamic>.from(value);
-    return <String, dynamic>{};
-  }
-
-  String _firstNonEmpty(List<String> values) {
-    for (final value in values) {
-      if (value.trim().isNotEmpty) return value.trim();
-    }
-    return '';
   }
 
   Future<MealCostDashboardData> getDailyDashboard(DateTime date) async {
@@ -159,7 +163,7 @@ class MealCostReportingService {
       );
       final mealType = _readText(data['meal_type']).toLowerCase();
       final itemName = _extractItemName(data);
-      final menuItemId = _extractMenuItemId(data);
+      final targetKey = _extractTargetKey(data);
       final category = _extractCategory(data);
       final subjectType = _extractSubjectType(data);
 
@@ -195,14 +199,14 @@ class MealCostReportingService {
       subjectBuilder.totalQuantity += quantity;
       subjectBuilder.totalAmount += amount;
 
-      final itemKey = menuItemId.isNotEmpty
-          ? menuItemId.toLowerCase()
+      final itemKey = targetKey.isNotEmpty
+          ? targetKey.toLowerCase()
           : itemName.toLowerCase();
 
       final itemBuilder = itemSummaryMap.putIfAbsent(
         itemKey,
         () => ItemCostSummaryBuilder(
-          menuItemId: menuItemId,
+          menuItemId: targetKey,
           itemName: itemName,
           category: category,
         ),
