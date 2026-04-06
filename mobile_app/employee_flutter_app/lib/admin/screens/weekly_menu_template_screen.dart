@@ -20,6 +20,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   final TextEditingController templateNameController = TextEditingController();
   final FocusNode templateNameFocusNode = FocusNode();
 
+  final TextEditingController itemSearchController = TextEditingController();
+
   final ScrollController _scrollController = ScrollController();
 
   final List<String> weekDays = const [
@@ -43,6 +45,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
 
   String selectedMealType = 'breakfast';
   String savedTemplateFilter = 'all';
+  String selectedFoodTypeFilter = 'all';
+  String appliedItemSearchQuery = '';
   String? editingTemplateId;
   bool isSaving = false;
   String? statusMessage;
@@ -71,8 +75,18 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   void dispose() {
     templateNameController.dispose();
     templateNameFocusNode.dispose();
+    itemSearchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _applyItemSearch() {
+    final value = itemSearchController.text.trim().toLowerCase();
+    if (value == appliedItemSearchQuery) return;
+
+    setState(() {
+      appliedItemSearchQuery = value;
+    });
   }
 
   String formatLabel(String value) {
@@ -147,6 +161,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
       return raw
           .replaceAll('[', '')
           .replaceAll(']', '')
+          .replaceAll('“', '')
+          .replaceAll('”', '')
           .replaceAll('"', '')
           .replaceAll("'", '')
           .split(',')
@@ -157,7 +173,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
         ..sort();
     }
 
-    final legacyCategory = (data['category'] ?? '').toString().trim().toLowerCase();
+    final legacyCategory =
+        (data['category'] ?? '').toString().trim().toLowerCase();
     if (legacyCategory.isNotEmpty) {
       return [legacyCategory];
     }
@@ -200,6 +217,46 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     return <String>[];
   }
 
+  List<String> _buildFoodTypeOptions(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final values = docs
+        .map((doc) => getFoodTypeLabel(doc.data()).trim())
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return ['all', ...values];
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _applySelectionFilters(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs.where((doc) {
+      final data = doc.data();
+      final itemName = getMenuItemName(data, doc.id).toLowerCase();
+      final itemCode = getMenuItemCode(data, doc.id).toLowerCase();
+      final foodType = getFoodTypeLabel(data).toLowerCase();
+      final mealTypes = getMealTypes(data);
+
+      final matchesSearch = appliedItemSearchQuery.isEmpty ||
+          itemName.contains(appliedItemSearchQuery) ||
+          itemCode.contains(appliedItemSearchQuery);
+
+      final matchesFoodType = selectedFoodTypeFilter == 'all' ||
+          foodType == selectedFoodTypeFilter.toLowerCase();
+
+      final matchesMealType = mealTypes.contains(selectedMealType);
+
+      return isItemActive(data) &&
+          isItemVisible(data) &&
+          matchesMealType &&
+          matchesSearch &&
+          matchesFoodType;
+    }).toList();
+  }
+
   Future<String> _generateNextTemplateId() async {
     final snapshot = await _firestore.collection('weekly_menu_templates').get();
 
@@ -235,11 +292,18 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     return '${templateId}_${mealType}_${weekday}_$optionKey';
   }
 
+  void _resetSelectionFilters() {
+    selectedFoodTypeFilter = 'all';
+    appliedItemSearchQuery = '';
+    itemSearchController.clear();
+  }
+
   void resetForm() {
     templateNameController.clear();
     selectedMealType = 'breakfast';
     editingTemplateId = null;
     statusMessage = null;
+    _resetSelectionFilters();
 
     for (final day in weekDays) {
       daySelections[day] = <String>[];
@@ -301,7 +365,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
       }
 
       for (final day in weekDays) {
-        final itemIds = List<String>.from(daySelections[day] ?? const <String>[]);
+        final itemIds =
+            List<String>.from(daySelections[day] ?? const <String>[]);
 
         if (itemIds.isEmpty) {
           continue;
@@ -316,19 +381,23 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
 
         final rowRef = templatesRef.doc(rowDocId);
 
-        batch.set(rowRef, {
-          'template_id': templateId,
-          'template_name': templateName,
-          'weekday': day,
-          'meal_type': selectedMealType,
-          'menu_option_key': _defaultOptionKey,
-          'option_label': _defaultOptionLabel,
-          'item_ids': itemIds,
-          'is_active': true,
-          'is_visible': true,
-          'updated_at': now,
-          if (editingTemplateId == null) 'created_at': now,
-        }, SetOptions(merge: true));
+        batch.set(
+          rowRef,
+          {
+            'template_id': templateId,
+            'template_name': templateName,
+            'weekday': day,
+            'meal_type': selectedMealType,
+            'menu_option_key': _defaultOptionKey,
+            'option_label': _defaultOptionLabel,
+            'item_ids': itemIds,
+            'is_active': true,
+            'is_visible': true,
+            'updated_at': now,
+            if (editingTemplateId == null) 'created_at': now,
+          },
+          SetOptions(merge: true),
+        );
       }
 
       await batch.commit();
@@ -359,9 +428,11 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     selectedMealType = group.mealType;
     editingTemplateId = group.templateId;
     statusMessage = null;
+    _resetSelectionFilters();
 
     for (final day in weekDays) {
-      daySelections[day] = List<String>.from(group.daySelections[day] ?? const []);
+      daySelections[day] =
+          List<String>.from(group.daySelections[day] ?? const []);
       dayExpandedState[day] = false;
     }
 
@@ -464,6 +535,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                       if (value == null) return;
                       setState(() {
                         selectedMealType = value;
+                        _resetSelectionFilters();
                       });
                     },
             ),
@@ -479,6 +551,129 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionFilterSection(
+    List<String> foodTypeOptions,
+  ) {
+    final effectiveFoodType = foodTypeOptions.contains(selectedFoodTypeFilter)
+        ? selectedFoodTypeFilter
+        : 'all';
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            TextField(
+              controller: itemSearchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _applyItemSearch(),
+              decoration: InputDecoration(
+                hintText: 'Search item by name or ID',
+                prefixIcon: IconButton(
+                  tooltip: 'Search',
+                  onPressed: _applyItemSearch,
+                  icon: const Icon(Icons.search),
+                ),
+                suffixIcon: itemSearchController.text.trim().isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: () {
+                          setState(() {
+                            _resetSelectionFilters();
+                          });
+                        },
+                        icon: const Icon(Icons.clear),
+                      )
+                    : null,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final vertical = constraints.maxWidth < 700;
+
+                final foodTypeDropdown = DropdownButtonFormField<String>(
+                  initialValue: effectiveFoodType,
+                  decoration: const InputDecoration(
+                    labelText: 'Food Type Filter',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: foodTypeOptions
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(
+                            value == 'all' ? 'All Food Types' : formatLabel(value),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      selectedFoodTypeFilter = value;
+                    });
+                  },
+                );
+
+                final searchButton = SizedBox(
+                  height: 56,
+                  child: FilledButton.icon(
+                    onPressed: _applyItemSearch,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search'),
+                  ),
+                );
+
+                final clearButton = SizedBox(
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _resetSelectionFilters();
+                      });
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Clear Filters'),
+                  ),
+                );
+
+                if (vertical) {
+                  return Column(
+                    children: [
+                      foodTypeDropdown,
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: searchButton,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: clearButton,
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: foodTypeDropdown),
+                    const SizedBox(width: 12),
+                    searchButton,
+                    const SizedBox(width: 12),
+                    clearButton,
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -504,6 +699,7 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           ),
           OutlinedButton.icon(
             onPressed: () {
+              if (!_scrollController.hasClients) return;
               final max = _scrollController.position.maxScrollExtent;
               _scrollController.animateTo(
                 max,
@@ -547,7 +743,9 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           if (activeMenuItems.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('No active menu items found for selected meal type.'),
+              child: Text(
+                'No active menu items found for current meal type / filters.',
+              ),
             )
           else
             Padding(
@@ -558,6 +756,10 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                   final itemId = doc.id;
                   final itemCode = getMenuItemCode(data, doc.id);
                   final itemName = getMenuItemName(data, doc.id);
+                  final baseUnit = (data['base_unit'] ?? '').toString().trim();
+                  final displayName = baseUnit.isNotEmpty
+                      ? '$itemName ($baseUnit)'
+                      : itemName;
                   final foodType = getFoodTypeLabel(data);
                   final checked = selectedIds.contains(itemId);
 
@@ -565,12 +767,13 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                     dense: true,
                     controlAffinity: ListTileControlAffinity.leading,
                     value: checked,
-                    title: Text(itemName),
+                    title: Text(displayName),
                     subtitle: Text('$itemCode • $foodType'),
                     onChanged: (value) {
                       setState(() {
-                        final updated =
-                            List<String>.from(daySelections[day] ?? const <String>[]);
+                        final updated = List<String>.from(
+                          daySelections[day] ?? const <String>[],
+                        );
 
                         if (value == true) {
                           if (!updated.contains(itemId)) {
@@ -663,7 +866,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   List<_TemplateGroup> _groupTemplateRows(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
-    final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
+    final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped =
+        {};
 
     for (final doc in docs) {
       final data = doc.data();
@@ -726,9 +930,8 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
     }).toList();
 
     groups.sort((a, b) {
-      final nameCompare = a.templateName.toLowerCase().compareTo(
-            b.templateName.toLowerCase(),
-          );
+      final nameCompare =
+          a.templateName.toLowerCase().compareTo(b.templateName.toLowerCase());
       if (nameCompare != 0) return nameCompare;
 
       final mealCompare = a.mealType.compareTo(b.mealType);
@@ -741,13 +944,16 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
   }
 
   Widget _buildDynamicDataSection(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> activeMenuItems,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredActiveMenuItems,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> templateRows,
+    List<String> foodTypeOptions,
   ) {
     var groups = _groupTemplateRows(templateRows);
 
     if (savedTemplateFilter != 'all') {
-      groups = groups.where((group) => group.mealType == savedTemplateFilter).toList();
+      groups = groups
+          .where((group) => group.mealType == savedTemplateFilter)
+          .toList();
     }
 
     return Column(
@@ -763,12 +969,14 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        _buildSelectionFilterSection(foodTypeOptions),
+        const SizedBox(height: 12),
         _buildScrollButtons(),
         const SizedBox(height: 8),
         ...weekDays.map(
           (day) => _buildDayCard(
             day: day,
-            activeMenuItems: activeMenuItems,
+            activeMenuItems: filteredActiveMenuItems,
           ),
         ),
         const SizedBox(height: 6),
@@ -888,36 +1096,49 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                   );
                 }
 
-                final activeMenuItems = (itemSnapshot.data?.docs ?? [])
-                    .where((doc) {
-                      final data = doc.data();
-                      final mealTypes = getMealTypes(data);
+                final List<QueryDocumentSnapshot<Map<String, dynamic>>> allItems =
+                    List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                  itemSnapshot.data?.docs ??
+                      const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+                )..sort((a, b) {
+                        final aData = a.data();
+                        final bData = b.data();
 
-                      return isItemActive(data) &&
-                          isItemVisible(data) &&
-                          mealTypes.contains(selectedMealType);
-                    })
-                    .toList()
-                  ..sort((a, b) {
-                    final aData = a.data();
-                    final bData = b.data();
+                        final sortCompare =
+                            getSortOrder(aData).compareTo(getSortOrder(bData));
+                        if (sortCompare != 0) return sortCompare;
 
-                    final sortCompare =
-                        getSortOrder(aData).compareTo(getSortOrder(bData));
-                    if (sortCompare != 0) return sortCompare;
+                        final nameCompare = getMenuItemName(aData, a.id)
+                            .toLowerCase()
+                            .compareTo(
+                              getMenuItemName(bData, b.id).toLowerCase(),
+                            );
+                        if (nameCompare != 0) return nameCompare;
 
-                    final nameCompare = getMenuItemName(aData, a.id)
-                        .toLowerCase()
-                        .compareTo(getMenuItemName(bData, b.id).toLowerCase());
-                    if (nameCompare != 0) return nameCompare;
+                        return a.id.compareTo(b.id);
+                      });
 
-                    return a.id.compareTo(b.id);
-                  });
+                final mealTypeMatchedItems = allItems.where((doc) {
+                  final data = doc.data();
+                  final mealTypes = getMealTypes(data);
+
+                  return isItemActive(data) &&
+                      isItemVisible(data) &&
+                      mealTypes.contains(selectedMealType);
+                }).toList();
+
+                final foodTypeOptions =
+                    _buildFoodTypeOptions(mealTypeMatchedItems);
+
+                if (!foodTypeOptions.contains(selectedFoodTypeFilter)) {
+                  selectedFoodTypeFilter = 'all';
+                }
+
+                final filteredActiveMenuItems =
+                    _applySelectionFilters(mealTypeMatchedItems);
 
                 return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _firestore
-                      .collection('weekly_menu_templates')
-                      .snapshots(),
+                  stream: _firestore.collection('weekly_menu_templates').snapshots(),
                   builder: (context, templateSnapshot) {
                     if (templateSnapshot.connectionState ==
                         ConnectionState.waiting) {
@@ -935,25 +1156,36 @@ class _WeeklyMenuTemplateScreenState extends State<WeeklyMenuTemplateScreen> {
                       );
                     }
 
-                    final templateRows = (templateSnapshot.data?.docs ?? [])
-                        .where((doc) {
-                          final data = doc.data();
-                          final weekday =
-                              (data['weekday'] ?? '').toString().trim().toLowerCase();
-                          final mealType =
-                              (data['meal_type'] ?? '').toString().trim().toLowerCase();
+                    final List<QueryDocumentSnapshot<Map<String, dynamic>>>
+                        templateRows =
+                        List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                      templateSnapshot.data?.docs ??
+                          const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+                    ).where((doc) {
+                      final data = doc.data();
+                      final weekday = (data['weekday'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
+                      final mealType = (data['meal_type'] ?? '')
+                          .toString()
+                          .trim()
+                          .toLowerCase();
 
-                          return weekDays.contains(weekday) &&
-                              mealType.isNotEmpty &&
-                              isTemplateRowVisible(data);
-                        })
-                        .toList();
+                      return weekDays.contains(weekday) &&
+                          mealType.isNotEmpty &&
+                          isTemplateRowVisible(data);
+                    }).toList();
 
                     return ListView(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
                       children: [
-                        _buildDynamicDataSection(activeMenuItems, templateRows),
+                        _buildDynamicDataSection(
+                          filteredActiveMenuItems,
+                          templateRows,
+                          foodTypeOptions,
+                        ),
                       ],
                     );
                   },

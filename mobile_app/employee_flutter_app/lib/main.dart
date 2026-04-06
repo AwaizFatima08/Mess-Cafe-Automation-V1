@@ -266,22 +266,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Image.asset(
-                          'assets/images/fg_logo.png',
-                          height: 34,
+                          'assets/images/club_logo.png',
+                          height: 80,
                           errorBuilder: (context, error, stackTrace) {
                             return const SizedBox(
-                              height: 40,
-                              width: 40,
+                              height: 100,
+                              width: 100,
                             );
                           },
                         ),
                         Image.asset(
                           'assets/images/ffl_logo.png',
-                          height: 40,
+                          height: 80,
                           errorBuilder: (context, error, stackTrace) {
                             return const SizedBox(
-                              height: 40,
-                              width: 40,
+                              height: 100,
+                              width: 100,
                             );
                           },
                         ),
@@ -380,37 +380,49 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Column(
-                      children: [
-                        Text(
-                          'Creative Team:',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
+
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight,
+                        borderRadius: BorderRadius.circular(AppRadii.md),
+                        border: Border.all(color: AppColors.accentSoft),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            'Creative Team',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Awaiz Fatima',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
+                          const SizedBox(height: 8),
+
+                          Text(
+                            'Awaiz Fatima',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textPrimary,
+                              height: 1.6,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Dr. Humayun Shahzad',
-                          style: theme.textTheme.bodySmall?.copyWith(                                   
-                            color: AppColors.textSecondary,
+                          Text(
+                            'Dr. Humayun Shahzad',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textPrimary,
+                              height: 1.6,
+                            ),
                           ),
-                        ),  
-                        const SizedBox(height: 2),
-                        Text(
-                          'Raja Ghazanfar Ansari',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
+                          Text(
+                            'Raja Ghazanfar Ansari',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textPrimary,
+                              height: 1.6,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
                 ),

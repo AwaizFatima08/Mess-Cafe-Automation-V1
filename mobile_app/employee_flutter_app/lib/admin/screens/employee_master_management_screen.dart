@@ -24,6 +24,7 @@ class _EmployeeMasterManagementScreenState
   final TextEditingController _employeeEmailController = TextEditingController();
   final TextEditingController _employeeCnicLast4Controller =
       TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   final FocusNode _employeeNumberFocusNode = FocusNode();
   final FocusNode _employeeNameFocusNode = FocusNode();
@@ -34,6 +35,8 @@ class _EmployeeMasterManagementScreenState
   bool _isSavingEmployeeMaster = false;
   String? _employeeMasterMessage;
   String? _editingEmployeeNumber;
+
+  String _searchQuery = '';
 
   CollectionReference<Map<String, dynamic>> get _employeesRef =>
       _firestore.collection('employees');
@@ -47,6 +50,7 @@ class _EmployeeMasterManagementScreenState
     _employeeNameController.dispose();
     _employeeEmailController.dispose();
     _employeeCnicLast4Controller.dispose();
+    _searchController.dispose();
 
     _employeeNumberFocusNode.dispose();
     _employeeNameFocusNode.dispose();
@@ -68,6 +72,19 @@ class _EmployeeMasterManagementScreenState
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _applySearch() {
+    setState(() {
+      _searchQuery = _searchController.text.trim().toLowerCase();
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+    });
   }
 
   void _loadEmployeeMasterForEdit(
@@ -154,6 +171,7 @@ class _EmployeeMasterManagementScreenState
         'name': employeeName,
         'employee_name': employeeName,
         'display_name': employeeName,
+        'full_name': employeeName,
         'email': employeeEmail,
         'cnic_last_4': cnicLast4,
         'is_active': _newEmployeeIsActive,
@@ -261,6 +279,7 @@ class _EmployeeMasterManagementScreenState
       'employee_number': employeeNumber,
       'display_name': employeeName,
       'employee_name': employeeName,
+      'full_name': employeeName,
       'email': employeeEmail,
       'is_active': isActive,
       'updated_at': FieldValue.serverTimestamp(),
@@ -279,7 +298,31 @@ class _EmployeeMasterManagementScreenState
     }
 
     final name = (data['name'] ?? '').toString().trim();
-    return name;
+    if (name.isNotEmpty) {
+      return name;
+    }
+
+    final fullName = (data['full_name'] ?? '').toString().trim();
+    return fullName;
+  }
+
+  bool _matchesSearch(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    if (_searchQuery.isEmpty) {
+      return true;
+    }
+
+    final data = doc.data();
+    final employeeNumber = doc.id.toLowerCase();
+    final employeeName = _resolveEmployeeName(data).toLowerCase();
+    final email = (data['email'] ?? '').toString().trim().toLowerCase();
+    final cnicLast4 = (data['cnic_last_4'] ?? '').toString().trim().toLowerCase();
+
+    return employeeNumber.contains(_searchQuery) ||
+        employeeName.contains(_searchQuery) ||
+        email.contains(_searchQuery) ||
+        cnicLast4.contains(_searchQuery);
   }
 
   Widget _buildEmployeeMasterFormCard() {
@@ -444,9 +487,69 @@ class _EmployeeMasterManagementScreenState
     );
   }
 
+  Widget _buildSearchCard() {
+    final hasSearch = _searchQuery.isNotEmpty;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 420,
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _applySearch(),
+                    decoration: InputDecoration(
+                      labelText: 'Search employee master',
+                      hintText: 'Name, email, employee number, or CNIC last 4',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.trim().isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: _clearSearch,
+                              icon: const Icon(Icons.close),
+                            ),
+                    ),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _applySearch,
+                  icon: const Icon(Icons.search),
+                  label: const Text('Search'),
+                ),
+                if (hasSearch)
+                  OutlinedButton.icon(
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Clear'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                hasSearch ? 'Search: $_searchQuery' : 'Search: none',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmployeeMasterListCard() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _employeesRef.orderBy('employee_name').snapshots(),
+      stream: _employeesRef.orderBy('full_name').snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Card(
@@ -469,6 +572,7 @@ class _EmployeeMasterManagementScreenState
         }
 
         final docs = snapshot.data?.docs ?? [];
+        final filteredDocs = docs.where(_matchesSearch).toList();
 
         return Card(
           child: Padding(
@@ -485,11 +589,17 @@ class _EmployeeMasterManagementScreenState
                 ),
                 const SizedBox(height: 8),
                 Text('Total employee master records: ${docs.length}'),
+                const SizedBox(height: 4),
+                Text('Showing records: ${filteredDocs.length}'),
                 const SizedBox(height: 12),
-                if (docs.isEmpty)
-                  const Text('No employee master records found.')
+                if (filteredDocs.isEmpty)
+                  Text(
+                    _searchQuery.isEmpty
+                        ? 'No employee master records found.'
+                        : 'No employee master records matched your search.',
+                  )
                 else
-                  ...docs.map((doc) {
+                  ...filteredDocs.map((doc) {
                     final data = doc.data();
                     final resolvedName = _resolveEmployeeName(data);
                     final employeeName = resolvedName.isEmpty
@@ -598,6 +708,8 @@ class _EmployeeMasterManagementScreenState
           ),
           const SizedBox(height: 16),
           _buildEmployeeMasterFormCard(),
+          const SizedBox(height: 16),
+          _buildSearchCard(),
           const SizedBox(height: 16),
           _buildEmployeeMasterListCard(),
         ],

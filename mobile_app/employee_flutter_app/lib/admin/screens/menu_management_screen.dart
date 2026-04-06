@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../widgets/add_menu_item_dialog.dart';
 import '../widgets/edit_menu_item_dialog.dart';
 
-class MenuManagementScreen extends StatelessWidget {
+class MenuManagementScreen extends StatefulWidget {
   final String userEmail;
 
   const MenuManagementScreen({
@@ -12,8 +12,34 @@ class MenuManagementScreen extends StatelessWidget {
     required this.userEmail,
   });
 
+  @override
+  State<MenuManagementScreen> createState() => _MenuManagementScreenState();
+}
+
+class _MenuManagementScreenState extends State<MenuManagementScreen> {
+  final TextEditingController _searchController = TextEditingController();
+
+  String _appliedSearchQuery = '';
+  String _selectedFoodType = 'All';
+  String _selectedMealType = 'All';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> loadMenuItems() {
     return FirebaseFirestore.instance.collection('menu_items').snapshots();
+  }
+
+  void _applySearch() {
+    final value = _searchController.text.trim().toLowerCase();
+    if (value == _appliedSearchQuery) return;
+
+    setState(() {
+      _appliedSearchQuery = value;
+    });
   }
 
   bool isItemActive(Map<String, dynamic> data) {
@@ -109,7 +135,8 @@ class MenuManagementScreen extends StatelessWidget {
         ..sort();
     }
 
-    final legacyCategory = (data['category'] ?? '').toString().trim().toLowerCase();
+    final legacyCategory =
+        (data['category'] ?? '').toString().trim().toLowerCase();
     if (legacyCategory.isNotEmpty) {
       return [legacyCategory];
     }
@@ -147,8 +174,6 @@ class MenuManagementScreen extends StatelessWidget {
 
     return {
       ...data,
-
-      // Normalized locked-schema aliases
       'name': itemName,
       'item_Id': getItemCode(data, docId),
       'available_meal_types': mealTypes,
@@ -157,8 +182,6 @@ class MenuManagementScreen extends StatelessWidget {
       'estimated_price': getEstimatedPrice(data),
       'is_active': isItemActive(data),
       'is_visible': isItemVisible(data),
-
-      // Legacy compatibility aliases for any dialog still expecting them
       'item_name': itemName,
       'category': mealTypes.isNotEmpty ? mealTypes.first : '',
     };
@@ -172,7 +195,10 @@ class MenuManagementScreen extends StatelessWidget {
     try {
       final nextActive = !isItemActive(data);
 
-      await FirebaseFirestore.instance.collection('menu_items').doc(docId).update({
+      await FirebaseFirestore.instance
+          .collection('menu_items')
+          .doc(docId)
+          .update({
         'is_active': nextActive,
         'updated_at': FieldValue.serverTimestamp(),
       });
@@ -199,6 +225,206 @@ class MenuManagementScreen extends StatelessWidget {
 
   Color _statusColor(bool active) {
     return active ? Colors.green : Colors.red;
+  }
+
+  List<String> _buildFoodTypeOptions(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final values = docs
+        .map((doc) => getFoodTypeLabel(doc.data()))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return ['All', ...values];
+  }
+
+  List<String> _buildMealTypeOptions(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final values = <String>{};
+
+    for (final doc in docs) {
+      values.addAll(getMealTypes(doc.data()));
+    }
+
+    final sorted = values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return ['All', ...sorted];
+  }
+
+  bool _matchesFilters(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final itemName = getItemName(data, doc.id).toLowerCase();
+    final itemCode = getItemCode(data, doc.id).toLowerCase();
+    final foodType = getFoodTypeLabel(data).toLowerCase();
+    final mealTypes = getMealTypes(data);
+
+    final matchesSearch = _appliedSearchQuery.isEmpty ||
+        itemName.contains(_appliedSearchQuery) ||
+        itemCode.contains(_appliedSearchQuery);
+
+    final matchesFoodType = _selectedFoodType == 'All' ||
+        foodType == _selectedFoodType.toLowerCase();
+
+    final matchesMealType = _selectedMealType == 'All' ||
+        mealTypes.contains(_selectedMealType.toLowerCase());
+
+    return matchesSearch && matchesFoodType && matchesMealType;
+  }
+
+  void _clearFilters() {
+    _searchController.clear();
+    setState(() {
+      _appliedSearchQuery = '';
+      _selectedFoodType = 'All';
+      _selectedMealType = 'All';
+    });
+  }
+
+  Widget _buildSearchAndFilters(
+    List<String> foodTypeOptions,
+    List<String> mealTypeOptions,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _applySearch(),
+              decoration: InputDecoration(
+                hintText: 'Search by item name or item ID',
+                prefixIcon: IconButton(
+                  tooltip: 'Search',
+                  onPressed: _applySearch,
+                  icon: const Icon(Icons.search),
+                ),
+                suffixIcon: _searchController.text.trim().isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        onPressed: _clearFilters,
+                        icon: const Icon(Icons.clear),
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final useVertical = constraints.maxWidth < 700;
+
+                final foodTypeDropdown = DropdownButtonFormField<String>(
+                  initialValue: foodTypeOptions.contains(_selectedFoodType)
+                      ? _selectedFoodType
+                      : 'All',
+                  decoration: InputDecoration(
+                    labelText: 'Food Type',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: foodTypeOptions
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _selectedFoodType = value;
+                    });
+                  },
+                );
+
+                final mealTypeDropdown = DropdownButtonFormField<String>(
+                  initialValue: mealTypeOptions.contains(_selectedMealType)
+                      ? _selectedMealType
+                      : 'All',
+                  decoration: InputDecoration(
+                    labelText: 'Meal Type',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  items: mealTypeOptions
+                      .map(
+                        (value) => DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _selectedMealType = value;
+                    });
+                  },
+                );
+
+                final searchButton = SizedBox(
+                  height: 56,
+                  child: FilledButton.icon(
+                    onPressed: _applySearch,
+                    icon: const Icon(Icons.search),
+                    label: const Text('Search'),
+                  ),
+                );
+
+                final clearButton = SizedBox(
+                  height: 56,
+                  child: OutlinedButton.icon(
+                    onPressed: _clearFilters,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Clear'),
+                  ),
+                );
+
+                if (useVertical) {
+                  return Column(
+                    children: [
+                      foodTypeDropdown,
+                      const SizedBox(height: 12),
+                      mealTypeDropdown,
+                      const SizedBox(height: 12),
+                      SizedBox(width: double.infinity, child: searchButton),
+                      const SizedBox(height: 12),
+                      SizedBox(width: double.infinity, child: clearButton),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: foodTypeDropdown),
+                    const SizedBox(width: 12),
+                    Expanded(child: mealTypeDropdown),
+                    const SizedBox(width: 12),
+                    searchButton,
+                    const SizedBox(width: 12),
+                    clearButton,
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -232,22 +458,38 @@ class MenuManagementScreen extends StatelessWidget {
             );
           }
 
-          final docs = [...(snapshot.data?.docs ?? [])]
-            ..sort((a, b) {
-              final aData = a.data();
-              final bData = b.data();
+          final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+              List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+            snapshot.data?.docs ??
+                const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+          )..sort((a, b) {
+                  final aData = a.data();
+                  final bData = b.data();
 
-              final sortCompare =
-                  getSortOrder(aData).compareTo(getSortOrder(bData));
-              if (sortCompare != 0) return sortCompare;
+                  final sortCompare =
+                      getSortOrder(aData).compareTo(getSortOrder(bData));
+                  if (sortCompare != 0) return sortCompare;
 
-              final nameCompare = getItemName(aData, a.id)
-                  .toLowerCase()
-                  .compareTo(getItemName(bData, b.id).toLowerCase());
-              if (nameCompare != 0) return nameCompare;
+                  final nameCompare = getItemName(aData, a.id)
+                      .toLowerCase()
+                      .compareTo(getItemName(bData, b.id).toLowerCase());
+                  if (nameCompare != 0) return nameCompare;
 
-              return a.id.compareTo(b.id);
-            });
+                  return a.id.compareTo(b.id);
+                });
+
+          final foodTypeOptions = _buildFoodTypeOptions(docs);
+          final mealTypeOptions = _buildMealTypeOptions(docs);
+
+          if (!foodTypeOptions.contains(_selectedFoodType)) {
+            _selectedFoodType = 'All';
+          }
+          if (!mealTypeOptions.contains(_selectedMealType)) {
+            _selectedMealType = 'All';
+          }
+
+          final List<QueryDocumentSnapshot<Map<String, dynamic>>> filteredDocs =
+              docs.where(_matchesFilters).toList();
 
           return Padding(
             padding: const EdgeInsets.all(20),
@@ -255,7 +497,7 @@ class MenuManagementScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Logged in as: $userEmail',
+                  'Logged in as: ${widget.userEmail}',
                   style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 12),
@@ -273,11 +515,13 @@ class MenuManagementScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Text('Total: ${docs.length}'),
+                        Text('Total: ${filteredDocs.length}/${docs.length}'),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                _buildSearchAndFilters(foodTypeOptions, mealTypeOptions),
                 const SizedBox(height: 12),
                 if (docs.isEmpty)
                   const Expanded(
@@ -285,15 +529,25 @@ class MenuManagementScreen extends StatelessWidget {
                       child: Text('No menu items found'),
                     ),
                   )
+                else if (filteredDocs.isEmpty)
+                  const Expanded(
+                    child: Center(
+                      child: Text('No menu items match current filters'),
+                    ),
+                  )
                 else
                   Expanded(
                     child: ListView.builder(
-                      itemCount: docs.length,
+                      itemCount: filteredDocs.length,
                       itemBuilder: (context, index) {
-                        final doc = docs[index];
+                        final doc = filteredDocs[index];
                         final data = doc.data();
 
                         final itemName = getItemName(data, doc.id);
+                        final baseUnit = (data['base_unit'] ?? '').toString().trim();
+                        final displayName = baseUnit.isNotEmpty
+                            ? '$itemName ($baseUnit)'
+                            : itemName;
                         final itemCode = getItemCode(data, doc.id);
                         final mealTypes = getMealTypes(data);
                         final foodType = getFoodTypeLabel(data);
@@ -306,7 +560,7 @@ class MenuManagementScreen extends StatelessWidget {
                             leading: Icon(
                               getItemIcon(mealTypes, foodType),
                             ),
-                            title: Text(itemName),
+                            title: Text(displayName),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -353,7 +607,8 @@ class MenuManagementScreen extends StatelessWidget {
                                       context: context,
                                       builder: (_) => EditMenuItemDialog(
                                         itemId: doc.id,
-                                        existingData: buildEditPayload(data, doc.id),
+                                        existingData:
+                                            buildEditPayload(data, doc.id),
                                       ),
                                     );
                                   },
