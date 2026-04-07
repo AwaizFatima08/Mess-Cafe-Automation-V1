@@ -99,9 +99,21 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     });
   }
 
+  DateTime _startOfDay(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _resolveOperationalReferenceDate() {
+    final now = DateTime.now();
+    if (now.hour < 6) {
+      return _startOfDay(now.subtract(const Duration(days: 1)));
+    }
+    return _startOfDay(now);
+  }
+
   Future<DailyResolvedMenu?> _loadTodayMenu() {
-    final today = _startOfDay(DateTime.now());
-    return _menuResolverService.getBookingMenuForDate(today);
+    final operationalDate = _resolveOperationalReferenceDate();
+    return _menuResolverService.getBookingMenuForDate(operationalDate);
   }
 
   Future<void> _refreshDashboard() async {
@@ -112,10 +124,6 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
     });
 
     await future;
-  }
-
-  DateTime _startOfDay(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
   }
 
   String _formatDate(DateTime date) {
@@ -202,6 +210,9 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
         },
       ),
     );
+
+    if (!mounted) return;
+    await _refreshDashboard();
   }
 
   Future<void> _openDineInReservation() {
@@ -329,7 +340,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
 
   Widget _buildHeaderCard() {
     final theme = Theme.of(context);
-    final today = _startOfDay(DateTime.now());
+    final operationalDate = _resolveOperationalReferenceDate();
 
     return Container(
       decoration: BoxDecoration(
@@ -379,7 +390,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    'Today: ${_weekdayLabel(today)}, ${_formatDate(today)}',
+                    'Operational Date: ${_weekdayLabel(operationalDate)}, ${_formatDate(operationalDate)}',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.white.withValues(alpha: 0.88),
                     ),
@@ -569,7 +580,7 @@ class _EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'No active menu could be resolved for today.',
+                'No active menu could be resolved for the operational date.',
                 style: theme.textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.md),

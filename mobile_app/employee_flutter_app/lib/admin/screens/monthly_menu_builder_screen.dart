@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'menu_cycle_management_screen.dart';
+
 class MonthlyMenuBuilderScreen extends StatefulWidget {
   final String userEmail;
 
@@ -115,6 +117,18 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
     });
   }
 
+  Future<void> _openMenuCycleManagement() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MenuCycleManagementScreen(
+          userEmail: widget.userEmail,
+        ),
+      ),
+    );
+
+    await _refreshView();
+  }
+
   bool _cycleTouchesSelectedMonth(Map<String, dynamic> data) {
     final start = _readDate(data['start_date']);
     final end = _readDate(data['end_date']);
@@ -134,6 +148,38 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
         normalizedEnd == null || normalizedEnd.isAfter(monthStart);
 
     return startsBeforeMonthEnds && endsAfterMonthStarts;
+  }
+
+  Map<String, String> _buildTemplateLabelMap(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final Map<String, String> labels = <String, String>{};
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final templateId = (data['template_id'] ?? '').toString().trim();
+      final templateName = (data['template_name'] ?? '').toString().trim();
+
+      if (templateId.isEmpty) continue;
+      labels[templateId] = templateName.isEmpty ? templateId : templateName;
+    }
+
+    return labels;
+  }
+
+  String _templateDisplayName(
+    Map<String, String> templateLabelMap,
+    String templateId,
+  ) {
+    final normalizedId = templateId.trim();
+    if (normalizedId.isEmpty) return '—';
+
+    final resolvedName = (templateLabelMap[normalizedId] ?? '').trim();
+    if (resolvedName.isEmpty) {
+      return normalizedId;
+    }
+
+    return '$resolvedName ($normalizedId)';
   }
 
   Widget _buildHeaderCard() {
@@ -161,7 +207,7 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'This screen now serves as a month-wise operational view over saved menu cycles. Cycle creation and activation remain controlled through Menu Cycle Management.',
+                    'This screen is the month-wise review of saved operational cycles. Build or edit actual cycles through Menu Cycle Management.',
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 10),
@@ -193,6 +239,11 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
                         )
                       : const Icon(Icons.refresh),
                   label: Text(_isLoading ? 'Refreshing' : 'Refresh'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _openMenuCycleManagement,
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('Manage Cycles'),
                 ),
               ],
             ),
@@ -279,7 +330,10 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
     );
   }
 
-  Widget _buildCycleCard(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+  Widget _buildCycleCard(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, String> templateLabelMap,
+  ) {
     final data = doc.data();
     final cycleName =
         (data['cycle_name'] ?? '').toString().trim().isEmpty
@@ -341,11 +395,21 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
-            Text('Breakfast: ${breakfastTemplateId.isEmpty ? '—' : breakfastTemplateId}'),
-            Text('Lunch Template 1: ${lunchTemplate1Id.isEmpty ? '—' : lunchTemplate1Id}'),
-            Text('Lunch Template 2: ${lunchTemplate2Id.isEmpty ? '—' : lunchTemplate2Id}'),
-            Text('Dinner Template 1: ${dinnerTemplate1Id.isEmpty ? '—' : dinnerTemplate1Id}'),
-            Text('Dinner Template 2: ${dinnerTemplate2Id.isEmpty ? '—' : dinnerTemplate2Id}'),
+            Text(
+              'Breakfast: ${_templateDisplayName(templateLabelMap, breakfastTemplateId)}',
+            ),
+            Text(
+              'Lunch Template 1: ${_templateDisplayName(templateLabelMap, lunchTemplate1Id)}',
+            ),
+            Text(
+              'Lunch Template 2: ${_templateDisplayName(templateLabelMap, lunchTemplate2Id)}',
+            ),
+            Text(
+              'Dinner Template 1: ${_templateDisplayName(templateLabelMap, dinnerTemplate1Id)}',
+            ),
+            Text(
+              'Dinner Template 2: ${_templateDisplayName(templateLabelMap, dinnerTemplate2Id)}',
+            ),
             const SizedBox(height: 10),
             Text('Created By: ${createdBy.isEmpty ? '—' : createdBy}'),
             Text('Updated By: ${updatedBy.isEmpty ? '—' : updatedBy}'),
@@ -357,94 +421,122 @@ class _MonthlyMenuBuilderScreenState extends State<MonthlyMenuBuilderScreen> {
 
   Widget _buildBody() {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _firestore.collection('menu_cycles').snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting && !_isLoading) {
+      stream: _firestore.collection('weekly_menu_templates').snapshots(),
+      builder: (context, templateSnapshot) {
+        if (templateSnapshot.connectionState == ConnectionState.waiting &&
+            !_isLoading) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        if (snapshot.hasError) {
+        if (templateSnapshot.hasError) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                'Failed to load menu cycles: ${snapshot.error}',
+                'Failed to load templates: ${templateSnapshot.error}',
                 textAlign: TextAlign.center,
               ),
             ),
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        final templateDocs = templateSnapshot.data?.docs ?? [];
+        final templateLabelMap = _buildTemplateLabelMap(templateDocs);
 
-        final monthCycles = docs.where((doc) {
-          return _cycleTouchesSelectedMonth(doc.data());
-        }).toList()
-          ..sort((a, b) {
-            final aData = a.data();
-            final bData = b.data();
-
-            final aActive = _isCycleActive(aData);
-            final bActive = _isCycleActive(bData);
-
-            if (aActive != bActive) {
-              return aActive ? -1 : 1;
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _firestore.collection('menu_cycles').snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !_isLoading) {
+              return const Center(child: CircularProgressIndicator());
             }
 
-            final aStart = _readDate(aData['start_date']) ?? DateTime(1900);
-            final bStart = _readDate(bData['start_date']) ?? DateTime(1900);
-
-            return bStart.compareTo(aStart);
-          });
-
-        return RefreshIndicator(
-          onRefresh: _refreshView,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _buildHeaderCard(),
-              const SizedBox(height: 12),
-              _buildMonthWindowCard(),
-              const SizedBox(height: 12),
-              _buildStatusCard(),
-              if (_statusMessage != null) const SizedBox(height: 12),
-              Card(
+            if (snapshot.hasError) {
+              return Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Cycle Coverage for Selected Month',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'This planner is now read-only for monthly review. Use Menu Cycle Management to create, edit, or activate operational cycles.',
-                      ),
-                      const SizedBox(height: 14),
-                      _buildCycleSummaryChips(monthCycles),
-                    ],
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Failed to load menu cycles: ${snapshot.error}',
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (monthCycles.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text(
-                      'No menu cycles overlap with the selected month.',
+              );
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+
+            final monthCycles = docs.where((doc) {
+              return _cycleTouchesSelectedMonth(doc.data());
+            }).toList()
+              ..sort((a, b) {
+                final aData = a.data();
+                final bData = b.data();
+
+                final aActive = _isCycleActive(aData);
+                final bActive = _isCycleActive(bData);
+
+                if (aActive != bActive) {
+                  return aActive ? -1 : 1;
+                }
+
+                final aStart = _readDate(aData['start_date']) ?? DateTime(1900);
+                final bStart = _readDate(bData['start_date']) ?? DateTime(1900);
+
+                return bStart.compareTo(aStart);
+              });
+
+            return RefreshIndicator(
+              onRefresh: _refreshView,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  _buildHeaderCard(),
+                  const SizedBox(height: 12),
+                  _buildMonthWindowCard(),
+                  const SizedBox(height: 12),
+                  _buildStatusCard(),
+                  if (_statusMessage != null) const SizedBox(height: 12),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Cycle Coverage for Selected Month',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'This planner is read-only for monthly review. Use Manage Cycles to create, edit, or activate the operational cycle.',
+                          ),
+                          const SizedBox(height: 14),
+                          _buildCycleSummaryChips(monthCycles),
+                        ],
+                      ),
                     ),
                   ),
-                )
-              else
-                ...monthCycles.map(_buildCycleCard),
-            ],
-          ),
+                  const SizedBox(height: 12),
+                  if (monthCycles.isEmpty)
+                    const Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Text(
+                          'No menu cycles overlap with the selected month.',
+                        ),
+                      ),
+                    )
+                  else
+                    ...monthCycles.map(
+                      (doc) => _buildCycleCard(doc, templateLabelMap),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );

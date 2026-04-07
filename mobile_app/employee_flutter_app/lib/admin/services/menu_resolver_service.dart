@@ -12,8 +12,8 @@ class MenuResolverService {
 
   final Map<String, Map<String, dynamic>?> _rawMenuCacheByDate = {};
   final Map<String, DailyResolvedMenu?> _bookingMenuCacheByDate = {};
-  final Map<String, Map<String, dynamic>?> _templateCacheById = {};
   final Map<String, Map<String, dynamic>?> _menuItemCacheById = {};
+  final Map<String, List<Map<String, dynamic>>> _templateRowCacheByKey = {};
 
   Future<Map<String, dynamic>?> getMenuForDate(
     DateTime date, {
@@ -233,8 +233,8 @@ class MenuResolverService {
   void clearAllCaches() {
     _rawMenuCacheByDate.clear();
     _bookingMenuCacheByDate.clear();
-    _templateCacheById.clear();
     _menuItemCacheById.clear();
+    _templateRowCacheByKey.clear();
   }
 
   void clearDateCache(DateTime date) {
@@ -330,33 +330,50 @@ class MenuResolverService {
     }
 
     final String trimmedTemplateId = templateId.trim();
+    final String normalizedMealType = expectedMealType.trim().toLowerCase();
+    final String normalizedWeekday = weekday.trim().toLowerCase();
+    final String templateCacheKey =
+        '$trimmedTemplateId|$normalizedMealType|$normalizedWeekday';
 
-    Map<String, dynamic>? templateData;
-    if (!forceRefresh && _templateCacheById.containsKey(trimmedTemplateId)) {
-      templateData = _templateCacheById[trimmedTemplateId];
+    List<Map<String, dynamic>> templateRows = <Map<String, dynamic>>[];
+
+    if (!forceRefresh && _templateRowCacheByKey.containsKey(templateCacheKey)) {
+      templateRows = _templateRowCacheByKey[templateCacheKey]!;
     } else {
-      final DocumentSnapshot<Map<String, dynamic>> templateDoc = await _firestore
+      final QuerySnapshot<Map<String, dynamic>> templateQuery = await _firestore
           .collection('weekly_menu_templates')
-          .doc(trimmedTemplateId)
+          .where('template_id', isEqualTo: trimmedTemplateId)
+          .where('meal_type', isEqualTo: normalizedMealType)
+          .where('weekday', isEqualTo: normalizedWeekday)
+          .limit(10)
           .get();
 
-      if (!templateDoc.exists || templateDoc.data() == null) {
-        _templateCacheById[trimmedTemplateId] = null;
-        return <Map<String, dynamic>>[];
-      }
+      templateRows = templateQuery.docs
+          .map((doc) => <String, dynamic>{
+                ...Map<String, dynamic>.from(doc.data()),
+                '_doc_id': doc.id,
+              })
+          .toList();
 
-      templateData = Map<String, dynamic>.from(templateDoc.data()!);
-      _templateCacheById[trimmedTemplateId] = templateData;
+      _templateRowCacheByKey[templateCacheKey] = templateRows;
     }
 
-    if (templateData == null) {
+    if (templateRows.isEmpty) {
       return <Map<String, dynamic>>[];
     }
 
-    final List<String> itemIds = _extractTemplateItemIds(
-      templateData: templateData,
-      weekday: weekday,
-    );
+    Map<String, dynamic>? selectedRow;
+
+    for (final row in templateRows) {
+      if (_isTemplateRowActive(row)) {
+        selectedRow = row;
+        break;
+      }
+    }
+
+    selectedRow ??= templateRows.first;
+
+    final List<String> itemIds = _extractTemplateItemIdsFromRow(selectedRow);
 
     if (itemIds.isEmpty) {
       return <Map<String, dynamic>>[];
@@ -393,14 +410,13 @@ class MenuResolverService {
       final Map<String, dynamic> normalizedItem = _normalizeMenuItem(
         itemId: itemId,
         itemData: itemData,
-        expectedMealType: expectedMealType,
+        expectedMealType: normalizedMealType,
       );
 
       final String resolvedMealType =
           (normalizedItem['meal_type'] ?? '').toString().trim().toLowerCase();
 
-      if (resolvedMealType.isNotEmpty &&
-          resolvedMealType != expectedMealType.toLowerCase()) {
+      if (resolvedMealType.isNotEmpty && resolvedMealType != normalizedMealType) {
         continue;
       }
 
@@ -410,31 +426,37 @@ class MenuResolverService {
     return resolvedItems;
   }
 
-  List<String> _extractTemplateItemIds({
-    required Map<String, dynamic> templateData,
-    required String weekday,
-  }) {
-    final dynamic directWeekdayValue = templateData[weekday];
-    final List<String> directIds = _stringListFromDynamic(directWeekdayValue);
-    if (directIds.isNotEmpty) {
-      return directIds;
+  bool _isTemplateRowActive(Map<String, dynamic> rowData) {
+    return rowData['is_active'] == true ||
+        (rowData['status'] ?? '').toString().trim().toLowerCase() == 'active';
+  }
+
+  List<String> _extractTemplateItemIdsFromRow(Map<String, dynamic> rowData) {
+    final List<String> directItemIds =
+        _stringListFromDynamic(rowData['item_ids']);
+    if (directItemIds.isNotEmpty) {
+      return directItemIds;
     }
 
-    final dynamic weekdayMenus = templateData['weekday_menus'];
-    if (weekdayMenus is Map) {
-      final List<String> nestedIds =
-          _stringListFromDynamic(weekdayMenus[weekday]);
-      if (nestedIds.isNotEmpty) {
-        return nestedIds;
-      }
+    final List<String> directMenuItemIds =
+        _stringListFromDynamic(rowData['menu_item_ids']);
+    if (directMenuItemIds.isNotEmpty) {
+      return directMenuItemIds;
     }
 
-    final dynamic days = templateData['days'];
-    if (days is Map) {
-      final List<String> nestedIds =
-          _stringListFromDynamic(days[weekday]);
-      if (nestedIds.isNotEmpty) {
-        return nestedIds;
+    final dynamic selectedItems = rowData['selected_items'];
+    if (selectedItems is List) {
+      final List<String> nested = selectedItems.map((dynamic item) {
+        if (item is Map) {
+          return (item['item_id'] ?? item['menu_item_id'] ?? '')
+              .toString()
+              .trim();
+        }
+        return '';
+      }).where((id) => id.isNotEmpty).toList();
+
+      if (nested.isNotEmpty) {
+        return nested;
       }
     }
 
@@ -483,11 +505,18 @@ class MenuResolverService {
       'type',
     ], fallback: '');
 
+    final String baseUnit = _readFirstNonEmptyString(itemData, const <String>[
+      'base_unit',
+      'unit',
+      'serving_size',
+    ], fallback: '');
+
     return <String, dynamic>{
       'item_id': itemId,
       'item_name': itemName,
       'meal_type': mealType,
       'food_type': foodType,
+      'base_unit': baseUnit,
       'estimated_price': _readNumeric(itemData['estimated_price']),
     };
   }

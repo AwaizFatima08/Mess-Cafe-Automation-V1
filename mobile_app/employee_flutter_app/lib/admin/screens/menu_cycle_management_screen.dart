@@ -35,6 +35,16 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
   String? statusMessage;
   String? editingCycleId;
 
+  static const List<String> weekDays = <String>[
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
   @override
   void dispose() {
     cycleNameController.dispose();
@@ -53,7 +63,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     }
   }
 
-  void resetForm() {
+  void resetForm({bool clearStatusMessage = true}) {
     _dismissKeyboard();
 
     cycleNameController.clear();
@@ -67,8 +77,11 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     keepActiveUntilNextChange = true;
     activateImmediately = true;
     isSaving = false;
-    statusMessage = null;
     editingCycleId = null;
+
+    if (clearStatusMessage) {
+      statusMessage = null;
+    }
 
     if (mounted) {
       setState(() {});
@@ -188,6 +201,8 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       return;
     }
 
+    final wasEditing = editingCycleId != null;
+
     try {
       setState(() {
         isSaving = true;
@@ -195,8 +210,9 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       });
 
       final normalizedStartDate = _normalizeDate(startDate!);
-      final normalizedEndDate =
-          keepActiveUntilNextChange || endDate == null ? null : _normalizeDate(endDate!);
+      final normalizedEndDate = keepActiveUntilNextChange || endDate == null
+          ? null
+          : _normalizeDate(endDate!);
 
       final batch = _firestore.batch();
       final cyclesRef = _firestore.collection('menu_cycles');
@@ -208,59 +224,47 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
         );
       }
 
-      if (editingCycleId == null) {
-        final newDoc = cyclesRef.doc();
+      final payload = <String, dynamic>{
+        'cycle_name': cycleName,
+        'breakfast_template_id': breakfastTemplateId,
+        'lunch_template_1_id': lunchTemplate1Id,
+        'lunch_template_2_id': lunchTemplate2Id,
+        'dinner_template_1_id': dinnerTemplate1Id,
+        'dinner_template_2_id': dinnerTemplate2Id,
+        'start_date': Timestamp.fromDate(normalizedStartDate),
+        'end_date': normalizedEndDate == null
+            ? null
+            : Timestamp.fromDate(normalizedEndDate),
+        'is_active': activateImmediately,
+        'status': activateImmediately ? 'active' : 'inactive',
+        'updated_by': widget.userEmail,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
 
+      if (!wasEditing) {
+        final newDoc = cyclesRef.doc();
         batch.set(newDoc, {
-          'cycle_name': cycleName,
-          'breakfast_template_id': breakfastTemplateId,
-          'lunch_template_1_id': lunchTemplate1Id,
-          'lunch_template_2_id': lunchTemplate2Id,
-          'dinner_template_1_id': dinnerTemplate1Id,
-          'dinner_template_2_id': dinnerTemplate2Id,
-          'start_date': Timestamp.fromDate(normalizedStartDate),
-          'end_date': normalizedEndDate == null
-              ? null
-              : Timestamp.fromDate(normalizedEndDate),
-          'is_active': activateImmediately,
-          'status': activateImmediately ? 'active' : 'inactive',
+          ...payload,
           'created_by': widget.userEmail,
-          'updated_by': widget.userEmail,
           'created_at': FieldValue.serverTimestamp(),
-          'updated_at': FieldValue.serverTimestamp(),
         });
       } else {
         final docRef = cyclesRef.doc(editingCycleId);
-
-        batch.update(docRef, {
-          'cycle_name': cycleName,
-          'breakfast_template_id': breakfastTemplateId,
-          'lunch_template_1_id': lunchTemplate1Id,
-          'lunch_template_2_id': lunchTemplate2Id,
-          'dinner_template_1_id': dinnerTemplate1Id,
-          'dinner_template_2_id': dinnerTemplate2Id,
-          'start_date': Timestamp.fromDate(normalizedStartDate),
-          'end_date': normalizedEndDate == null
-              ? null
-              : Timestamp.fromDate(normalizedEndDate),
-          'is_active': activateImmediately,
-          'status': activateImmediately ? 'active' : 'inactive',
-          'updated_by': widget.userEmail,
-          'updated_at': FieldValue.serverTimestamp(),
-        });
+        batch.update(docRef, payload);
       }
 
       await batch.commit();
 
       if (!mounted) return;
+
+      resetForm(clearStatusMessage: false);
+
       setState(() {
         isSaving = false;
-        statusMessage = editingCycleId == null
-            ? 'Menu cycle created successfully.'
-            : 'Menu cycle updated successfully.';
+        statusMessage = wasEditing
+            ? 'Menu cycle updated successfully.'
+            : 'Menu cycle created successfully.';
       });
-
-      resetForm();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -270,7 +274,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     }
   }
 
-  void loadCycleForEdit(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+  void loadCycleForEdit(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, _TemplateGroup> templateGroupMap,
+  ) {
     _dismissKeyboard();
 
     final data = doc.data();
@@ -278,29 +285,15 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     cycleNameController.text = (data['cycle_name'] ?? '').toString().trim();
 
     breakfastTemplateId =
-        (data['breakfast_template_id'] ?? '').toString().trim().isEmpty
-            ? null
-            : (data['breakfast_template_id'] ?? '').toString().trim();
-
+        _normalizeTemplateIdForEdit(data['breakfast_template_id'], templateGroupMap);
     lunchTemplate1Id =
-        (data['lunch_template_1_id'] ?? '').toString().trim().isEmpty
-            ? null
-            : (data['lunch_template_1_id'] ?? '').toString().trim();
-
+        _normalizeTemplateIdForEdit(data['lunch_template_1_id'], templateGroupMap);
     lunchTemplate2Id =
-        (data['lunch_template_2_id'] ?? '').toString().trim().isEmpty
-            ? null
-            : (data['lunch_template_2_id'] ?? '').toString().trim();
-
+        _normalizeTemplateIdForEdit(data['lunch_template_2_id'], templateGroupMap);
     dinnerTemplate1Id =
-        (data['dinner_template_1_id'] ?? '').toString().trim().isEmpty
-            ? null
-            : (data['dinner_template_1_id'] ?? '').toString().trim();
-
+        _normalizeTemplateIdForEdit(data['dinner_template_1_id'], templateGroupMap);
     dinnerTemplate2Id =
-        (data['dinner_template_2_id'] ?? '').toString().trim().isEmpty
-            ? null
-            : (data['dinner_template_2_id'] ?? '').toString().trim();
+        _normalizeTemplateIdForEdit(data['dinner_template_2_id'], templateGroupMap);
 
     final startTs = data['start_date'];
     final endTs = data['end_date'];
@@ -318,6 +311,26 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       if (!mounted) return;
       cycleNameFocusNode.requestFocus();
     });
+  }
+
+  String? _normalizeTemplateIdForEdit(
+    dynamic rawValue,
+    Map<String, _TemplateGroup> templateGroupMap,
+  ) {
+    final value = (rawValue ?? '').toString().trim();
+    if (value.isEmpty) return null;
+
+    if (templateGroupMap.containsKey(value)) {
+      return value;
+    }
+
+    for (final entry in templateGroupMap.entries) {
+      if (entry.value.rowDocIds.contains(value)) {
+        return entry.key;
+      }
+    }
+
+    return value;
   }
 
   Future<void> toggleCycleActive(
@@ -364,45 +377,133 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     }
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterTemplatesByMealType(
+  List<_TemplateGroup> _groupTemplateRows(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final templateId = (data['template_id'] ?? '').toString().trim();
+      final mealType = (data['meal_type'] ?? '').toString().trim().toLowerCase();
+      final weekday = (data['weekday'] ?? '').toString().trim().toLowerCase();
+
+      if (templateId.isEmpty || mealType.isEmpty || weekday.isEmpty) {
+        continue;
+      }
+
+      final key = '$templateId|$mealType';
+      grouped.putIfAbsent(key, () => <QueryDocumentSnapshot<Map<String, dynamic>>>[]);
+      grouped[key]!.add(doc);
+    }
+
+    final groups = grouped.entries.map((entry) {
+      final rows = entry.value;
+
+      rows.sort((a, b) {
+        final aDay = (a.data()['weekday'] ?? '').toString().trim().toLowerCase();
+        final bDay = (b.data()['weekday'] ?? '').toString().trim().toLowerCase();
+        return weekDays.indexOf(aDay).compareTo(weekDays.indexOf(bDay));
+      });
+
+      final first = rows.first.data();
+      final templateId = (first['template_id'] ?? '').toString().trim();
+      final templateName = (first['template_name'] ?? '').toString().trim().isEmpty
+          ? templateId
+          : (first['template_name'] ?? '').toString().trim();
+      final mealType = (first['meal_type'] ?? '').toString().trim().toLowerCase();
+
+      bool anyActive = false;
+      int totalItems = 0;
+      final Set<String> rowDocIds = <String>{};
+
+      for (final row in rows) {
+        final data = row.data();
+        final itemIds = (data['item_ids'] is Iterable)
+            ? List<String>.from(
+                (data['item_ids'] as Iterable).map((e) => e.toString().trim()),
+              )
+            : const <String>[];
+
+        totalItems += itemIds.length;
+        rowDocIds.add(row.id);
+
+        if (isTemplateActive(data)) {
+          anyActive = true;
+        }
+      }
+
+      return _TemplateGroup(
+        templateId: templateId,
+        templateName: templateName,
+        mealType: mealType,
+        isActive: anyActive,
+        totalItems: totalItems,
+        rowDocIds: rowDocIds,
+      );
+    }).toList();
+
+    groups.sort((a, b) {
+      if (a.mealType != b.mealType) {
+        return a.mealType.compareTo(b.mealType);
+      }
+      return a.templateName.toLowerCase().compareTo(b.templateName.toLowerCase());
+    });
+
+    return groups;
+  }
+
+  List<_TemplateGroup> _filterTemplateGroupsByMealType(
+    List<_TemplateGroup> groups,
     String mealType,
   ) {
-    return docs.where((doc) {
-      final data = doc.data();
-      return isTemplateActive(data) &&
-          (data['meal_type'] ?? '').toString().trim().toLowerCase() ==
-              mealType.trim().toLowerCase();
-    }).toList()
-      ..sort((a, b) {
-        final aName =
-            (a.data()['template_name'] ?? a.id).toString().trim().toLowerCase();
-        final bName =
-            (b.data()['template_name'] ?? b.id).toString().trim().toLowerCase();
-        return aName.compareTo(bName);
-      });
+    return groups
+        .where((group) => group.isActive && group.mealType == mealType)
+        .toList();
   }
 
   String _selectedTemplateName({
-    required List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered,
+    required List<_TemplateGroup> filtered,
     required String? value,
   }) {
     if (value == null || value.trim().isEmpty) {
       return 'Select template';
     }
 
-    for (final doc in filtered) {
-      if (doc.id == value) {
-        return (doc.data()['template_name'] ?? doc.id).toString();
+    for (final group in filtered) {
+      if (group.templateId == value) {
+        return '${group.templateName} (${group.templateId})';
       }
     }
 
     return 'Selected template not found';
   }
 
+  String _templateDisplayName(
+    Map<String, _TemplateGroup> groupMap,
+    dynamic storedValue,
+  ) {
+    final value = (storedValue ?? '').toString().trim();
+    if (value.isEmpty) return '—';
+
+    if (groupMap.containsKey(value)) {
+      final group = groupMap[value]!;
+      return '${group.templateName} (${group.templateId})';
+    }
+
+    for (final group in groupMap.values) {
+      if (group.rowDocIds.contains(value)) {
+        return '${group.templateName} (${group.templateId})';
+      }
+    }
+
+    return value;
+  }
+
   Future<void> _showTemplateSelector({
     required String label,
-    required List<QueryDocumentSnapshot<Map<String, dynamic>>> filtered,
+    required List<_TemplateGroup> filtered,
     required ValueChanged<String?> onChanged,
   }) async {
     _dismissKeyboard();
@@ -450,16 +551,16 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   itemCount: filtered.length,
                   separatorBuilder: (context, index) => const Divider(height: 1),
                   itemBuilder: (context, index) {
-                    final doc = filtered[index];
-                    final templateName =
-                        (doc.data()['template_name'] ?? doc.id).toString();
+                    final group = filtered[index];
 
                     return ListTile(
-                      title: Text(templateName),
-                      subtitle: Text('Template ID: ${doc.id}'),
+                      title: Text(group.templateName),
+                      subtitle: Text(
+                        'Template ID: ${group.templateId} • Total items: ${group.totalItems}',
+                      ),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
-                        onChanged(doc.id);
+                        onChanged(group.templateId);
                       },
                     );
                   },
@@ -477,9 +578,9 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     required String mealType,
     required String? value,
     required ValueChanged<String?> onChanged,
-    required List<QueryDocumentSnapshot<Map<String, dynamic>>> allTemplates,
+    required List<_TemplateGroup> allTemplateGroups,
   }) {
-    final filtered = _filterTemplatesByMealType(allTemplates, mealType);
+    final filtered = _filterTemplateGroupsByMealType(allTemplateGroups, mealType);
     final selectedName = _selectedTemplateName(
       filtered: filtered,
       value: value,
@@ -535,6 +636,10 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Select logical weekly templates here. The cycle stores template IDs, not per-weekday row document IDs.',
+            ),
             if (inEditMode) ...[
               const SizedBox(height: 8),
               Text(
@@ -582,6 +687,11 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> templateDocs,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> cycleDocs,
   ) {
+    final templateGroups = _groupTemplateRows(templateDocs);
+    final templateGroupMap = <String, _TemplateGroup>{
+      for (final group in templateGroups) group.templateId: group,
+    };
+
     final sortedCycles =
         List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(cycleDocs)
           ..sort((a, b) {
@@ -618,7 +728,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   onChanged: (value) => setState(() {
                     breakfastTemplateId = value;
                   }),
-                  allTemplates: templateDocs,
+                  allTemplateGroups: templateGroups,
                 ),
                 const SizedBox(height: 16),
                 _templateSelector(
@@ -628,7 +738,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   onChanged: (value) => setState(() {
                     lunchTemplate1Id = value;
                   }),
-                  allTemplates: templateDocs,
+                  allTemplateGroups: templateGroups,
                 ),
                 const SizedBox(height: 16),
                 _templateSelector(
@@ -638,7 +748,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   onChanged: (value) => setState(() {
                     lunchTemplate2Id = value;
                   }),
-                  allTemplates: templateDocs,
+                  allTemplateGroups: templateGroups,
                 ),
                 const SizedBox(height: 16),
                 _templateSelector(
@@ -648,7 +758,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   onChanged: (value) => setState(() {
                     dinnerTemplate1Id = value;
                   }),
-                  allTemplates: templateDocs,
+                  allTemplateGroups: templateGroups,
                 ),
                 const SizedBox(height: 16),
                 _templateSelector(
@@ -658,7 +768,7 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                   onChanged: (value) => setState(() {
                     dinnerTemplate2Id = value;
                   }),
-                  allTemplates: templateDocs,
+                  allTemplateGroups: templateGroups,
                 ),
                 const SizedBox(height: 16),
                 ListTile(
@@ -793,12 +903,33 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
                       'End Date: ${end == null ? 'Open-ended' : formatDate(end)}',
                     ),
                     const SizedBox(height: 12),
+                    const Text(
+                      'Linked Templates',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Breakfast: ${_templateDisplayName(templateGroupMap, data['breakfast_template_id'])}',
+                    ),
+                    Text(
+                      'Lunch Template 1: ${_templateDisplayName(templateGroupMap, data['lunch_template_1_id'])}',
+                    ),
+                    Text(
+                      'Lunch Template 2: ${_templateDisplayName(templateGroupMap, data['lunch_template_2_id'])}',
+                    ),
+                    Text(
+                      'Dinner Template 1: ${_templateDisplayName(templateGroupMap, data['dinner_template_1_id'])}',
+                    ),
+                    Text(
+                      'Dinner Template 2: ${_templateDisplayName(templateGroupMap, data['dinner_template_2_id'])}',
+                    ),
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
                         OutlinedButton.icon(
-                          onPressed: () => loadCycleForEdit(doc),
+                          onPressed: () => loadCycleForEdit(doc, templateGroupMap),
                           icon: const Icon(Icons.edit),
                           label: const Text('Edit'),
                         ),
@@ -903,4 +1034,22 @@ class _MenuCycleManagementScreenState extends State<MenuCycleManagementScreen> {
       ),
     );
   }
+}
+
+class _TemplateGroup {
+  final String templateId;
+  final String templateName;
+  final String mealType;
+  final bool isActive;
+  final int totalItems;
+  final Set<String> rowDocIds;
+
+  const _TemplateGroup({
+    required this.templateId,
+    required this.templateName,
+    required this.mealType,
+    required this.isActive,
+    required this.totalItems,
+    required this.rowDocIds,
+  });
 }

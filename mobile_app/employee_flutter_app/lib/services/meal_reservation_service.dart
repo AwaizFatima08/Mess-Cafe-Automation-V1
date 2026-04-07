@@ -195,9 +195,10 @@ class MealReservationService {
     Map<String, dynamic>? extraFields,
   }) async {
     final normalizedRole = createdByRole.trim().toLowerCase();
-    final roleCanWaiveCutoff = canWaiveCutoffForRole(normalizedRole);
     final normalizedOverrideReason = (overrideReason ?? '').trim();
-    final effectiveSkipValidation = skipValidation || roleCanWaiveCutoff;
+
+    // Controlled booking screen: no cutoff / date blocking here.
+    final effectiveSkipValidation = true;
 
     final effectiveExtraFields = <String, dynamic>{
       'booking_mode': bookingModeProxy,
@@ -208,9 +209,8 @@ class MealReservationService {
           requestContext.trim().isEmpty ? 'proxy_request' : requestContext.trim(),
       'is_special_meal': isSpecialMeal,
       'allow_any_menu_item': allowAnyMenuItem,
-      'cutoff_waived': roleCanWaiveCutoff,
-      'proxy_override_used':
-          roleCanWaiveCutoff || normalizedOverrideReason.isNotEmpty,
+      'cutoff_waived': true,
+      'proxy_override_used': normalizedOverrideReason.isNotEmpty,
     };
 
     if (extraFields != null && extraFields.isNotEmpty) {
@@ -298,18 +298,7 @@ class MealReservationService {
       throw ArgumentError('At least one valid reservation line is required.');
     }
 
-    if (!skipValidation) {
-      final validation = validateReservationRequest(
-        reservationDate: normalizedDate,
-        mealType: normalizedMealType,
-        overrideReason:
-            normalizedOverrideReason.isEmpty ? null : normalizedOverrideReason,
-      );
-
-      if (!validation.isAllowed) {
-        throw StateError(validation.message);
-      }
-    }
+    // Controlled booking screen: no cutoff / date blocking here.
 
     final now = Timestamp.now();
     final effectiveBookingGroupId =
@@ -348,8 +337,10 @@ class MealReservationService {
         createdByName: createdByName?.trim() ?? '',
         overrideReason:
             normalizedOverrideReason.isEmpty ? '' : normalizedOverrideReason,
-        extraFields: const <String, dynamic>{
+        extraFields: <String, dynamic>{
           'selection_mode': selectionModeCycleCombo,
+          'cutoff_waived': true,
+          'guest_override_used': normalizedOverrideReason.isNotEmpty,
         },
       );
 
@@ -615,10 +606,18 @@ class MealReservationService {
       throw Exception('Reservation already issued.');
     }
 
+    final reservationDate = _readReservationDate(data['reservation_date']);
+    final issuanceValidation = validateIssuanceRequest(
+      reservationDate: reservationDate,
+    );
+
+    if (!issuanceValidation.isAllowed) {
+      throw Exception(issuanceValidation.message);
+    }
+
     final employeeNumber = (data['employee_number'] ?? '').toString().trim();
     final employeeName = (data['employee_name'] ?? '').toString().trim();
     final mealType = _normalizeMealType((data['meal_type'] ?? '').toString());
-    final reservationDate = _readReservationDate(data['reservation_date']);
     final reservationCategory =
         (data['reservation_category'] ?? '').toString().trim();
 
@@ -788,6 +787,27 @@ class MealReservationService {
     return ReservationValidationResult(
       isAllowed: true,
       message: '${_mealLabel(normalizedMealType)} booking is open.',
+    );
+  }
+
+  ReservationValidationResult validateIssuanceRequest({
+    required DateTime reservationDate,
+    DateTime? now,
+  }) {
+    final current = now ?? DateTime.now();
+    final operationalDate = _resolveOperationalDate(current);
+    final normalizedReservationDate = _normalizeDate(reservationDate);
+
+    if (normalizedReservationDate.isAfter(operationalDate)) {
+      return const ReservationValidationResult(
+        isAllowed: false,
+        message: 'Future-date meals cannot be issued.',
+      );
+    }
+
+    return const ReservationValidationResult(
+      isAllowed: true,
+      message: 'Issuance allowed.',
     );
   }
 
@@ -1211,10 +1231,12 @@ class MealReservationService {
         snapshotSelectionType == selectionModeManualItem ||
         snapshotItemId.isNotEmpty;
 
-    final menuItemId = looksManual ? _firstNonEmpty([
-      snapshotItemId,
-      line.optionKey,
-    ]) : '';
+    final menuItemId = looksManual
+        ? _firstNonEmpty([
+            snapshotItemId,
+            line.optionKey,
+          ])
+        : '';
 
     final menuOptionKey = looksManual
         ? ''
@@ -1274,7 +1296,9 @@ class MealReservationService {
 
     if (snapshotSelectionType.isEmpty) {
       snapshot['selection_type'] =
-          snapshotItemId.isNotEmpty || !hasItems ? selectionModeManualItem : selectionModeCycleCombo;
+          snapshotItemId.isNotEmpty || !hasItems
+              ? selectionModeManualItem
+              : selectionModeCycleCombo;
     }
 
     return snapshot;
@@ -1326,6 +1350,14 @@ class MealReservationService {
 
   DateTime _normalizeDate(DateTime date) {
     return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime _resolveOperationalDate(DateTime value) {
+    final normalized = _normalizeDate(value);
+    if (value.hour < 6) {
+      return normalized.subtract(const Duration(days: 1));
+    }
+    return normalized;
   }
 
   DateTime _readReservationDate(dynamic value) {

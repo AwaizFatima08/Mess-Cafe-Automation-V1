@@ -1,4 +1,4 @@
-﻿import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../main.dart';
@@ -7,6 +7,7 @@ import '../../shared/screens/notifications_screen.dart';
 import '../../shared/widgets/notification_badge.dart';
 import 'dashboard_screen.dart';
 import 'employee_master_management_screen.dart';
+import 'event_management_screen.dart';
 import 'guest_meal_booking_screen.dart';
 import 'meal_cost_dashboard_screen.dart';
 import 'meal_feedback_dashboard_screen.dart';
@@ -42,6 +43,37 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           ? FirebaseAuth.instance.currentUser!.uid.trim()
           : 'admin_local_uid';
 
+  String get _currentUserName {
+    final displayName = FirebaseAuth.instance.currentUser?.displayName?.trim();
+    if (displayName != null && displayName.isNotEmpty) {
+      return displayName;
+    }
+
+    final roleName = (_roleContext['userName'] ??
+            _roleContext['user_name'] ??
+            _roleContext['employeeName'] ??
+            _roleContext['employee_name'] ??
+            '')
+        .toString()
+        .trim();
+
+    if (roleName.isNotEmpty) {
+      return roleName;
+    }
+
+    return _userEmail;
+  }
+
+  String get _currentEmployeeNumber {
+    final value = (_roleContext['employeeNumber'] ??
+            _roleContext['employee_number'] ??
+            '')
+        .toString()
+        .trim();
+
+    return value;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +105,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         'canManageEmployeeMaster': true,
         'canManageUsers': true,
         'canViewFeedbackDashboard': true,
+        'canManageEvents': true,
         'role': 'admin',
       };
 
@@ -126,6 +159,21 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
             icon: Icons.price_change_outlined,
             selectedIcon: Icons.price_change,
             screen: MealRateManagementScreen(),
+          ),
+        );
+      }
+
+      if (_flag(roleContext, 'canManageEvents')) {
+        navItems.add(
+          _AdminNavItem(
+            label: 'Event Management',
+            icon: Icons.event_outlined,
+            selectedIcon: Icons.event,
+            screen: EventManagementScreen(
+              currentUserUid: _userUid,
+              currentEmployeeNumber: _currentEmployeeNumber,
+              currentUserName: _currentUserName,
+            ),
           ),
         );
       }

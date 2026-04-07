@@ -136,7 +136,6 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
     }
 
     int selectedRating = 0;
-    String selectedIssueType = '';
     bool isAnonymous = false;
     final controller = TextEditingController();
 
@@ -159,6 +158,10 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
                         '${_labelize(entry.mealType)} • ${_labelize(entry.diningMode)}',
                       ),
                       const SizedBox(height: 12),
+                      const Text(
+                        'Overall Rating',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                       Row(
                         children: List.generate(5, (i) {
                           return IconButton(
@@ -176,30 +179,12 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
                           );
                         }),
                       ),
-                      DropdownButtonFormField<String>(
-                        initialValue: selectedIssueType,
-                        decoration: const InputDecoration(
-                          labelText: 'Issue Type (optional)',
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: '', child: Text('None')),
-                          DropdownMenuItem(value: 'taste', child: Text('Taste')),
-                          DropdownMenuItem(value: 'quality', child: Text('Quality')),
-                          DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
-                          DropdownMenuItem(value: 'service', child: Text('Service')),
-                        ],
-                        onChanged: (value) {
-                          setLocalState(() {
-                            selectedIssueType = value ?? '';
-                          });
-                        },
-                      ),
                       const SizedBox(height: 12),
                       TextField(
                         controller: controller,
                         maxLines: 3,
                         decoration: const InputDecoration(
-                          labelText: 'Comments',
+                          labelText: 'Remarks (optional)',
                           hintText: 'Write your feedback...',
                           border: OutlineInputBorder(),
                         ),
@@ -253,7 +238,7 @@ class _MyMealHistoryScreenState extends State<MyMealHistoryScreen> {
         category: entry.category,
         rating: selectedRating,
         feedbackText: controller.text.trim(),
-        issueType: selectedIssueType,
+        issueType: '',
         isAnonymous: isAnonymous,
       );
 

@@ -14,6 +14,7 @@ class MealRateService {
 
   static const String statusActive = 'active';
   static const String statusCancelled = 'cancelled';
+  static const int _maxBatchOperations = 450;
 
   DateTime normalizeDate(DateTime value) {
     return DateTime(value.year, value.month, value.day);
@@ -176,7 +177,9 @@ class MealRateService {
 
     final normalizedRateDate = normalizeDate(rateDate);
     final now = Timestamp.now();
-    final batch = _firestore.batch();
+
+    var batch = _firestore.batch();
+    var operations = 0;
 
     for (final draft in drafts) {
       final normalizedTargetKey = draft.menuItemId.trim();
@@ -222,9 +225,134 @@ class MealRateService {
         },
         SetOptions(merge: true),
       );
+
+      operations += 1;
+      if (operations >= _maxBatchOperations) {
+        await batch.commit();
+        batch = _firestore.batch();
+        operations = 0;
+      }
     }
 
-    await batch.commit();
+    if (operations > 0) {
+      await batch.commit();
+    }
+  }
+
+  Future<MealRateSaveApplyResult> saveRatesBatchAndApplyToReservationsForDate({
+    required DateTime rateDate,
+    required List<MealRateDraft> drafts,
+    String? enteredByUid,
+    String? enteredByName,
+    bool skipZeroRates = false,
+  }) async {
+    if (drafts.isEmpty) {
+      return const MealRateSaveApplyResult(
+        savedRateCount: 0,
+        updatedReservationCount: 0,
+      );
+    }
+
+    final normalizedRateDate = normalizeDate(rateDate);
+    final now = Timestamp.now();
+
+    final normalizedDrafts = <MealRateDraft>[];
+    final changedRateMap = <String, _ResolvedRate>{};
+
+    for (final draft in drafts) {
+      final normalizedTargetKey = draft.menuItemId.trim();
+      final normalizedItemName = draft.itemName.trim();
+      final normalizedCategory = draft.category.trim();
+      final parsedRate = draft.unitRate;
+
+      if (normalizedTargetKey.isEmpty || normalizedItemName.isEmpty) {
+        continue;
+      }
+
+      if (parsedRate < 0) {
+        throw ArgumentError(
+          'Negative rate is not allowed for ${draft.itemName}.',
+        );
+      }
+
+      if (skipZeroRates && parsedRate == 0) {
+        continue;
+      }
+
+      final normalized = MealRateDraft(
+        menuItemId: normalizedTargetKey,
+        itemName: normalizedItemName,
+        category: normalizedCategory,
+        unitRate: parsedRate,
+        isActive: draft.isActive,
+      );
+
+      normalizedDrafts.add(normalized);
+      changedRateMap[normalizedTargetKey.toLowerCase()] = _ResolvedRate(
+        targetKey: normalizedTargetKey,
+        unitRate: parsedRate,
+        isActive: normalized.isActive,
+      );
+    }
+
+    if (normalizedDrafts.isEmpty) {
+      return const MealRateSaveApplyResult(
+        savedRateCount: 0,
+        updatedReservationCount: 0,
+      );
+    }
+
+    var rateBatch = _firestore.batch();
+    var rateOps = 0;
+
+    for (final draft in normalizedDrafts) {
+      final docId = buildRateDocumentId(
+        rateDate: normalizedRateDate,
+        menuItemId: draft.menuItemId,
+      );
+
+      final docRef = _mealRatesRef.doc(docId);
+
+      rateBatch.set(
+        docRef,
+        <String, dynamic>{
+          'menu_item_id': draft.menuItemId,
+          'rate_target_key': draft.menuItemId,
+          'item_name': draft.itemName,
+          'category': draft.category,
+          'rate_date': Timestamp.fromDate(normalizedRateDate),
+          'unit_rate': draft.unitRate,
+          'is_active': draft.isActive,
+          'entered_by_uid': (enteredByUid ?? '').trim(),
+          'entered_by_name': (enteredByName ?? '').trim(),
+          'updated_at': now,
+          'created_at': now,
+        },
+        SetOptions(merge: true),
+      );
+
+      rateOps += 1;
+      if (rateOps >= _maxBatchOperations) {
+        await rateBatch.commit();
+        rateBatch = _firestore.batch();
+        rateOps = 0;
+      }
+    }
+
+    if (rateOps > 0) {
+      await rateBatch.commit();
+    }
+
+    final updatedReservationCount =
+        await applyRatesToReservationsForDateUsingRateMap(
+      reservationDate: normalizedRateDate,
+      rateMap: changedRateMap,
+    );
+
+    return MealRateSaveApplyResult(
+      savedRateCount: normalizedDrafts.length,
+      updatedReservationCount: updatedReservationCount,
+    );
   }
 
   Future<List<ConsumedItemSummary>> getConsumedItemSummaryForDate(
@@ -344,19 +472,33 @@ class MealRateService {
   }
 
   Future<int> applyRatesToReservationsForDate(DateTime reservationDate) async {
+    final rates = await getRatesForDate(normalizeDate(reservationDate));
+    final rateMap = <String, _ResolvedRate>{
+      for (final rate in rates)
+        (rate.rateTargetKey.isNotEmpty ? rate.rateTargetKey : rate.menuItemId)
+            .trim()
+            .toLowerCase(): _ResolvedRate(
+          targetKey:
+              (rate.rateTargetKey.isNotEmpty ? rate.rateTargetKey : rate.menuItemId)
+                  .trim(),
+          unitRate: rate.unitRate,
+          isActive: rate.isActive,
+        ),
+    };
+
+    return applyRatesToReservationsForDateUsingRateMap(
+      reservationDate: reservationDate,
+      rateMap: rateMap,
+    );
+  }
+
+  Future<int> applyRatesToReservationsForDateUsingRateMap({
+    required DateTime reservationDate,
+    required Map<String, _ResolvedRate> rateMap,
+  }) async {
     final normalizedDate = normalizeDate(reservationDate);
     final start = Timestamp.fromDate(normalizedDate);
     final end = Timestamp.fromDate(nextDate(normalizedDate));
-
-    final rates = await getRatesForDate(normalizedDate);
-    final rateMap = <String, MealRateEntry>{
-      for (final rate in rates)
-        (rate.rateTargetKey.isNotEmpty
-                ? rate.rateTargetKey
-                : rate.menuItemId)
-            .trim()
-            .toLowerCase(): rate,
-    };
 
     final reservationQuery = await _mealReservationsRef
         .where('reservation_date', isGreaterThanOrEqualTo: start)
@@ -367,9 +509,10 @@ class MealRateService {
       return 0;
     }
 
-    final batch = _firestore.batch();
-    final now = Timestamp.now();
+    var batch = _firestore.batch();
     var updatedCount = 0;
+    var batchOps = 0;
+    final now = Timestamp.now();
 
     for (final doc in reservationQuery.docs) {
       final data = doc.data();
@@ -394,18 +537,36 @@ class MealRateService {
       }
 
       final amount = rate.unitRate * quantity;
+      final currentUnitRate = _asDouble(data['unit_rate']);
+      final currentAmount = _asDouble(data['amount']);
+      final currentStoredTarget = _normalizeText(data['rate_target_key']);
+
+      final noChange = currentStoredTarget == rate.targetKey &&
+          currentUnitRate == rate.unitRate &&
+          currentAmount == amount;
+
+      if (noChange) {
+        continue;
+      }
 
       batch.update(doc.reference, <String, dynamic>{
-        'rate_target_key': targetKey,
+        'rate_target_key': rate.targetKey,
         'unit_rate': rate.unitRate,
         'amount': amount,
         'updated_at': now,
       });
 
       updatedCount += 1;
+      batchOps += 1;
+
+      if (batchOps >= _maxBatchOperations) {
+        await batch.commit();
+        batch = _firestore.batch();
+        batchOps = 0;
+      }
     }
 
-    if (updatedCount > 0) {
+    if (batchOps > 0) {
       await batch.commit();
     }
 
@@ -472,6 +633,12 @@ class MealRateService {
     return int.tryParse((value ?? '').toString()) ?? 0;
   }
 
+  double _asDouble(dynamic value) {
+    if (value is int) return value.toDouble();
+    if (value is double) return value;
+    return double.tryParse((value ?? '').toString()) ?? 0.0;
+  }
+
   String _normalizeText(dynamic value) {
     return (value ?? '').toString().trim();
   }
@@ -496,6 +663,16 @@ class MealRateService {
         .replaceAll(':', '_')
         .replaceAll('#', '_');
   }
+}
+
+class MealRateSaveApplyResult {
+  final int savedRateCount;
+  final int updatedReservationCount;
+
+  const MealRateSaveApplyResult({
+    required this.savedRateCount,
+    required this.updatedReservationCount,
+  });
 }
 
 class MealRateEntry {
@@ -656,6 +833,18 @@ class ConsumedItemSummary {
 enum MealRateSelectionType {
   comboOption,
   manualItem,
+}
+
+class _ResolvedRate {
+  final String targetKey;
+  final double unitRate;
+  final bool isActive;
+
+  const _ResolvedRate({
+    required this.targetKey,
+    required this.unitRate,
+    required this.isActive,
+  });
 }
 
 class _ConsumedItemAccumulator {

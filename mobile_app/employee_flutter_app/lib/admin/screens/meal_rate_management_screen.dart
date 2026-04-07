@@ -11,8 +11,7 @@ class MealRateManagementScreen extends StatefulWidget {
       _MealRateManagementScreenState();
 }
 
-class _MealRateManagementScreenState
-    extends State<MealRateManagementScreen> {
+class _MealRateManagementScreenState extends State<MealRateManagementScreen> {
   final MealRateService _service = MealRateService();
 
   late DateTime _selectedDate;
@@ -22,6 +21,8 @@ class _MealRateManagementScreenState
 
   List<MealRateEntryRow> _rows = [];
   final Map<String, TextEditingController> _controllers = {};
+  final Map<String, String> _initialValues = {};
+  final Set<String> _dirtyRowKeys = <String>{};
 
   @override
   void initState() {
@@ -42,6 +43,31 @@ class _MealRateManagementScreenState
     return '${row.summary.menuItemId}__${row.summary.mealType}';
   }
 
+  String _normalizedRateText(double value) {
+    if (value <= 0) return '';
+    if (value == value.roundToDouble()) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  String _normalizeInputValue(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return '';
+
+    final parsed = double.tryParse(text);
+    if (parsed == null) {
+      return text;
+    }
+
+    if (parsed == parsed.roundToDouble()) {
+      return parsed.toStringAsFixed(0);
+    }
+    return parsed.toStringAsFixed(2);
+  }
+
+  int get _dirtyCount => _dirtyRowKeys.length;
+
   Future<void> _loadData() async {
     if (!mounted) return;
 
@@ -57,12 +83,14 @@ class _MealRateManagementScreenState
         controller.dispose();
       }
       _controllers.clear();
+      _initialValues.clear();
+      _dirtyRowKeys.clear();
 
       for (final row in rows) {
         final key = _rowKey(row);
-        _controllers[key] = TextEditingController(
-          text: row.initialRate > 0 ? row.initialRate.toStringAsFixed(0) : '',
-        );
+        final initialText = _normalizedRateText(row.initialRate);
+        _initialValues[key] = initialText;
+        _controllers[key] = TextEditingController(text: initialText);
       }
 
       if (!mounted) return;
@@ -98,39 +126,109 @@ class _MealRateManagementScreenState
     }
   }
 
+  void _markDirty(MealRateEntryRow row, String value) {
+    final key = _rowKey(row);
+    final normalizedCurrent = _normalizeInputValue(value);
+    final normalizedInitial = _initialValues[key] ?? '';
+
+    final isDirty = normalizedCurrent != normalizedInitial;
+
+    if (isDirty == _dirtyRowKeys.contains(key)) {
+      return;
+    }
+
+    setState(() {
+      if (isDirty) {
+        _dirtyRowKeys.add(key);
+      } else {
+        _dirtyRowKeys.remove(key);
+      }
+    });
+  }
+
   Future<void> _saveRates() async {
-    if (_isSaving || _rows.isEmpty) return;
+    if (_isSaving || _rows.isEmpty || _dirtyRowKeys.isEmpty) return;
 
     setState(() => _isSaving = true);
 
     try {
-      final drafts = _rows.map((row) {
+      final drafts = <MealRateDraft>[];
+
+      for (final row in _rows) {
         final key = _rowKey(row);
+        if (!_dirtyRowKeys.contains(key)) {
+          continue;
+        }
+
         final controller = _controllers[key];
         final rate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
 
-        return MealRateDraft(
-          menuItemId: row.summary.menuItemId,
-          itemName: row.summary.itemName,
-          category: row.summary.category,
-          unitRate: rate,
+        drafts.add(
+          MealRateDraft(
+            menuItemId: row.summary.menuItemId,
+            itemName: row.summary.itemName,
+            category: row.summary.category,
+            unitRate: rate,
+          ),
         );
-      }).toList();
+      }
 
-      await _service.saveRatesBatch(
+      final result = await _service.saveRatesBatchAndApplyToReservationsForDate(
         rateDate: _selectedDate,
         drafts: drafts,
       );
 
-      await _service.applyRatesToReservationsForDate(_selectedDate);
-
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Rates saved and applied successfully')),
-      );
+      final updatedRows = _rows.map((row) {
+        final key = _rowKey(row);
+        if (!_dirtyRowKeys.contains(key)) {
+          return row;
+        }
 
-      await _loadData();
+        final controller = _controllers[key];
+        final newRate = double.tryParse(controller?.text.trim() ?? '') ?? 0;
+
+        final now = DateTime.now();
+        return MealRateEntryRow(
+          summary: row.summary,
+          existingRate: MealRateEntry(
+            documentId: _service.buildRateDocumentId(
+              rateDate: _selectedDate,
+              menuItemId: row.summary.menuItemId,
+            ),
+            menuItemId: row.summary.menuItemId,
+            rateTargetKey: row.summary.menuItemId,
+            itemName: row.summary.itemName,
+            category: row.summary.category,
+            rateDate: _selectedDate,
+            unitRate: newRate,
+            isActive: true,
+            enteredByUid: row.existingRate?.enteredByUid ?? '',
+            enteredByName: row.existingRate?.enteredByName ?? '',
+            createdAt: row.existingRate?.createdAt ?? now,
+            updatedAt: now,
+          ),
+        );
+      }).toList();
+
+      for (final row in updatedRows) {
+        final key = _rowKey(row);
+        _initialValues[key] = _normalizeInputValue(_controllers[key]?.text ?? '');
+      }
+
+      setState(() {
+        _rows = updatedRows;
+        _dirtyRowKeys.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saved ${result.savedRateCount} rate(s) and applied to ${result.updatedReservationCount} reservation(s).',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
@@ -148,31 +246,35 @@ class _MealRateManagementScreenState
     return Row(
       children: [
         ElevatedButton.icon(
-          onPressed: _pickDate,
+          onPressed: _isSaving ? null : _pickDate,
           icon: const Icon(Icons.calendar_today),
           label: Text(
             DateFormat('dd MMM yyyy').format(_selectedDate),
           ),
         ),
         const SizedBox(width: 12),
-        const Expanded(
+        Expanded(
           child: Text(
-            'Enter Actual Rates',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            _dirtyCount > 0
+                ? 'Enter Actual Rates • $_dirtyCount changed'
+                : 'Enter Actual Rates',
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
         IconButton(
           tooltip: 'Refresh',
-          onPressed: _isLoading ? null : _loadData,
+          onPressed: (_isLoading || _isSaving) ? null : _loadData,
           icon: const Icon(Icons.refresh),
         ),
         const SizedBox(width: 8),
         ElevatedButton.icon(
-          onPressed: (_isSaving || _rows.isEmpty) ? null : _saveRates,
+          onPressed: (_isSaving || _rows.isEmpty || _dirtyRowKeys.isEmpty)
+              ? null
+              : _saveRates,
           icon: const Icon(Icons.save),
           label: _isSaving
               ? const Text('Saving...')
-              : const Text('Save Rates'),
+              : Text(_dirtyCount > 0 ? 'Save $_dirtyCount' : 'Save Rates'),
         ),
       ],
     );
@@ -201,6 +303,7 @@ class _MealRateManagementScreenState
         rows: _rows.map((row) {
           final key = _rowKey(row);
           final controller = _controllers[key]!;
+          final isDirty = _dirtyRowKeys.contains(key);
 
           return DataRow(
             cells: [
@@ -210,12 +313,18 @@ class _MealRateManagementScreenState
               DataCell(Text(row.summary.totalQuantity.toString())),
               DataCell(
                 SizedBox(
-                  width: 90,
+                  width: 110,
                   child: TextField(
                     controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
+                    enabled: !_isSaving,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (value) => _markDirty(row, value),
+                    decoration: InputDecoration(
                       hintText: '0',
+                      suffixIcon: isDirty
+                          ? const Icon(Icons.edit, size: 18)
+                          : null,
                     ),
                   ),
                 ),

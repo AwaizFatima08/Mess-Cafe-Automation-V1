@@ -249,14 +249,26 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
 
       final items = snapshot.docs.map((doc) {
         final data = doc.data();
-        return <String, dynamic>{
-          'id': doc.id,
-          'name': (data['name'] ?? data['item_name'] ?? '')
-              .toString()
-              .trim(),
-          'category':
-              (data['category'] ?? '').toString().trim().toLowerCase(),
-        };
+      final name = (data['name'] ?? data['item_name'] ?? '')
+          .toString()
+          .trim();
+
+      final baseUnit = (data['base_unit'] ?? '')
+          .toString()
+          .trim();
+
+      final displayName = baseUnit.isNotEmpty
+          ? '$name ($baseUnit)'
+          : name;
+
+      return <String, dynamic>{
+        'id': doc.id,
+        'name': name,
+        'display_name': displayName,
+        'base_unit': baseUnit,
+        'category':
+            (data['category'] ?? '').toString().trim().toLowerCase(),
+      };
       }).where((item) => (item['name'] as String).isNotEmpty).toList()
         ..sort(
           (a, b) => (a['name'] as String)
@@ -285,8 +297,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate:
-          _startOfDay(now).subtract(const Duration(days: 30)),
+      firstDate: _startOfDay(now).subtract(const Duration(days: 30)),
       lastDate: _startOfDay(now).add(const Duration(days: 30)),
     );
 
@@ -295,6 +306,79 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
 
     await _loadMenuForDate(_startOfDay(picked));
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>?> _findEmployeeByDocId(
+    String employeeNumber,
+  ) async {
+    final doc =
+        await _firestore.collection('employees').doc(employeeNumber).get();
+    if (doc.exists && doc.data() != null) {
+      return doc;
+    }
+    return null;
+  }
+
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _findEmployeeByField(
+    String fieldName,
+    String employeeNumber,
+  ) async {
+    final query = await _firestore
+        .collection('employees')
+        .where(fieldName, isEqualTo: employeeNumber)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) {
+      return null;
+    }
+    return query.docs.first;
+  }
+
+  String _extractEmployeeName(Map<String, dynamic> data) {
+    return (data['name'] ??
+            data['employee_name'] ??
+            data['full_name'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
+  String _extractEmployeeNumber(Map<String, dynamic> data, String fallback) {
+    return (data['employee_number'] ??
+            data['employee_no'] ??
+            data['emp_no'] ??
+            data['employeeNumber'] ??
+            fallback)
+        .toString()
+        .trim()
+        .toUpperCase();
+  }
+
+  bool _extractEmployeeActive(Map<String, dynamic> data) {
+    if (data['is_active'] is bool) {
+      return data['is_active'] == true;
+    }
+
+    final status = (data['status'] ??
+            data['record_status'] ??
+            data['employment_status'] ??
+            '')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    if (status == 'active' || status == 'enabled') {
+      return true;
+    }
+    if (status == 'inactive' || status == 'disabled' || status == 'terminated') {
+      return false;
+    }
+
+    return _readFlexibleBool(
+      data['is_active'] ?? data['active'],
+      fallback: true,
+    );
   }
 
   Future<void> _loadEmployeeMasterRecord() async {
@@ -314,12 +398,30 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     });
 
     try {
-      final doc =
-          await _firestore.collection('employees').doc(employeeNumber).get();
+      Map<String, dynamic>? employeeData;
+
+      final directDoc = await _findEmployeeByDocId(employeeNumber);
+      if (directDoc != null) {
+        employeeData = directDoc.data();
+      }
+
+      employeeData ??=
+          (await _findEmployeeByField('employee_number', employeeNumber))
+              ?.data();
+
+      employeeData ??=
+          (await _findEmployeeByField('employee_no', employeeNumber))?.data();
+
+      employeeData ??=
+          (await _findEmployeeByField('emp_no', employeeNumber))?.data();
+
+      employeeData ??=
+          (await _findEmployeeByField('employeeNumber', employeeNumber))
+              ?.data();
 
       if (!mounted) return;
 
-      if (!doc.exists || doc.data() == null) {
+      if (employeeData == null) {
         setState(() {
           _employeeLoaded = false;
         });
@@ -327,17 +429,22 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         return;
       }
 
-      final data = doc.data()!;
-      final employeeName = (data['name'] ?? data['employee_name'] ?? '')
-          .toString()
-          .trim();
-      final isActive = data['is_active'] == true;
+      final employeeName = _extractEmployeeName(employeeData);
+      final isActive = _extractEmployeeActive(employeeData);
+      final resolvedEmployeeNumber =
+          _extractEmployeeNumber(employeeData, employeeNumber);
 
       setState(() {
+        _proxyEmployeeNumberController.text = resolvedEmployeeNumber;
         _proxyEmployeeNameController.text = employeeName;
-        _employeeLoaded = true;
+        _employeeLoaded = employeeName.isNotEmpty;
         _loadedEmployeeIsActive = isActive;
       });
+
+      if (employeeName.isEmpty) {
+        _showSnackBar('Employee record found but employee name is blank.');
+        return;
+      }
 
       if (!isActive) {
         _showSnackBar('Employee master record is inactive.');
@@ -387,6 +494,13 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
       return;
     }
 
+    final hostEmployeeNumber =
+        _guestHostEmployeeNumberController.text.trim().toUpperCase();
+    if (hostEmployeeNumber.isEmpty) {
+      _showSnackBar('Host employee number is required.');
+      return;
+    }
+
     _guestQuantity = int.tryParse(_guestQuantityController.text.trim()) ?? 1;
     if (_guestQuantity <= 0) {
       _showSnackBar('Quantity must be greater than zero.');
@@ -394,24 +508,9 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
 
     final overrideReason = _guestOverrideReasonController.text.trim();
-    final validation = _mealReservationService.validateReservationRequest(
-      reservationDate: _selectedDate,
-      mealType: _selectedGuestMealType,
-      overrideReason: overrideReason,
-    );
 
-    if (!validation.isAllowed) {
-      _showSnackBar(validation.message);
-      return;
-    }
-
-    final needsOverrideReason =
-        validation.message.toLowerCase().contains('override');
-
-    if (_requireOverrideReason &&
-        needsOverrideReason &&
-        overrideReason.isEmpty) {
-      _showSnackBar('Override reason is required for this booking.');
+    if (_requireOverrideReason && overrideReason.isEmpty) {
+      _showSnackBar('Override reason is required.');
       return;
     }
 
@@ -445,10 +544,11 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         createdByEmployeeNumber: profile.employeeNumber,
         createdByName: profile.employeeName,
         guestName: guestName,
-        hostEmployeeNumber: _guestHostEmployeeNumberController.text.trim(),
+        hostEmployeeNumber: hostEmployeeNumber,
         hostEmployeeName: _guestHostEmployeeNameController.text.trim(),
         notes: _guestNotesController.text.trim(),
         overrideReason: overrideReason.isEmpty ? null : overrideReason,
+        skipValidation: true,
       );
 
       if (!mounted) return;
@@ -533,27 +633,9 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
     }
 
     final overrideReason = _proxyOverrideReasonController.text.trim();
-    final normalizedRole = _normalizedRole(profile.roleLabel);
-    final isPrivileged =
-        _mealReservationService.canWaiveCutoffForRole(normalizedRole);
 
-    final validation = _mealReservationService.validateReservationRequest(
-      reservationDate: _selectedDate,
-      mealType: _selectedProxyMealType,
-      overrideReason: overrideReason,
-    );
-
-    if (!validation.isAllowed && !isPrivileged) {
-      _showSnackBar(validation.message);
-      return;
-    }
-
-    final needsOverrideReason = !validation.isAllowed || isPrivileged;
-
-    if (_requireOverrideReason &&
-        needsOverrideReason &&
-        overrideReason.isEmpty) {
-      _showSnackBar('Override reason is required for proxy override booking.');
+    if (_requireOverrideReason && overrideReason.isEmpty) {
+      _showSnackBar('Override reason is required.');
       return;
     }
 
@@ -626,7 +708,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         mealType: _selectedProxyMealType,
         lines: lines,
         createdByUid: authUser.uid,
-        createdByRole: normalizedRole,
+        createdByRole: _normalizedRole(profile.roleLabel),
         createdByEmployeeNumber: profile.employeeNumber,
         createdByName: profile.employeeName,
         notes: _proxyNotesController.text.trim(),
@@ -635,6 +717,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
         requestContext: requestContext,
         isSpecialMeal: isSpecialMeal,
         allowAnyMenuItem: allowAnyMenuItem,
+        skipValidation: true,
       );
 
       if (!mounted) return;
@@ -1120,8 +1203,9 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                 const SizedBox(height: 12),
                 TextField(
                   controller: _guestHostEmployeeNumberController,
+                  textCapitalization: TextCapitalization.characters,
                   decoration: const InputDecoration(
-                    labelText: 'Host Employee Number (optional)',
+                    labelText: 'Host Employee Number',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -1390,7 +1474,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                         .map(
                           (item) => DropdownMenuItem<String>(
                             value: item['id'] as String,
-                            child: Text(item['name'] as String),
+                            child: Text(item['display_name'] as String),
                           ),
                         )
                         .toList(),
@@ -1425,7 +1509,7 @@ class _GuestMealBookingScreenState extends State<GuestMealBookingScreen>
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        'Selected special item: ${selectedManualItem['name']}'
+                        'Selected special item: ${selectedManualItem['display_name'] ?? selectedManualItem['name']}'
                         '${((selectedManualItem['category'] ?? '').toString().isNotEmpty) ? ' (${selectedManualItem['category']})' : ''}',
                       ),
                     ),

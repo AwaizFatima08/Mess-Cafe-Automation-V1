@@ -27,7 +27,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool _isInitialLoading = true;
   bool _isRefreshing = false;
-  bool _isIssuing = false;
+  String? _issuingReservationId;
   String? _errorMessage;
 
   final Map<String, _DashboardCacheEntry> _dateCache = {};
@@ -44,6 +44,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _diningModeFilter = 'all';
   String _queueTab = 'pending';
   String _sortMode = 'pending_first';
+
+  bool get _isIssuingAny => _issuingReservationId != null;
 
   @override
   void initState() {
@@ -567,7 +569,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _issueMeal(String recordId) async {
-    if (_isIssuing) return;
+    if (_issuingReservationId != null) return;
 
     final matches =
         _pendingReservations.where((record) => record.id == recordId).toList();
@@ -595,7 +597,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     setState(() {
-      _isIssuing = true;
+      _issuingReservationId = recordId;
     });
 
     try {
@@ -671,7 +673,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          _isIssuing = false;
+          _issuingReservationId = null;
         });
       }
     }
@@ -902,7 +904,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 OutlinedButton.icon(
                   onPressed:
-                      _isRefreshing || _isIssuing ? null : _goToPreviousDate,
+                      _isRefreshing || _isIssuingAny ? null : _goToPreviousDate,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white54),
@@ -911,7 +913,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   label: const Text('Previous'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _isRefreshing || _isIssuing ? null : _pickDate,
+                  onPressed: _isRefreshing || _isIssuingAny ? null : _pickDate,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white54),
@@ -920,7 +922,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   label: const Text('Select Date'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _isRefreshing || _isIssuing ? null : _goToNextDate,
+                  onPressed: _isRefreshing || _isIssuingAny ? null : _goToNextDate,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.white,
                     side: const BorderSide(color: Colors.white54),
@@ -929,7 +931,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   label: const Text('Next'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: _isRefreshing || _isIssuing
+                  onPressed: _isRefreshing || _isIssuingAny
                       ? null
                       : () => _loadDashboardData(forceRefresh: true),
                   style: ElevatedButton.styleFrom(
@@ -1541,7 +1543,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ...queueRecords.map(
                 (record) => _ReservationTile(
                   data: record.data,
-                  isBusy: _isIssuing,
+                  isBusy: _issuingReservationId == record.id,
+                  isAnyIssuanceInProgress: _isIssuingAny,
                   actionLabel: isPendingTab ? 'Issue Meal' : 'Issued',
                   actionIcon: isPendingTab
                       ? Icons.check_circle_outline
@@ -1716,7 +1719,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       body: _buildBody(),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isRefreshing || _isIssuing
+        onPressed: _isRefreshing || _isIssuingAny
             ? null
             : () => _loadDashboardData(forceRefresh: true),
         icon: _isRefreshing
@@ -1735,6 +1738,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 class _ReservationTile extends StatelessWidget {
   final Map<String, dynamic> data;
   final bool isBusy;
+  final bool isAnyIssuanceInProgress;
   final String actionLabel;
   final IconData actionIcon;
   final VoidCallback? onAction;
@@ -1751,6 +1755,7 @@ class _ReservationTile extends StatelessWidget {
   const _ReservationTile({
     required this.data,
     required this.isBusy,
+    required this.isAnyIssuanceInProgress,
     required this.actionLabel,
     required this.actionIcon,
     required this.onAction,
@@ -1890,7 +1895,9 @@ class _ReservationTile extends StatelessWidget {
             Align(
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
-                onPressed: isBusy || onAction == null ? null : onAction,
+                onPressed: (isBusy || isAnyIssuanceInProgress || onAction == null)
+                    ? null
+                    : onAction,
                 icon: isBusy && onAction != null
                     ? const SizedBox(
                         width: 16,

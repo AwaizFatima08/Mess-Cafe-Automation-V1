@@ -27,6 +27,7 @@ class _MealFeedbackSubmissionScreenState
   late DateTime _selectedDate;
   bool _isLoading = true;
   bool _isSubmitting = false;
+  String? _submittingReservationId;
   String? _errorMessage;
 
   List<FeedbackEligibleReservation> _items = [];
@@ -34,7 +35,6 @@ class _MealFeedbackSubmissionScreenState
   final Map<String, int> _ratings = {};
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, bool> _anonymous = {};
-  final Map<String, String> _issueType = {};
 
   @override
   void initState() {
@@ -80,13 +80,11 @@ class _MealFeedbackSubmissionScreenState
       _ratings.clear();
       _controllers.clear();
       _anonymous.clear();
-      _issueType.clear();
 
       for (final item in data) {
         _ratings[item.reservationId] = 0;
         _controllers[item.reservationId] = TextEditingController();
         _anonymous[item.reservationId] = false;
-        _issueType[item.reservationId] = 'none';
       }
 
       if (!mounted) return;
@@ -136,11 +134,10 @@ class _MealFeedbackSubmissionScreenState
 
     setState(() {
       _isSubmitting = true;
+      _submittingReservationId = item.reservationId;
     });
 
     try {
-      final issueType = _issueType[item.reservationId] ?? 'none';
-
       await _service.submitFeedback(
         reservationId: item.reservationId,
         submittedByUid: widget.userUid,
@@ -154,7 +151,7 @@ class _MealFeedbackSubmissionScreenState
         category: item.category,
         rating: rating,
         feedbackText: _controllers[item.reservationId]?.text.trim() ?? '',
-        issueType: issueType == 'none' ? '' : issueType,
+        issueType: '',
         isAnonymous: _anonymous[item.reservationId] ?? false,
       );
 
@@ -175,6 +172,7 @@ class _MealFeedbackSubmissionScreenState
       if (mounted) {
         setState(() {
           _isSubmitting = false;
+          _submittingReservationId = null;
         });
       }
     }
@@ -199,6 +197,7 @@ class _MealFeedbackSubmissionScreenState
 
   Widget _buildStars(String id) {
     final rating = _ratings[id] ?? 0;
+    final isThisSubmitting = _submittingReservationId == id;
 
     return Row(
       children: List.generate(5, (i) {
@@ -207,13 +206,15 @@ class _MealFeedbackSubmissionScreenState
             i < rating ? Icons.star : Icons.star_border,
             color: Colors.orange,
           ),
-          onPressed: _isSubmitting
+          onPressed: (_isSubmitting && !isThisSubmitting)
               ? null
-              : () {
-                  setState(() {
-                    _ratings[id] = i + 1;
-                  });
-                },
+              : isThisSubmitting
+                  ? null
+                  : () {
+                      setState(() {
+                        _ratings[id] = i + 1;
+                      });
+                    },
         );
       }),
     );
@@ -225,7 +226,7 @@ class _MealFeedbackSubmissionScreenState
       child: Row(
         children: [
           ElevatedButton.icon(
-            onPressed: _pickDate,
+            onPressed: _isSubmitting ? null : _pickDate,
             icon: const Icon(Icons.calendar_today),
             label: Text(_formatDate(_selectedDate)),
           ),
@@ -239,7 +240,7 @@ class _MealFeedbackSubmissionScreenState
             ),
           ),
           IconButton(
-            onPressed: _isLoading ? null : _loadData,
+            onPressed: (_isLoading || _isSubmitting) ? null : _loadData,
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
           ),
@@ -250,6 +251,7 @@ class _MealFeedbackSubmissionScreenState
 
   Widget _buildItemCard(FeedbackEligibleReservation item) {
     final already = item.alreadySubmitted;
+    final isThisSubmitting = _submittingReservationId == item.reservationId;
     final canSubmit = item.isIssued && !already && !_isSubmitting;
 
     return Card(
@@ -282,34 +284,24 @@ class _MealFeedbackSubmissionScreenState
                 ),
               )
             else ...[
-              _buildStars(item.reservationId),
-              DropdownButton<String>(
-                value: _issueType[item.reservationId],
-                hint: const Text('Issue Type (optional)'),
-                isExpanded: true,
-                items: const [
-                  DropdownMenuItem(value: 'none', child: Text('None')),
-                  DropdownMenuItem(value: 'taste', child: Text('Taste')),
-                  DropdownMenuItem(value: 'quality', child: Text('Quality')),
-                  DropdownMenuItem(value: 'quantity', child: Text('Quantity')),
-                  DropdownMenuItem(value: 'service', child: Text('Service')),
-                ],
-                onChanged: _isSubmitting
-                    ? null
-                    : (v) {
-                        setState(() {
-                          _issueType[item.reservationId] = v ?? 'none';
-                        });
-                      },
+              const SizedBox(height: 8),
+              Text(
+                'Overall Rating',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
+              _buildStars(item.reservationId),
+              const SizedBox(height: 8),
               TextField(
                 controller: _controllers[item.reservationId],
                 enabled: !_isSubmitting,
                 maxLines: 2,
                 decoration: const InputDecoration(
+                  labelText: 'Remarks (optional)',
                   hintText: 'Write feedback...',
+                  border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Checkbox(
@@ -326,7 +318,7 @@ class _MealFeedbackSubmissionScreenState
                   const Spacer(),
                   ElevatedButton(
                     onPressed: canSubmit ? () => _submit(item) : null,
-                    child: _isSubmitting
+                    child: isThisSubmitting
                         ? const Text('Submitting...')
                         : const Text('Submit'),
                   ),
@@ -369,11 +361,11 @@ class _MealFeedbackSubmissionScreenState
           actions: [
             IconButton(
               icon: const Icon(Icons.calendar_today),
-              onPressed: _pickDate,
+              onPressed: _isSubmitting ? null : _pickDate,
             ),
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: _loadData,
+              onPressed: _isSubmitting ? null : _loadData,
             ),
           ],
         ),
@@ -395,11 +387,11 @@ class _MealFeedbackSubmissionScreenState
         actions: [
           IconButton(
             icon: const Icon(Icons.calendar_today),
-            onPressed: _pickDate,
+            onPressed: _isSubmitting ? null : _pickDate,
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            onPressed: _isSubmitting ? null : _loadData,
           ),
         ],
       ),
