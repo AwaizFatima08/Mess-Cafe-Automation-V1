@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BACKUP_DIR="/NAS_BACKUPS/mess_cafe_automation_v1/code_snapshots"
+BACKUP_DIR="/mnt/storage/backup/mess_cafe_automation_v1/code_snapshots"
 DATE="$(date '+%Y-%m-%d_%H-%M-%S')"
 TAG="${1:-}"
 

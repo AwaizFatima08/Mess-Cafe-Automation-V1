@@ -16,6 +16,7 @@ import 'menu_management_screen.dart';
 import 'monthly_menu_builder_screen.dart';
 import 'user_management_screen.dart';
 import 'weekly_menu_template_screen.dart';
+import '../../analytics/screens/analytics_dashboard_screen.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({super.key});
@@ -177,6 +178,15 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
           ),
         );
       }
+
+        navItems.add(
+          const _AdminNavItem(
+            label: 'Analytics',
+            icon: Icons.analytics_outlined,
+            selectedIcon: Icons.analytics,
+            screen: AnalyticsDashboardScreen(),
+          ),
+        );
 
       navItems.add(
         const _AdminNavItem(

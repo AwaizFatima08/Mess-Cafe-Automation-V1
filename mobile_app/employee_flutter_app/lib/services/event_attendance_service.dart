@@ -260,8 +260,13 @@ class EventAttendanceService {
   // ---------------------------------------------------------------------------
 
   Future<List<EventNoteTemplateModel>> getActiveNoteTemplates() async {
-    final QuerySnapshot<Map<String, dynamic>> query =
+    QuerySnapshot<Map<String, dynamic>> query =
         await _notesRef.orderBy('display_order').get();
+
+    if (query.docs.isEmpty) {
+      await seedDefaultEventNotes();
+      query = await _notesRef.orderBy('display_order').get();
+    }
 
     return query.docs
         .map(EventNoteTemplateModel.fromDocument)

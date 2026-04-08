@@ -1,2 +1,4 @@
-docId,cycle_id,cycle_name,start_date,end_date,is_active,is_visible,created_at,updated_at
-1,1,April_2026,,,true,true,,
+docId,cycle_id,cycle_name,is_visible,created_at,start_date,end_date,is_active,updated_at,updated_by,status,created_by,lunch_template_1_id,lunch_template_2_id,breakfast_template_id,dinner_template_2_id,dinner_template_1_id
+1,1,April_2026,true,"{""_seconds"":1775242800,""_nanoseconds"":0}","{""_seconds"":1774983600,""_nanoseconds"":0}","{""_seconds"":1777489200,""_nanoseconds"":0}",false,"{""_seconds"":1775559533,""_nanoseconds"":264000000}",humayun.shahzad@fatima-group.com,inactive,,,,,,
+bmTEwPtdYU6o7FkfRAWq,,april 26,,"{""_seconds"":1775559533,""_nanoseconds"":337000000}","{""_seconds"":1774983600,""_nanoseconds"":0}",,false,"{""_seconds"":1775573155,""_nanoseconds"":316000000}",humayun.shahzad@fatima-group.com,inactive,humayun.shahzad@fatima-group.com,WMT0007,WMT0008,WMT0006,WMT0010,WMT0009
+kyklY62OTPQPVMpCQDN3,,april 2,,"{""_seconds"":1775573155,""_nanoseconds"":316000000}","{""_seconds"":1774983600,""_nanoseconds"":0}",,true,"{""_seconds"":1775573155,""_nanoseconds"":316000000}",humayun.shahzad@fatima-group.com,active,humayun.shahzad@fatima-group.com,WMT0007,WMT0008,WMT0006,WMT0010,WMT0009

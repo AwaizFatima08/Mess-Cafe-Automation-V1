@@ -1,10 +1,10 @@
 docId,employee_number,full_name,department,designation,house_number,is_active,created_at,updated_at,email,phone_number,cnic_last_4,grade
-ESB05019,ESB05019,Muhammad Baber Munir,,Sr.Teacher-II,,true,,,baber.muhammad@yahoo.com,03007634822,3323,
-ESB05021,ESB05021,Sofia Tasneem,,Sr.Teacher-II,,true,,,sofia.ffcl@gmail.com,03038205035,8536,
-ESB05023,ESB05023,Ruqia Rasul,,Sr.Teacher-II,,true,,,ruqiaazer@hotmail.com,03357106092,2894,
+ESB05019,ESB05019,Muhammad Baber Munir,,Sr.Teacher-II,,true,,,baber.muhammad@yahoo.com,3007634822,3323,
+ESB05021,ESB05021,Sofia Tasneem,,Sr.Teacher-II,,true,,,sofia.ffcl@gmail.com,3038205035,8536,
+ESB05023,ESB05023,Ruqia Rasul,,Sr.Teacher-II,,true,,,ruqiaazer@hotmail.com,3357106092,2894,
 ESB05031,ESB05031,Ammara Raza,,Sr.Teacher-II,,true,,,ammararaza@gmail.com,'03356757775,3916,
-ESB05035,ESB05035,Shabana Kausar,,Sr.Teacher-III,,true,,,shabana.ali1968@yahoo.com,03333479320,6852,
-ESB05037,ESB05037,Sajida Khalid,,Sr.Teacher-II,,true,,,sajidakainat@gmail.com,03018673702,5310,
+ESB05035,ESB05035,Shabana Kausar,,Sr.Teacher-III,,true,,,shabana.ali1968@yahoo.com,3333479320,6852,
+ESB05037,ESB05037,Sajida Khalid,,Sr.Teacher-II,,true,,,sajidakainat@gmail.com,3018673702,5310,
 ESB05041,ESB05041,Hina Asrar,,Sr.Teacher-III,,true,,,hinaasrarkhan86@gmail.com,'03344704041,9574,
 ESB05042,ESB05042,Uzma Imran,,Sr.Teacher-II,,true,,,uzmaimran572@gmail.com,'03034503115,8246,
 ESB05044,ESB05044,Sadia Rizwan,,Sr.Teacher-III,,true,,,,'0,,
@@ -102,7 +102,7 @@ FFL00088,FFL00088,NAVEED AHMED,,,,true,,,naveed.ahmed@fatima-group.com,'03333442
 FFL00093,FFL00093,ASIF ALI RAJPUT,,,,true,,,asif.rajput@fatima-group.com,'03343672633,3059,M-11
 FFL00094,FFL00094,MUHAMMAD AFZAL,,,,true,,,muhammad.afzal2@fatima-group.com,'03333689247,7181,MT-3
 FFL00097,FFL00097,MUHAMMAD NAVEED SUKHERA,,,,true,,,naveed.sukhera@fatima-group.com,'03006359663,7555,M-11
-FFL00100,FFL00100,Dr. HUMAYUN SHAHZAD,Admin,CMO,,true,,,humayun.shahzad@fatima-group.com,'03000707765,9057,M-11
+FFL00100,FFL00100,Dr. HUMAYUN SHAHZAD,Admin,CMO,D-82,true,,,humayun.shahzad@fatima-group.com,'03000707765,9057,M-11
 FFL00103,FFL00103,ASIF MAHMOOD,,,,true,,,asif.mahmood@fatima-group.com,'03017668799,4453,MT-1
 FFL00104,FFL00104,SHAKEEL JAVED IQBAL,,,,true,,,shakeel.javed@fatima-group.com,'03332230579,6715,MT-3
 FFL00105,FFL00105,SHAHID HUSSAIN,,,,true,,,shahid.hussain@fatima-group.com,'03006728907,4213,M-10
@@ -200,7 +200,7 @@ FFL01581,FFL01581,Dr. QUDSIA ANDLEEB,,,,true,,,qudsia.andleeb@fatima-group.com,'
 FFL01584,FFL01584,QASIM IJAZ,,,,true,,,qasim.ejaz@fatima-group.com,'03214432693,1739,M-11
 FFL01588,FFL01588,MUHAMMAD ZEESHAN NASEEM,,,,true,,,zeeshan.nasim@fatima-group.com,'03004181041,7465,M-12
 FFL01597,FFL01597,MUDUSSAR SHARIF,,,,true,,,mudussar.sharif@fatima-group.com,'03008294119,829,M-12
-FFL01602,FFL01602,Dr. JAMIL UR REHMAN,,,,true,,,m.jamilrehman@fatima-group.com,'03077413675,,M-9
+FFL01602,FFL01602,Dr. JAMIL UR REHMAN,Admin,Medical Executive,D-4,true,,,m.jamilrehman@fatima-group.com,'03077413675,9709,M-10
 FFL01605,FFL01605,SAMIULLAH,,,,true,,,samiullah@fatima-group.com,'03340123964,4745,M-9
 FFL01610,FFL01610,QADEER AHMED,,,,true,,,qadeer.ahmed@fatima-group.com,'03024222809,8579,M-9
 FFL01653,FFL01653,ASGHAR ALI ANJUM,,,,true,,,asghar.anjum@fatima-group.com,'03003306572,7111,MT-1

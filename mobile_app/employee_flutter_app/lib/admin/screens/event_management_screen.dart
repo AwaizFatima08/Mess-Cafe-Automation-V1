@@ -1468,17 +1468,26 @@ class _EventCreateEditDialogState extends State<_EventCreateEditDialog> {
 
   Future<void> _loadNotes() async {
     try {
+      // STEP 1 — Ensure seed completes FIRST
+      await widget.eventService.seedDefaultEventNotes();
+
+      // STEP 2 — Then fetch
       final notes = await widget.eventService.getActiveNoteTemplates();
+
       if (!mounted) return;
+
       setState(() {
         _availableNotes = notes;
         _loadingNotes = false;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
+
       setState(() {
         _loadingNotes = false;
       });
+
+      debugPrint('Note load error: $e');
     }
   }
 
