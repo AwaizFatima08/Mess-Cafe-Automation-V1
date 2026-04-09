@@ -168,8 +168,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const AuthGate()),
-        (route) => false,
+        (route) => false, 
       );
+
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       setState(() {

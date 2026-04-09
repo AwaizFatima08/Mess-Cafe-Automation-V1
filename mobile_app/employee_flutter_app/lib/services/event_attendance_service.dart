@@ -260,18 +260,27 @@ class EventAttendanceService {
   // ---------------------------------------------------------------------------
 
   Future<List<EventNoteTemplateModel>> getActiveNoteTemplates() async {
-    QuerySnapshot<Map<String, dynamic>> query =
-        await _notesRef.orderBy('display_order').get();
+    QuerySnapshot<Map<String, dynamic>> query = await _notesRef.get();
 
     if (query.docs.isEmpty) {
       await seedDefaultEventNotes();
-      query = await _notesRef.orderBy('display_order').get();
+      query = await _notesRef.get();
     }
 
-    return query.docs
+    final List<EventNoteTemplateModel> items = query.docs
         .map(EventNoteTemplateModel.fromDocument)
-        .where((note) => note.isActive)
-        .toList(growable: false);
+        .where((note) => note.isActive && note.isVisible && note.isValid)
+        .toList(growable: true);
+
+    items.sort((a, b) {
+      final int orderCompare = a.displayOrder.compareTo(b.displayOrder);
+      if (orderCompare != 0) {
+        return orderCompare;
+      }
+      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+    });
+
+    return List<EventNoteTemplateModel>.unmodifiable(items);
   }
 
   Future<void> seedDefaultEventNotes() async {
@@ -287,6 +296,7 @@ class EventAttendanceService {
     final List<Map<String, dynamic>> defaultNotes = <Map<String, dynamic>>[
       <String, dynamic>{
         'document_id': 'note_001',
+        'template_id': 'note_001',
         'title': 'Permanent Resident Guest Definition',
         'body':
             'Permanent resident guests include family members who have been registered as permanent resident guests in company record with resident cards issued.',
@@ -294,12 +304,14 @@ class EventAttendanceService {
       },
       <String, dynamic>{
         'document_id': 'note_002',
+        'template_id': 'note_002',
         'title': 'Visiting Guest Charges',
         'body': 'Visiting guests will be charged as per actual cost.',
         'display_order': 2,
       },
       <String, dynamic>{
         'document_id': 'note_003',
+        'template_id': 'note_003',
         'title': 'Maid / Servant Seating',
         'body':
             'Maids are not allowed in the event arena. Separate sitting arrangements will be made for maids and servants.',
@@ -307,12 +319,14 @@ class EventAttendanceService {
       },
       <String, dynamic>{
         'document_id': 'note_004',
+        'template_id': 'note_004',
         'title': 'Dress Code',
         'body': 'Please follow the given dress code.',
         'display_order': 4,
       },
       <String, dynamic>{
         'document_id': 'note_005',
+        'template_id': 'note_005',
         'title': 'Arrival Timing',
         'body':
             'Please arrive 10 minutes before starting time of event and be seated before arrival of chief guest.',
@@ -320,6 +334,7 @@ class EventAttendanceService {
       },
       <String, dynamic>{
         'document_id': 'note_006',
+        'template_id': 'note_006',
         'title': 'Entry Subject to Attendance',
         'body': 'Guests without attendance may be returned from the reception.',
         'display_order': 6,
@@ -331,9 +346,11 @@ class EventAttendanceService {
     for (final Map<String, dynamic> item in defaultNotes) {
       final String docId = item['document_id'] as String;
       batch.set(_notesRef.doc(docId), <String, dynamic>{
+        'template_id': item['template_id'],
         'title': item['title'],
         'body': item['body'],
         'is_active': true,
+        'is_visible': true,
         'display_order': item['display_order'],
         'created_at': now,
         'updated_at': now,

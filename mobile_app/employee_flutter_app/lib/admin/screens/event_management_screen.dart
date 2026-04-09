@@ -914,7 +914,12 @@ class _EventSummarySheetState extends State<_EventSummarySheet> {
     row++;
 
     _setCell(sheet, row, 0, 'Pending');
-    _setCell(sheet, row, 1, summary?.householdsPending ?? pendingEmployees.length);
+    _setCell(
+      sheet,
+      row,
+      1,
+      summary?.householdsPending ?? pendingEmployees.length,
+    );
     row++;
 
     _setCell(sheet, row, 0, 'Attending');
@@ -1468,10 +1473,7 @@ class _EventCreateEditDialogState extends State<_EventCreateEditDialog> {
 
   Future<void> _loadNotes() async {
     try {
-      // STEP 1 — Ensure seed completes FIRST
       await widget.eventService.seedDefaultEventNotes();
-
-      // STEP 2 — Then fetch
       final notes = await widget.eventService.getActiveNoteTemplates();
 
       if (!mounted) return;
@@ -1797,6 +1799,14 @@ class _EventCreateEditDialogState extends State<_EventCreateEditDialog> {
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: CircularProgressIndicator(),
+                  )
+                else if (_availableNotes.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('No active event note templates found.'),
+                    ),
                   )
                 else
                   Column(

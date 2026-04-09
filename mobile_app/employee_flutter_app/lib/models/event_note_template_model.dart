@@ -4,9 +4,11 @@ class EventNoteTemplateModel {
   static const String collectionName = 'event_note_templates';
 
   final String documentId;
+  final String templateId;
   final String title;
   final String body;
   final bool isActive;
+  final bool isVisible;
   final int displayOrder;
   final Timestamp? createdAt;
   final Timestamp? updatedAt;
@@ -14,9 +16,11 @@ class EventNoteTemplateModel {
 
   const EventNoteTemplateModel({
     required this.documentId,
+    required this.templateId,
     required this.title,
     required this.body,
     required this.isActive,
+    required this.isVisible,
     required this.displayOrder,
     required this.createdAt,
     required this.updatedAt,
@@ -37,11 +41,19 @@ class EventNoteTemplateModel {
     Map<String, dynamic> map, {
     required String documentId,
   }) {
+    final String cleanDocumentId = documentId.trim();
+    final String cleanTemplateId = _readString(
+      map['template_id'],
+      fallback: cleanDocumentId,
+    );
+
     return EventNoteTemplateModel(
-      documentId: documentId.trim(),
+      documentId: cleanDocumentId,
+      templateId: cleanTemplateId,
       title: _readString(map['title']),
       body: _readString(map['body']),
       isActive: _readBool(map['is_active'], fallback: true),
+      isVisible: _readBool(map['is_visible'], fallback: true),
       displayOrder: _readInt(map['display_order'], fallback: 0),
       createdAt: _readTimestamp(map['created_at']),
       updatedAt: _readTimestamp(map['updated_at']),
@@ -53,9 +65,11 @@ class EventNoteTemplateModel {
     bool includeNulls = false,
   }) {
     final map = <String, dynamic>{
+      'template_id': templateId.trim().isEmpty ? documentId.trim() : templateId.trim(),
       'title': title.trim(),
       'body': body.trim(),
       'is_active': isActive,
+      'is_visible': isVisible,
       'display_order': displayOrder,
     };
 
@@ -77,9 +91,11 @@ class EventNoteTemplateModel {
 
   EventNoteTemplateModel copyWith({
     String? documentId,
+    String? templateId,
     String? title,
     String? body,
     bool? isActive,
+    bool? isVisible,
     int? displayOrder,
     Timestamp? createdAt,
     Timestamp? updatedAt,
@@ -87,9 +103,11 @@ class EventNoteTemplateModel {
   }) {
     return EventNoteTemplateModel(
       documentId: documentId ?? this.documentId,
+      templateId: templateId ?? this.templateId,
       title: title ?? this.title,
       body: body ?? this.body,
       isActive: isActive ?? this.isActive,
+      isVisible: isVisible ?? this.isVisible,
       displayOrder: displayOrder ?? this.displayOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -105,7 +123,8 @@ class EventNoteTemplateModel {
   }
 
   static String _readString(dynamic value, {String fallback = ''}) {
-    return (value?.toString() ?? fallback).trim();
+    final text = (value?.toString() ?? '').trim();
+    return text.isEmpty ? fallback.trim() : text;
   }
 
   static int _readInt(dynamic value, {int fallback = 0}) {
@@ -130,10 +149,10 @@ class EventNoteTemplateModel {
     }
 
     final normalized = value.toString().trim().toLowerCase();
-    if (normalized == 'true') {
+    if (normalized == 'true' || normalized == '1') {
       return true;
     }
-    if (normalized == 'false') {
+    if (normalized == 'false' || normalized == '0') {
       return false;
     }
 

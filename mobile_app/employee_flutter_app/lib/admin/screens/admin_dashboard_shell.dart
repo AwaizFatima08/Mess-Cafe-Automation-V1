@@ -1,9 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../analytics/screens/analytics_dashboard_screen.dart';
 import '../../main.dart';
 import '../../services/notification_service.dart';
 import '../../shared/screens/notifications_screen.dart';
+import '../../shared/widgets/change_password_dialog.dart';
 import '../../shared/widgets/notification_badge.dart';
 import 'dashboard_screen.dart';
 import 'employee_master_management_screen.dart';
@@ -16,7 +18,6 @@ import 'menu_management_screen.dart';
 import 'monthly_menu_builder_screen.dart';
 import 'user_management_screen.dart';
 import 'weekly_menu_template_screen.dart';
-import '../../analytics/screens/analytics_dashboard_screen.dart';
 
 class AdminDashboardShell extends StatefulWidget {
   const AdminDashboardShell({super.key});
@@ -90,6 +91,13 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
       context,
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (route) => false,
+    );
+  }
+
+  Future<void> _openChangePassword() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ChangePasswordDialog(),
     );
   }
 
@@ -179,14 +187,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         );
       }
 
-        navItems.add(
-          const _AdminNavItem(
-            label: 'Analytics',
-            icon: Icons.analytics_outlined,
-            selectedIcon: Icons.analytics,
-            screen: AnalyticsDashboardScreen(),
-          ),
-        );
+      navItems.add(
+        const _AdminNavItem(
+          label: 'Analytics',
+          icon: Icons.analytics_outlined,
+          selectedIcon: Icons.analytics,
+          screen: AnalyticsDashboardScreen(),
+        ),
+      );
 
       navItems.add(
         const _AdminNavItem(
@@ -300,6 +308,29 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
     );
   }
 
+  Widget _buildAccountMenu() {
+    return PopupMenuButton<String>(
+      tooltip: 'Account',
+      onSelected: (value) {
+        if (value == 'change_password') {
+          _openChangePassword();
+        } else if (value == 'logout') {
+          _logout();
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          value: 'change_password',
+          child: Text('Change Password'),
+        ),
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Text('Logout'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildDrawerHeader(BuildContext context) {
     final theme = Theme.of(context);
 
@@ -364,6 +395,14 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('Change Password'),
+              onTap: () async {
+                Navigator.pop(context);
+                await _openChangePassword();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.logout),
               title: const Text('Logout'),
               onTap: _logout,
@@ -390,6 +429,7 @@ class _AdminDashboardShellState extends State<AdminDashboardShell> {
         title: Text(_navItems[safeIndex].label),
         actions: [
           _buildNotificationAction(),
+          _buildAccountMenu(),
         ],
       ),
       drawer: _buildDrawer(),

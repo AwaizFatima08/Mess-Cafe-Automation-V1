@@ -724,12 +724,20 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
           children: [
             Text(
               option.optionLabel,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
               _buildItemsSummary(option),
-              style: Theme.of(context).textTheme.bodyMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
             const SizedBox(height: AppSpacing.md),
             Row(
@@ -783,7 +791,8 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
     return Column(
       children: docs.map((doc) {
         final data = doc.data();
-        final option = (data['option_label'] ?? data['item_name'] ?? '').toString();
+        final option =
+            (data['option_label'] ?? data['item_name'] ?? '').toString();
         final mode = (data['dining_mode'] ?? '').toString();
         final qty = (data['quantity'] ?? 0).toString();
         final status = (data['status'] ?? '').toString();
@@ -812,7 +821,12 @@ class _TodayMenuScreenState extends State<TodayMenuScreen> {
             children: [
               Text(
                 option.isEmpty ? 'Reserved option' : option,
-                style: Theme.of(context).textTheme.titleSmall,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(

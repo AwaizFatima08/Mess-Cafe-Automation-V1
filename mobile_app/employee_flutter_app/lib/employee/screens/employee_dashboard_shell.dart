@@ -6,6 +6,7 @@ import '../../services/notification_service.dart';
 import '../../services/user_profile_service.dart';
 import '../../services/user_role_service.dart';
 import '../../shared/screens/notifications_screen.dart';
+import '../../shared/widgets/change_password_dialog.dart';
 import '../../shared/widgets/notification_badge.dart';
 import 'employee_dashboard_screen.dart';
 import 'meal_feedback_submission_screen.dart';
@@ -43,6 +44,13 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
       MaterialPageRoute(
         builder: (_) => NotificationsScreen(userUid: userUid),
       ),
+    );
+  }
+
+  Future<void> _openChangePassword() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ChangePasswordDialog(),
     );
   }
 
@@ -146,6 +154,29 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
     );
   }
 
+  Widget _accountMenu() {
+    return PopupMenuButton<String>(
+      tooltip: 'Account',
+      onSelected: (value) {
+        if (value == 'change_password') {
+          _openChangePassword();
+        } else if (value == 'logout') {
+          logout();
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          value: 'change_password',
+          child: Text('Change Password'),
+        ),
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Text('Logout'),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authUser = FirebaseAuth.instance.currentUser;
@@ -206,11 +237,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
               title: const Text('Employee Panel'),
               actions: [
                 _notificationButton(userUid),
-                IconButton(
-                  tooltip: 'Logout',
-                  onPressed: logout,
-                  icon: const Icon(Icons.logout),
-                ),
+                _accountMenu(),
               ],
             ),
             body: const Center(
@@ -231,11 +258,7 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
             title: Text(current.title),
             actions: [
               _notificationButton(userUid),
-              IconButton(
-                tooltip: 'Logout',
-                onPressed: logout,
-                icon: const Icon(Icons.logout),
-              ),
+              _accountMenu(),
             ],
           ),
           drawer: isWide
@@ -300,6 +323,14 @@ class _EmployeeDashboardShellState extends State<EmployeeDashboardShell> {
                           onTap: () async {
                             Navigator.pop(context);
                             await _openNotifications(userUid);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.lock_outline),
+                          title: const Text('Change Password'),
+                          onTap: () async {
+                            Navigator.pop(context);
+                            await _openChangePassword();
                           },
                         ),
                         ListTile(
